@@ -1,0 +1,54 @@
+---
+title: "Power Calc NLP Hypercap Ref Std"
+format: html
+editor: visual
+---
+
+## Power Calculation for the Reference Standard Annotation
+
+MIMIC IV; NLP to classify NHAMCS RVC visits.
+
+```{r}
+#| echo: false
+# Install once
+install.packages(c("presize", "kappaSize", "irr"))
+```
+
+You can add options to executable code like this
+
+1)  Precision: sample size for 95% CI width = 0.10, 5 balanced categories
+
+```{r}
+library(presize)
+prec_kappa(kappa = 0.70,
+           conf.width = 0.20,
+           raters = 2,
+           n_category = 5,
+           props = c(0.5, 0.2, 0.1, 0.05, 0.15),
+           conf.level = 0.975) # 2 sided 95%
+# -> returns required N and expected CI limits
+```
+
+And
+
+2)  Same via kappaSize (explicit CI bounds)
+
+```{r}
+
+library(kappaSize)
+CI5Cats(kappa0 = 0.80, kappaL = 0.70, kappaU = 0.90,
+        props = c(0.5, 0.2, 0.1, 0.1 , 0.1), raters = 2, alpha = 0.05)
+```
+
+and
+
+3)  Hypothesis-based power (Flack et al. 1988):
+
+```{r}
+#    test H0: kappa = 0.50 vs H1: kappa = 0.70, 80% power, 5 categories
+library(irr)
+mrg <- round(c(0.5, 0.2, 0.1, 0.1, 0.1), 12)
+mrg[length(mrg)] <- 1 - sum(mrg[-length(mrg)])
+irr::N2.cohen.kappa(mrg, k1=0.70, k0=0.50, alpha=0.05, power=0.80)
+
+```
