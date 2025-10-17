@@ -1,0 +1,717 @@
+top_level_group17,subentry_text
+Abnormal test result,For cytology findings
+Abnormal test result,For other and unspecified test results
+Abnormal test result,For other findings of blood tests
+Abnormal test result,For radiological findings
+Abnormal test result,"For results of EKG, Holter monitor review (anything under 33500 and 33550)"
+Abnormal test result,For results of blood glucose tests
+Abnormal test result,For results of cholesterol and triglyceride tests
+Abnormal test result,"For results of skin tests (ppd results, results for allergy testing)"
+Abnormal test result,For results of test for human immunodeficiency virus (HIV)
+Abnormal test result,For results of urine tests
+Administrative,Direct admission to hospital
+Administrative,Disability examination
+Administrative,"Driver's license examination, DOT"
+Administrative,Executive physical examination
+Administrative,Insurance examination
+Administrative,Other reason for visit required by party other than the patient or the health care provider
+Administrative,Physical examination for extracurricular activities
+Administrative,Physical examination required for employment
+Administrative,Physical examination required for school
+Administrative,Physical examination required for school or employment
+Administrative,Premarital blood test
+Administrative,Premarital examination
+Administrative,Worker's comp exam
+Diagnostic/Screening/Preventive,Abortion to be performed (at this visit)
+Diagnostic/Screening/Preventive,Artificial Insemination (At this visit)
+Diagnostic/Screening/Preventive,"Biopsies, so stated"
+Diagnostic/Screening/Preventive,Blood pressure test
+Diagnostic/Screening/Preventive,Blood test for sexually transmitted disease
+Diagnostic/Screening/Preventive,Breast examination
+Diagnostic/Screening/Preventive,COVID-19 immunization
+Diagnostic/Screening/Preventive,Contraceptive device
+Diagnostic/Screening/Preventive,Contraceptive medication
+Diagnostic/Screening/Preventive,Counseling and examinations for pregnancy interruption
+Diagnostic/Screening/Preventive,Diagnostic endoscopies (to schedule one of these 46050)
+Diagnostic/Screening/Preventive,Diagnostic radiology
+Diagnostic/Screening/Preventive,"EKG, ECG, electrocardiogram, exercise stress test, treadmill, stress testing, Holter monitor"
+Diagnostic/Screening/Preventive,Encounter for screening for COVID-19
+Diagnostic/Screening/Preventive,"Exposure to bodily fluids of another person, NOS"
+Diagnostic/Screening/Preventive,Exposure to human immunodeficiency virus (HIV)
+Diagnostic/Screening/Preventive,Exposure to other infectious diseases
+Diagnostic/Screening/Preventive,Exposure to sexually transmitted disease (STD)
+Diagnostic/Screening/Preventive,Eye examination
+Diagnostic/Screening/Preventive,"Family Planning, NOS"
+Diagnostic/Screening/Preventive,General medical examination
+Diagnostic/Screening/Preventive,General psychiatric or psychological examination (mental health)
+Diagnostic/Screening/Preventive,Genetic testing (added in 2019)
+Diagnostic/Screening/Preventive,Glaucoma test
+Diagnostic/Screening/Preventive,Glucose level determination (Hgb A1C-GLYCOSOLATED HEMOBLOBIN)
+Diagnostic/Screening/Preventive,Gynecological examination
+Diagnostic/Screening/Preventive,Hearing test
+Diagnostic/Screening/Preventive,Heart catheterization
+Diagnostic/Screening/Preventive,Heart examination
+Diagnostic/Screening/Preventive,Human immunodeficiency virus (HIV) test
+Diagnostic/Screening/Preventive,"Mammography, xerography, breast thermography"
+Diagnostic/Screening/Preventive,Nasal swab
+Diagnostic/Screening/Preventive,Other and unspecified diagnostic tests
+Diagnostic/Screening/Preventive,Other blood test
+Diagnostic/Screening/Preventive,Other cultures
+Diagnostic/Screening/Preventive,Other special examination
+Diagnostic/Screening/Preventive,Pap smear
+Diagnostic/Screening/Preventive,Possible HIV
+Diagnostic/Screening/Preventive,"Postpartum examination, routine"
+Diagnostic/Screening/Preventive,Preconception Counseling and Education
+Diagnostic/Screening/Preventive,"Pregnancy, unconfirmed (do not code with diagnosed complications of pregnancy or problems of"
+Diagnostic/Screening/Preventive,"Prenatal examination, routine"
+Diagnostic/Screening/Preventive,Prophylactic inoculations
+Diagnostic/Screening/Preventive,SARS-CoV-2 (Coronavirus disease [COVID-19]) antibody test (added in 2020)
+Diagnostic/Screening/Preventive,SARS-CoV-2 (Coronavirus disease [COVID-19]) test (added in 2020)
+Diagnostic/Screening/Preventive,Sensitization test
+Diagnostic/Screening/Preventive,Skin immunity test
+Diagnostic/Screening/Preventive,Sterilization and sterilization reversal to be performed (at this visit)
+Diagnostic/Screening/Preventive,Throat culture
+Diagnostic/Screening/Preventive,Urine test
+Diagnostic/Screening/Preventive,Well baby examination (any child under 1 year of age)
+Diseases (patient-stated diagnosis),Alcoholism
+Diseases (patient-stated diagnosis),All other perinatal conditions
+Diseases (patient-stated diagnosis),Anemia
+Diseases (patient-stated diagnosis),"Appendicitis, all types"
+Diseases (patient-stated diagnosis),Arthritis
+Diseases (patient-stated diagnosis),Asthma
+Diseases (patient-stated diagnosis),Atherosclerosis
+Diseases (patient-stated diagnosis),Attention deficit disorder (ADD)
+Diseases (patient-stated diagnosis),Bronchitis
+Diseases (patient-stated diagnosis),COVID-19 (added in 2020)
+Diseases (patient-stated diagnosis),"COVID-19, virus not identified (added in 2020)"
+Diseases (patient-stated diagnosis),Cancer of urinary tract
+Diseases (patient-stated diagnosis),"Cancer, breast"
+Diseases (patient-stated diagnosis),"Cancer, female genital tract"
+Diseases (patient-stated diagnosis),"Cancer, gastrointestinal tract"
+Diseases (patient-stated diagnosis),"Cancer, male genital tract"
+Diseases (patient-stated diagnosis),"Cancer, respiratory tract"
+Diseases (patient-stated diagnosis),"Cancer, skin and subcutaneous tissues"
+Diseases (patient-stated diagnosis),Canker sore
+Diseases (patient-stated diagnosis),"Carbuncle, furuncle, boil, cellulitis, abscess, NEC (includes genital)"
+Diseases (patient-stated diagnosis),Cataract
+Diseases (patient-stated diagnosis),Cerebrovascular disease
+Diseases (patient-stated diagnosis),"Cervicitis, vaginitis"
+Diseases (patient-stated diagnosis),Congenital anomalies of heart and circulatory system
+Diseases (patient-stated diagnosis),"Coronavirus infection, unspecified (added in 2020)"
+Diseases (patient-stated diagnosis),Cystitis
+Diseases (patient-stated diagnosis),Dental abscess
+Diseases (patient-stated diagnosis),Dental cavities
+Diseases (patient-stated diagnosis),Diabetes mellitus
+Diseases (patient-stated diagnosis),Diabetic skin ulcer (wound check)
+Diseases (patient-stated diagnosis),Diagnosed complications of pregnancy and puerperium
+Diseases (patient-stated diagnosis),"Diseases of the esophagus, stomach, and duodenum"
+Diseases (patient-stated diagnosis),Diseases of the intestine and peritoneum
+Diseases (patient-stated diagnosis),"Diseases of the liver, gallbladder, and pancreas"
+Diseases (patient-stated diagnosis),Diseases of the male genital organs
+Diseases (patient-stated diagnosis),Diseases of the thyroid gland
+Diseases (patient-stated diagnosis),Drug dependence
+Diseases (patient-stated diagnosis),"Eczema and dermatitis, NOS"
+Diseases (patient-stated diagnosis),Emphysema
+Diseases (patient-stated diagnosis),Epilepsy
+Diseases (patient-stated diagnosis),Fibrocystic and other diseases of breast
+Diseases (patient-stated diagnosis),Fibroids and other benign uterine neoplasms
+Diseases (patient-stated diagnosis),Functional psychoses
+Diseases (patient-stated diagnosis),Fungus infections (mycoses)
+Diseases (patient-stated diagnosis),Glaucoma
+Diseases (patient-stated diagnosis),"Gout, hyperuricemia"
+Diseases (patient-stated diagnosis),Hay fever
+Diseases (patient-stated diagnosis),Hemorrhagic fevers
+Diseases (patient-stated diagnosis),Hemorrhoids
+Diseases (patient-stated diagnosis),Hernia of abdominal cavity
+Diseases (patient-stated diagnosis),"Hodgkin's disease, lymphomas, leukemias"
+Diseases (patient-stated diagnosis),Human immunodeficiency virus (HIV) with or without associated conditions
+Diseases (patient-stated diagnosis),Hypertension with involvement of target organs
+Diseases (patient-stated diagnosis),"Hypertension, hypertensive"
+Diseases (patient-stated diagnosis),Impetigo
+Diseases (patient-stated diagnosis),Inflammatory diseases of the eye
+Diseases (patient-stated diagnosis),Intestinal infectious diseases
+Diseases (patient-stated diagnosis),Ischemic heart disease
+Diseases (patient-stated diagnosis),Mental retardation
+Diseases (patient-stated diagnosis),Migraine headache
+Diseases (patient-stated diagnosis),Multiple sclerosis
+Diseases (patient-stated diagnosis),NHAMCS MICRO-DATA FILE DOCUMENTATION
+Diseases (patient-stated diagnosis),Neoplasm of uncertain nature
+Diseases (patient-stated diagnosis),Neuroses
+Diseases (patient-stated diagnosis),Nonarticular rheumatism
+Diseases (patient-stated diagnosis),Organic psychoses
+Diseases (patient-stated diagnosis),Other and unspecified congenital anomalies
+Diseases (patient-stated diagnosis),Other and unspecified diseases of the nervous system
+Diseases (patient-stated diagnosis),Other and unspecified infectious and parasitic diseases
+Diseases (patient-stated diagnosis),Other and unspecified mental disorders
+Diseases (patient-stated diagnosis),Other benign neoplasms
+Diseases (patient-stated diagnosis),Other coronavirus as the cause of diseases classified elsewhere (added in 2020)
+Diseases (patient-stated diagnosis),Other disease of circulatory system
+Diseases (patient-stated diagnosis),Other diseases of blood and blood-forming organs
+Diseases (patient-stated diagnosis),"Other diseases of digestive system, NEC"
+Diseases (patient-stated diagnosis),Other diseases of female reproductive system
+Diseases (patient-stated diagnosis),Other diseases of the ear
+Diseases (patient-stated diagnosis),Other diseases of the eye
+Diseases (patient-stated diagnosis),"Other diseases of the genitourinary system, NEC"
+Diseases (patient-stated diagnosis),Other diseases of the skin
+Diseases (patient-stated diagnosis),"Other endocrine, nutritional, metabolic and immunity diseases"
+Diseases (patient-stated diagnosis),Other heart disease
+Diseases (patient-stated diagnosis),Other malignant neoplasms
+Diseases (patient-stated diagnosis),Other musculoskeletal or connective tissue disease
+Diseases (patient-stated diagnosis),Other respiratory diseases
+Diseases (patient-stated diagnosis),Otitis media
+Diseases (patient-stated diagnosis),Parasitic diseases
+Diseases (patient-stated diagnosis),Parkinson's disease (paralysis agitans)
+Diseases (patient-stated diagnosis),Pelvic inflammatory disease (PID)
+Diseases (patient-stated diagnosis),Personal history of COVID-19
+Diseases (patient-stated diagnosis),Personality and character disorders
+Diseases (patient-stated diagnosis),"Phlebitis, thrombophlebitis"
+Diseases (patient-stated diagnosis),Pneumonia
+Diseases (patient-stated diagnosis),Pneumonia due to SARS-associated coronavirus (added in 2020)
+Diseases (patient-stated diagnosis),"Post COVID-19 condition, unspecified"
+Diseases (patient-stated diagnosis),Prematurity
+Diseases (patient-stated diagnosis),Psoriasis
+Diseases (patient-stated diagnosis),Refractive error
+Diseases (patient-stated diagnosis),Rheumatic fever and chronic rheumatic heart disease
+Diseases (patient-stated diagnosis),SARS-associated coronavirus as the cause of diseases classified elsewhere (added in 2020)
+Diseases (patient-stated diagnosis),Seborrheic dermatitis
+Diseases (patient-stated diagnosis),"Sepsis, septicemia"
+Diseases (patient-stated diagnosis),Sexually transmitted diseases
+Diseases (patient-stated diagnosis),Stomatitis
+Diseases (patient-stated diagnosis),Streptococcal infection
+Diseases (patient-stated diagnosis),"Temporomandibular joint (TMJ) pain, Temporomandibular joint (TMJ) syndrome"
+Diseases (patient-stated diagnosis),Tonsillitis
+Diseases (patient-stated diagnosis),Undescended testicles
+Diseases (patient-stated diagnosis),Upper respiratory infections except tonsillitis
+Diseases (patient-stated diagnosis),Urinary tract disease except cystitis
+Diseases (patient-stated diagnosis),Vaping-related disorder (added in 2020)
+Diseases (patient-stated diagnosis),Varicose veins
+Diseases (patient-stated diagnosis),Viral diseases
+Injuries & adverse effects,"Accident, NOS (this code is used for the verbatim “accident' or if an injury is documented but not"
+Injuries & adverse effects,Adverse effect of alcohol
+Injuries & adverse effects,Adverse effect of drug abuse
+Injuries & adverse effects,Adverse effect of medication
+Injuries & adverse effects,Adverse effects of environment
+Injuries & adverse effects,Adverse effects of second-hand smoke
+Injuries & adverse effects,Adverse effects of terrorism and bioterrorism
+Injuries & adverse effects,"Adverse effects, other and unspecified"
+Injuries & adverse effects,Alcohol poisoning
+Injuries & adverse effects,"Altered level of consciousness, NOS"
+Injuries & adverse effects,"Animal ,snake, human"
+Injuries & adverse effects,Ankle
+Injuries & adverse effects,Arm
+Injuries & adverse effects,Back
+Injuries & adverse effects,Battered spouse
+Injuries & adverse effects,"Burn, site unspecified"
+Injuries & adverse effects,Cardiac arrest
+Injuries & adverse effects,Cardiopulmonary arrest
+Injuries & adverse effects,"Cervical spine, neck"
+Injuries & adverse effects,Chest and abdomen
+Injuries & adverse effects,Child abuse or neglect
+Injuries & adverse effects,Complications of surgical or medical procedures and treatments
+Injuries & adverse effects,"Contusion, abrasion, bruise, site unspecified"
+Injuries & adverse effects,Dead on arrival (DOA)
+Injuries & adverse effects,Digestive tract
+Injuries & adverse effects,Drowning
+Injuries & adverse effects,Elbow
+Injuries & adverse effects,Elder abuse
+Injuries & adverse effects,Extremities
+Injuries & adverse effects,Eye
+Injuries & adverse effects,Facial area
+Injuries & adverse effects,Food poisoning
+Injuries & adverse effects,Foot and toe(s)
+Injuries & adverse effects,Foot and toes
+Injuries & adverse effects,"Fracture, other and unspecified"
+Injuries & adverse effects,Gunshot wound
+Injuries & adverse effects,Hand and finger(s)
+Injuries & adverse effects,Hand and fingers
+Injuries & adverse effects,"Head and face,"
+Injuries & adverse effects,Head and neck area
+Injuries & adverse effects,"Head, neck and facial area"
+Injuries & adverse effects,"Head, neck, and face"
+Injuries & adverse effects,"Head, neck, and face (includes eyes)"
+Injuries & adverse effects,Hip
+Injuries & adverse effects,"Ingestion, inhalation, or exposure to potentially poisonous products"
+Injuries & adverse effects,"Injury, multiple or unspecified (wound check)"
+Injuries & adverse effects,Insect
+Injuries & adverse effects,Intentional self-mutilation
+Injuries & adverse effects,Knee
+Injuries & adverse effects,"Laceration and cuts, site unspecified"
+Injuries & adverse effects,Late effects of an old injury
+Injuries & adverse effects,Leg
+Injuries & adverse effects,Lower extremity
+Injuries & adverse effects,Motor vehicle accident
+Injuries & adverse effects,Nose
+Injuries & adverse effects,Other and unspecified sites
+Injuries & adverse effects,"Overdose, intentional"
+Injuries & adverse effects,"Puncture wound, site unspecified"
+Injuries & adverse effects,Rape
+Injuries & adverse effects,Respiratory arrest
+Injuries & adverse effects,Respiratory tract
+Injuries & adverse effects,Severe sepsis
+Injuries & adverse effects,Sexual abuse
+Injuries & adverse effects,Shoulder
+Injuries & adverse effects,Skin
+Injuries & adverse effects,Spinal column
+Injuries & adverse effects,"Sprain or strain, other and unspecified"
+Injuries & adverse effects,State of consciousness not specified (this is the only thing that is stated)
+Injuries & adverse effects,Suicide attempt
+Injuries & adverse effects,"Sunburn, windburn"
+Injuries & adverse effects,"Systemic inflammatory response syndrome (SIRS), unspecified"
+Injuries & adverse effects,Systemic inflammatory response syndrome due to noninfectious process with
+Injuries & adverse effects,Trunk area
+Injuries & adverse effects,"Trunk area, except spinal column"
+Injuries & adverse effects,Unconscious on arrival
+Injuries & adverse effects,Unintentional poisoning
+Injuries & adverse effects,Upper extremity
+Injuries & adverse effects,"Violence, NOS"
+Injuries & adverse effects,Wrist
+Symptom – Circulatory,Abnormal pulsations and palpitations
+Symptom – Circulatory,Decreased heartbeat
+Symptom – Circulatory,"Flushed, blushing"
+Symptom – Circulatory,Heart pain
+Symptom – Circulatory,Increased heartbeat
+Symptom – Circulatory,Irregular heartbeat
+Symptom – Circulatory,Other symptoms of the heart
+Symptom – Circulatory,"Other symptoms referable to the cardiovascular/lymphatic system, NEC (Blocked blood vessel,"
+Symptom – Circulatory,"Pallor, paleness"
+Symptom – Circulatory,Poor circulation
+Symptom – Circulatory,Sore glands
+Symptom – Circulatory,Swollen or enlarged glands
+Symptom – Circulatory,Symptoms of lymph glands (or nodes)
+Symptom – Digestive,"Abdominal pain, cramps, spasms, NOS"
+Symptom – Digestive,"Abdominal swelling, NOS"
+Symptom – Digestive,"Abnormal appearance, color, ridges, coated"
+Symptom – Digestive,Abnormal color
+Symptom – Digestive,"Appetite, abnormal"
+Symptom – Digestive,Bleeding
+Symptom – Digestive,Bleeding gums
+Symptom – Digestive,Blood in stool (melena)
+Symptom – Digestive,Change in abdominal size (stomach size)
+Symptom – Digestive,"Changes in size, color, shape, or odor"
+Symptom – Digestive,Cold sore
+Symptom – Digestive,Constipation
+Symptom – Digestive,"Cracked, bleeding, dry, chapped"
+Symptom – Digestive,Decreased appetite
+Symptom – Digestive,Diarrhea
+Symptom – Digestive,Difficulty eating
+Symptom – Digestive,Difficulty in swallowing (dysphagia)
+Symptom – Digestive,Discharge in stools
+Symptom – Digestive,"Distention, fullness, NOS"
+Symptom – Digestive,Dryness
+Symptom – Digestive,Excessive appetite
+Symptom – Digestive,Flatulence
+Symptom – Digestive,Gastrointestinal bleeding
+Symptom – Digestive,Gastrointestinal infection
+Symptom – Digestive,Gum pain
+Symptom – Digestive,Heartburn and indigestion (dyspepsia)
+Symptom – Digestive,Incontinence of stool
+Symptom – Digestive,"Inflammation, infection, swelling"
+Symptom – Digestive,Itching
+Symptom – Digestive,Jaundice
+Symptom – Digestive,"Lower abdominal pain, cramps, spasms,"
+Symptom – Digestive,Lump or mass
+Symptom – Digestive,Mass or tumor
+Symptom – Digestive,Nausea
+Symptom – Digestive,Other and unspecified symptoms referable to digestive system
+Symptom – Digestive,Other symptoms or changes in bowel function
+Symptom – Digestive,Pain
+Symptom – Digestive,"Pain, burning, soreness"
+Symptom – Digestive,"Stomach and abdominal pain, cramps and spasms"
+Symptom – Digestive,Swelling
+Symptom – Digestive,Swelling or mass
+Symptom – Digestive,"Symptoms of liver, gallbladder, and biliary tract"
+Symptom – Digestive,Symptoms of teeth and gums
+Symptom – Digestive,"Symptoms of the jaw, NOS"
+Symptom – Digestive,Symptoms referable to anus-rectum
+Symptom – Digestive,Symptoms referable to lips
+Symptom – Digestive,Symptoms referable to mouth
+Symptom – Digestive,Symptoms referable to tongue
+Symptom – Digestive,Toothache
+Symptom – Digestive,"Ulcer, sore"
+Symptom – Digestive,"Upper abdominal pain, cramps, spasms"
+Symptom – Digestive,Vomiting
+Symptom – Digestive,Vomiting blood (hematemesis)
+Symptom – Digestive,Worms
+Symptom – Eye/Ear,Abnormal appearance of eyes
+Symptom – Eye/Ear,Abnormal color
+Symptom – Eye/Ear,Abnormal eye movements
+Symptom – Eye/Ear,Abnormal movement
+Symptom – Eye/Ear,Abnormal retraction
+Symptom – Eye/Ear,"Abnormal size or shape, ""ears stick out"""
+Symptom – Eye/Ear,Allergy
+Symptom – Eye/Ear,Bleeding
+Symptom – Eye/Ear,Blindness and half vision
+Symptom – Eye/Ear,"Burning, stinging"
+Symptom – Eye/Ear,"Cloudy, dull, hazy appearance , cloudy capsule"
+Symptom – Eye/Ear,Contact lens problems
+Symptom – Eye/Ear,Cross-eyed
+Symptom – Eye/Ear,Deviation
+Symptom – Eye/Ear,Diminished hearing
+Symptom – Eye/Ear,Diminished vision
+Symptom – Eye/Ear,Discharge from ear
+Symptom – Eye/Ear,Discharge from eye
+Symptom – Eye/Ear,Double vision (diplopia)
+Symptom – Eye/Ear,Ear infection
+Symptom – Eye/Ear,"Earache, or ear infection"
+Symptom – Eye/Ear,"Earache, pain"
+Symptom – Eye/Ear,Extraneous hearing
+Symptom – Eye/Ear,Extraneous vision
+Symptom – Eye/Ear,Eye infection and inflammation
+Symptom – Eye/Ear,Growths or mass
+Symptom – Eye/Ear,Hearing dysfunctions
+Symptom – Eye/Ear,Heightened or acute hearing
+Symptom – Eye/Ear,"Infection, inflammation, swelling"
+Symptom – Eye/Ear,Itching
+Symptom – Eye/Ear,Mass or growth
+Symptom – Eye/Ear,"Other and unspecified symptoms referable to the ears, NEC"
+Symptom – Eye/Ear,"Other and unspecified symptoms referable to the eye, NEC"
+Symptom – Eye/Ear,Pain
+Symptom – Eye/Ear,Pinkeye
+Symptom – Eye/Ear,Plugged feeling in ear
+Symptom – Eye/Ear,Protrusion (exophthalmos)
+Symptom – Eye/Ear,"Pulling at ears, picking at ears"
+Symptom – Eye/Ear,Pupils unequal
+Symptom – Eye/Ear,"Pus (purulent drainage), Otorrhea"
+Symptom – Eye/Ear,"Pus, matter, white discharge, matted"
+Symptom – Eye/Ear,Strain
+Symptom – Eye/Ear,Swelling
+Symptom – Eye/Ear,Swimmer's ear
+Symptom – Eye/Ear,Symptoms of eyelids
+Symptom – Eye/Ear,"Tearing, watering (lacrimation)"
+Symptom – Eye/Ear,Vision dysfunctions
+Symptom – General,"Allergy, NOS"
+Symptom – General,"Bleeding, multiple or unspecified sites"
+Symptom – General,Burning sensation in the chest
+Symptom – General,"Chest discomfort, pressure, tightness, heaviness"
+Symptom – General,Chest pain and related symptoms (not referable to a specific body system)
+Symptom – General,"Chest pain, Soreness"
+Symptom – General,Chills
+Symptom – General,"Cramps, spasms, site unspecified"
+Symptom – General,"Cranky, crying too much, fussy, fidgety, irritable"
+Symptom – General,Disorders of motor functions
+Symptom – General,"Dyslexia, NOS"
+Symptom – General,Edema
+Symptom – General,Excessive growth
+Symptom – General,"Excessive sweating, perspiration"
+Symptom – General,Excessive thirst
+Symptom – General,Facial pain
+Symptom – General,Fainting (syncope)
+Symptom – General,"Feeding problem, eating difficulty"
+Symptom – General,Feeling cold
+Symptom – General,Feeling hot
+Symptom – General,Feeling hot and cold
+Symptom – General,Fever
+Symptom – General,General ill feeling
+Symptom – General,"General or unspecified nonviral infection - Code also symptoms of specified joint (hip, shoulder,"
+Symptom – General,"General symptoms of infants (under 1 year of age), NEC"
+Symptom – General,General weakness
+Symptom – General,Groin pain
+Symptom – General,"Internal mass, NOS"
+Symptom – General,Lack of growth
+Symptom – General,"Lesion, internal NOS (excludes brain and skin)"
+Symptom – General,Other symptoms of body temperature
+Symptom – General,"Pain and related symptoms, NEC"
+Symptom – General,"Pain, specified site not referable to a specific body system"
+Symptom – General,"Pain, unspecified"
+Symptom – General,Recent weight loss
+Symptom – General,"Regurgitation, spitting up"
+Symptom – General,Rib pain
+Symptom – General,"Side pain, flank pain"
+Symptom – General,"Stiffness, site unspecified"
+Symptom – General,"Symptoms of face, NEC"
+Symptom – General,Symptoms of fluid abnormalities
+Symptom – General,Symptoms of growth and developmental disorders
+Symptom – General,"Tiredness, exhaustion"
+Symptom – General,"Tumor or mass, site unspecified"
+Symptom – General,Underweight
+Symptom – General,Weight gain
+Symptom – General,Weight loss
+Symptom – Genitourinary,"Abnormal material, including clots"
+Symptom – Genitourinary,Abnormalities of urine
+Symptom – Genitourinary,Absence of menstruation (amenorrhea)
+Symptom – Genitourinary,Bedwetting
+Symptom – Genitourinary,Bleeding or discharge from nipple or breast
+Symptom – Genitourinary,Blood in urine (hematuria)
+Symptom – Genitourinary,Early or late onset of menopause
+Symptom – Genitourinary,"Emotional symptoms, change of life problems"
+Symptom – Genitourinary,"Excessive urination, night (nocturia)"
+Symptom – Genitourinary,Excessively heavy (menorrhagia)
+Symptom – Genitourinary,Frequency and urgency of urination
+Symptom – Genitourinary,Frequent
+Symptom – Genitourinary,"Growth, wart, cyst, ulcer, sore"
+Symptom – Genitourinary,"Growths, warts, lumps, bumps"
+Symptom – Genitourinary,Hesitancy
+Symptom – Genitourinary,Hormone deficiency or problem
+Symptom – Genitourinary,Incontinence of urine (enuresis)
+Symptom – Genitourinary,Infection
+Symptom – Genitourinary,"Infection, inflammation"
+Symptom – Genitourinary,"Infection, inflammation, swelling"
+Symptom – Genitourinary,Infrequent
+Symptom – Genitourinary,Intermenstrual bleeding (metrorrhagia)
+Symptom – Genitourinary,"Involuntary urination, can't hold urine, dribbling, wetting pants"
+Symptom – Genitourinary,Irregularity of menstrual flow
+Symptom – Genitourinary,Irregularity of menstrual interval
+Symptom – Genitourinary,"Itching and irritation, swelling"
+Symptom – Genitourinary,"Itching, burning"
+Symptom – Genitourinary,"Itching, jock itch"
+Symptom – Genitourinary,Large volume
+Symptom – Genitourinary,Lump or mass of breast
+Symptom – Genitourinary,"Lumps, bumps, growths, warts"
+Symptom – Genitourinary,Mass
+Symptom – Genitourinary,"Mass, lump"
+Symptom – Genitourinary,Menopausal symptoms
+Symptom – Genitourinary,"Menstrual symptoms, other and unspecified"
+Symptom – Genitourinary,Other symptoms of male reproductive system
+Symptom – Genitourinary,Other symptoms referable to breast
+Symptom – Genitourinary,Other symptoms referable to the female reproductive system
+Symptom – Genitourinary,Other symptoms referable to urinary tract
+Symptom – Genitourinary,Other urinary dysfunctions
+Symptom – Genitourinary,Other vaginal symptoms
+Symptom – Genitourinary,Pain
+Symptom – Genitourinary,Pain during pregnancy
+Symptom – Genitourinary,Pain or soreness of breast
+Symptom – Genitourinary,"Pain, aching, soreness, tenderness, painful erection"
+Symptom – Genitourinary,"Pain, aching, tenderness"
+Symptom – Genitourinary,Painful menstruation (dysmenorrhea)
+Symptom – Genitourinary,Painful urination
+Symptom – Genitourinary,Pelvic symptoms
+Symptom – Genitourinary,Penile discharge
+Symptom – Genitourinary,"Postcoital bleeding, female"
+Symptom – Genitourinary,Postmenopausal bleeding
+Symptom – Genitourinary,Postpartum problems
+Symptom – Genitourinary,"Premenstrual symptoms, PMS"
+Symptom – Genitourinary,Pressure or dropping sensation
+Symptom – Genitourinary,Problems and other conditions related to pregnancy
+Symptom – Genitourinary,Problems with shape or size
+Symptom – Genitourinary,Pus in urine
+Symptom – Genitourinary,Retention of urine
+Symptom – Genitourinary,Scanty flow (oligomenorrhea)
+Symptom – Genitourinary,Small volume
+Symptom – Genitourinary,"Spotting, bleeding during pregnancy"
+Symptom – Genitourinary,Swelling
+Symptom – Genitourinary,"Swelling, inflammation"
+Symptom – Genitourinary,Symptoms of bladder
+Symptom – Genitourinary,Symptoms of infertility
+Symptom – Genitourinary,Symptoms of onset of labor
+Symptom – Genitourinary,Symptoms of penis
+Symptom – Genitourinary,Symptoms of prostate
+Symptom – Genitourinary,Symptoms of sexual dysfunction
+Symptom – Genitourinary,Symptoms of the kidneys
+Symptom – Genitourinary,Symptoms of the scrotum and testes
+Symptom – Genitourinary,Unpredictable
+Symptom – Genitourinary,Unusual color or odor
+Symptom – Genitourinary,"Urinary tract infection, NOS"
+Symptom – Genitourinary,Uterine and vaginal bleeding
+Symptom – Genitourinary,Vaginal discharge
+Symptom – Genitourinary,Vaginal dryness
+Symptom – Genitourinary,Vasomotor symptoms-hot flashes
+Symptom – Genitourinary,Vulvar disorders
+Symptom – Musculoskeletal,Ankle symptoms
+Symptom – Musculoskeletal,Arm symptoms
+Symptom – Musculoskeletal,Back symptoms
+Symptom – Musculoskeletal,"Bowlegged, knock-kneed"
+Symptom – Musculoskeletal,Elbow symptoms
+Symptom – Musculoskeletal,Foot and toe symptoms
+Symptom – Musculoskeletal,Hand and finger symptoms
+Symptom – Musculoskeletal,Hip symptoms
+Symptom – Musculoskeletal,Knee symptoms
+Symptom – Musculoskeletal,Leg symptoms
+Symptom – Musculoskeletal,Low back symptoms
+Symptom – Musculoskeletal,Musculoskeletal deformities
+Symptom – Musculoskeletal,Neck symptoms
+Symptom – Musculoskeletal,Other musculoskeletal symptoms
+Symptom – Musculoskeletal,"Pigeon-toed, feet turn in"
+Symptom – Musculoskeletal,Posture problems
+Symptom – Musculoskeletal,Shoulder symptoms
+Symptom – Musculoskeletal,Symptoms of unspecified joints
+Symptom – Musculoskeletal,Symptoms of unspecified muscles
+Symptom – Musculoskeletal,Wrist symptoms
+Symptom – Nervous,Abnormal involuntary movements
+Symptom – Nervous,Abnormal sensation (paresthesia)
+Symptom – Nervous,Apraxia
+Symptom – Nervous,Convulsions
+Symptom – Nervous,"Disorders of speech, speech disturbance"
+Symptom – Nervous,Disturbances of sensation
+Symptom – Nervous,"Headache, pain in head"
+Symptom – Nervous,Increased sensation (hyperesthesia)
+Symptom – Nervous,Loss of feeling (anesthesia)
+Symptom – Nervous,"Memory, disturbances of"
+Symptom – Nervous,"Other disturbances of sense, including smell and taste"
+Symptom – Nervous,Other symptoms referable to the nervous system
+Symptom – Nervous,Slurring
+Symptom – Nervous,"Stuttering, stammering"
+Symptom – Nervous,"Symptoms of head, NEC"
+Symptom – Nervous,Tension headache
+Symptom – Nervous,Vertigo - dizziness
+Symptom – Nervous,Weakness (neurological)
+Symptom – Psychological,Abnormal drug usage
+Symptom – Psychological,Alcohol-related problems
+Symptom – Psychological,Anger
+Symptom – Psychological,Antisocial behavior
+Symptom – Psychological,Anxiety and nervousness
+Symptom – Psychological,Apnea
+Symptom – Psychological,Behavioral disturbances
+Symptom – Psychological,Delusions or hallucinations
+Symptom – Psychological,Depression
+Symptom – Psychological,Disturbances of sleep
+Symptom – Psychological,Fears and phobias
+Symptom – Psychological,"Frigidity, loss of sex drive, lack of response, lack of libido"
+Symptom – Psychological,"Homosexuality, concerns with"
+Symptom – Psychological,Hostile behavior
+Symptom – Psychological,Hysterical behavior
+Symptom – Psychological,"Impotence, Erectile dysfunction"
+Symptom – Psychological,Insomnia
+Symptom – Psychological,"Masturbation excessive, concerns about"
+Symptom – Psychological,Nail biting
+Symptom – Psychological,Nightmares
+Symptom – Psychological,"Obsessions, compulsion and impulsive"
+Symptom – Psychological,"Orgasm, problem with"
+Symptom – Psychological,"Other symptoms or problems relating to psychological and mental disorders, NEC"
+Symptom – Psychological,Premature ejaculation
+Symptom – Psychological,Preoccupation with sex
+Symptom – Psychological,Problems with identity and self-esteem
+Symptom – Psychological,Psychosexual disorders
+Symptom – Psychological,Restlessness
+Symptom – Psychological,Sleepiness (hypersomnia)
+Symptom – Psychological,Sleepwalking
+Symptom – Psychological,Smoking problems
+Symptom – Psychological,"Substance abuse, no additional details"
+Symptom – Psychological,Temper problems
+Symptom – Psychological,Thumb sucking
+Symptom – Psychological,Transgender
+Symptom – Respiratory,Abnormalities of sputum or phlegm
+Symptom – Respiratory,"Breathing problems, NEC"
+Symptom – Respiratory,Congestion in chest
+Symptom – Respiratory,Cough
+Symptom – Respiratory,Coughing up blood
+Symptom – Respiratory,"Disorders of respiratory sound, NEC"
+Symptom – Respiratory,Disorders of voice
+Symptom – Respiratory,Excessive sputum
+Symptom – Respiratory,Flu
+Symptom – Respiratory,General viral infection
+Symptom – Respiratory,"Head cold, upper respiratory infection (coryza)"
+Symptom – Respiratory,"Hoarseness, loss of voice"
+Symptom – Respiratory,Hypernasality
+Symptom – Respiratory,Infection
+Symptom – Respiratory,Inflammation and swelling
+Symptom – Respiratory,"Irritation, scratch, tickle, itch"
+Symptom – Respiratory,Labored or difficult breathing (dyspnea)
+Symptom – Respiratory,Lump or mass
+Symptom – Respiratory,Lung infection
+Symptom – Respiratory,Lung pain
+Symptom – Respiratory,Nasal congestion
+Symptom – Respiratory,Nosebleed (epistaxis)
+Symptom – Respiratory,Other symptoms of nose
+Symptom – Respiratory,"Other symptoms referable to the respiratory system, NEC"
+Symptom – Respiratory,"Pain (burning, throat on fire)"
+Symptom – Respiratory,Pain and pressure
+Symptom – Respiratory,Problem with appearance of nose
+Symptom – Respiratory,Pus in sputum
+Symptom – Respiratory,Rapid breathing (hyperventilation)
+Symptom – Respiratory,Shortness of breath
+Symptom – Respiratory,Sinus congestion
+Symptom – Respiratory,"Sinus inflammation, infection"
+Symptom – Respiratory,Sinus problems
+Symptom – Respiratory,Sneezing
+Symptom – Respiratory,Sore in nose
+Symptom – Respiratory,Soreness
+Symptom – Respiratory,Swelling
+Symptom – Respiratory,"Symptoms referable to throat, raw throat"
+Symptom – Respiratory,Symptoms referable to tonsils
+Symptom – Respiratory,Wheezing
+Symptom – Skin/Hair/Nails,Acne or pimples
+Symptom – Skin/Hair/Nails,Bleeding mole
+Symptom – Skin/Hair/Nails,"Brittle, breaking, splitting, cracked, ridged"
+Symptom – Skin/Hair/Nails,Change in size or color
+Symptom – Skin/Hair/Nails,Diaper rash
+Symptom – Skin/Hair/Nails,Discoloration or abnormal pigmentation
+Symptom – Skin/Hair/Nails,"Dryness, flaky scalp, dry scalp"
+Symptom – Skin/Hair/Nails,"Dryness, peeling, scaliness, roughness"
+Symptom – Skin/Hair/Nails,Infected
+Symptom – Skin/Hair/Nails,"Infection of skin of arm, hand, or finger"
+Symptom – Skin/Hair/Nails,Infection of skin of head or neck area
+Symptom – Skin/Hair/Nails,"Infection of skin of leg, foot, or toe"
+Symptom – Skin/Hair/Nails,"Infections of skin, NOS"
+Symptom – Skin/Hair/Nails,Ingrown
+Symptom – Skin/Hair/Nails,Itching
+Symptom – Skin/Hair/Nails,Navel problems
+Symptom – Skin/Hair/Nails,Oiliness
+Symptom – Skin/Hair/Nails,Other growths of skin
+Symptom – Skin/Hair/Nails,Other symptoms referable to skin
+Symptom – Skin/Hair/Nails,Pain
+Symptom – Skin/Hair/Nails,"Skin irritations, NEC"
+Symptom – Skin/Hair/Nails,"Skin lesion, NOS"
+Symptom – Skin/Hair/Nails,Skin rash
+Symptom – Skin/Hair/Nails,Swelling of skin
+Symptom – Skin/Hair/Nails,Symptoms of skin moles
+Symptom – Skin/Hair/Nails,Symptoms referable to hair and scalp
+Symptom – Skin/Hair/Nails,Symptoms referable to nails
+Symptom – Skin/Hair/Nails,Too little hair
+Symptom – Skin/Hair/Nails,Unwanted hair
+Symptom – Skin/Hair/Nails,"Warts, NOS"
+Symptom – Skin/Hair/Nails,Wrinkles
+Treatment/Medication,Acupuncture
+Treatment/Medication,Alcohol
+Treatment/Medication,Allergy medication
+Treatment/Medication,Botox injection
+Treatment/Medication,Cardiopulmonary resuscitation (CPR)
+Treatment/Medication,"Cast, splint - application, removal"
+Treatment/Medication,"Cauterization, all sites"
+Treatment/Medication,Chemotherapy
+Treatment/Medication,Collagen injection
+Treatment/Medication,Complication
+Treatment/Medication,Corrective appliances
+Treatment/Medication,"Cosmetic injection, NOS"
+Treatment/Medication,"Detoxification-medical clearance for detox, not otherwise specified exam for detox"
+Treatment/Medication,Diet and nutritional counseling
+Treatment/Medication,"Dressing, bandage - application, change, packing"
+Treatment/Medication,Drug
+Treatment/Medication,Economic problem
+Treatment/Medication,Educational problems
+Treatment/Medication,"External prosthetic devices, artificial body parts (fit, adjust, remove)"
+Treatment/Medication,Family history of cancer
+Treatment/Medication,Family history of cardiovascular disease
+Treatment/Medication,Family history of diabetes
+Treatment/Medication,Family history of other disease or condition
+Treatment/Medication,Fitting glasses and contact lenses
+Treatment/Medication,Group counseling
+Treatment/Medication,Human immunodeficiency virus (HIV) counseling
+Treatment/Medication,"IV therapy, infusion"
+Treatment/Medication,Injections
+Treatment/Medication,"Internal prosthetic devices (fit, adjust, remove)"
+Treatment/Medication,"Irrigation, lavage"
+Treatment/Medication,Kidney dialysis
+Treatment/Medication,Legal problems
+Treatment/Medication,Major surgery
+Treatment/Medication,Marital problems
+Treatment/Medication,"Medical Counseling, NOS"
+Treatment/Medication,"Medication, other and unspecified kinds"
+Treatment/Medication,Minor surgery (see definition of minor vs major surgery)
+Treatment/Medication,Noncompliance with medication therapy
+Treatment/Medication,Occupational problems
+Treatment/Medication,Other problems of family relationship
+Treatment/Medication,Other social problems
+Treatment/Medication,"Other specific therapeutic procedures, NEC"
+Treatment/Medication,Parent-child problems
+Treatment/Medication,Physical medicine and rehabilitation
+Treatment/Medication,Police involvement in outpatient visit circumstances
+Treatment/Medication,"Postoperative visit - uncomplicated, no complications mentioned"
+Treatment/Medication,Preoperative visit for specified and unspecified types of surgery
+Treatment/Medication,Problem with access to medical care
+Treatment/Medication,"Progress visit, NOS (Use only when the only information given is progress or follow-up)"
+Treatment/Medication,Psychotherapy
+Treatment/Medication,Radiation therapy
+Treatment/Medication,Rejection
+Treatment/Medication,Respiratory therapy
+Treatment/Medication,Social adjustment problems
+Treatment/Medication,"Suture - insertion, removal"
+Treatment/Medication,"Transplants, NOS"
+Treatment/Medication,Tube insertion
+Treatment/Medication,Urinary tract instrumentation and catheterization
+Treatment/Medication,Wart removed (code to wart also)
+Uncodable/Unknown,"Entry of ""none"" or ""no complaint"""
+Uncodable/Unknown,Illegible entry
+Uncodable/Unknown,Insufficient information
+Uncodable/Unknown,Patient (or patient's spokesperson) refused care
+Uncodable/Unknown,Patient unable to speak English
+Uncodable/Unknown,"Problems, complaints, NEC (multiple medical problems)"
