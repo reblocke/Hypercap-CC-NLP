@@ -1,0 +1,76 @@
+
+=== Pairwise set-level (order-invariant) ===
+
+R1 vs R2:
+N_items         160.000000
+exact_rate        0.806250
+partial_rate      0.131250
+none_rate         0.062500
+mean_jaccard      0.856250
+mean_overlap      0.882292
+mean_f1_set       0.877440
+micro_f1_set      0.873950
+mean_len_a        1.493750
+mean_len_b        1.481250
+
+R1 vs R3:
+N_items         160.000000
+exact_rate        0.850000
+partial_rate      0.075000
+none_rate         0.075000
+mean_jaccard      0.879167
+mean_overlap      0.892708
+mean_f1_set       0.891190
+micro_f1_set      0.897275
+mean_len_a        1.493750
+mean_len_b        1.487500
+
+R2 vs R3:
+N_items         160.000000
+exact_rate        0.831250
+partial_rate      0.112500
+none_rate         0.056250
+mean_jaccard      0.876042
+mean_overlap      0.900000
+mean_f1_set       0.894583
+micro_f1_set      0.892632
+mean_len_a        1.481250
+mean_len_b        1.487500
+
+=== Three-rater set-level (full/partial/none) ===
+N_items         160.00000
+full_rate         0.75625
+partial_rate      0.23125
+none_rate         0.01250
+
+=== Chance-corrected (binary per category) ===
+R1 vs R2:
+macro_cohen_kappa          0.734211
+macro_gwet_ac1             0.978476
+macro_percent_agreement    0.982353
+micro_percent_agreement    0.982353
+
+R1 vs R3:
+macro_cohen_kappa          0.796093
+macro_gwet_ac1             0.979976
+macro_percent_agreement    0.984191
+micro_percent_agreement    0.984191
+
+R2 vs R3:
+macro_cohen_kappa          0.773404
+macro_gwet_ac1             0.979294
+macro_percent_agreement    0.983456
+micro_percent_agreement    0.983456
+
+=== Multi-rater AC1 (3 raters) ===
+macro_gwet_ac1=0.9793
+macro_percent_agreement=0.9833
+
+=== Adjudication (R3) for R1≠R2 ===
+N_disagreements                31.000000
+r3_equals_r1_rate               0.483871
+r3_equals_r2_rate               0.387097
+r3_equals_union_rate            0.096774
+r3_equals_intersection_rate     0.000000
+r3_introduces_new_rate          0.096774
+r3_subset_of_union_rate         0.903226
