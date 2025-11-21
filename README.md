@@ -34,9 +34,8 @@ WORK_DIR=/path/to/project/workdir
 1. `MIMICIV_hypercap_EXT_cohort.ipynb` – cohort assembly using BigQuery 
 2. `Annotation/` – manual annotation workflow  
 3. `Rater Agreement Analysis.ipynb` – inter‑rater reliability  
-4. `Hypercap CC NLP Classifier.ipynb` – model training/evaluation  
-
-[ ] TODO: analysis codebook to be included
+4. `Hypercap CC NLP Classifier.ipynb` – model training
+4. `Hypercap CC NLP Analysis.ipynb` – model evaluation and figure generation  
 
 ## Data access
 Requires credentialed access to **MIMIC‑IV** and optionally **MIMIC‑IV‑Note** through PhysioNet.
@@ -54,6 +53,7 @@ Requires credentialed access to **MIMIC‑IV** and optionally **MIMIC‑IV‑Not
 ├── MIMICIV_hypercap_EXT_cohort.ipynb
 ├── Rater Agreement Analysis.ipynb
 ├── Hypercap CC NLP Classifier.ipynb
+├── Hypercap CC NLP Analysis.ipynb
 ├── Chart Review Sample Calc.qmd
 ├── environment.yml
 ├── Makefile
@@ -70,7 +70,8 @@ MIMIC‑IV → cohort assembly → manual annotation → agreement analysis → 
 | Cohort tables | `MIMICIV_hypercap_EXT_cohort.ipynb` | `data/cohort/` |
 | Label CSV | `Annotation/` | `labels/annotations.csv` |
 | Agreement plots/tables | `Rater Agreement Analysis.ipynb` | `annotation_agreement_outputs_nlp/` |
-| Classifier metrics | `Hypercap CC NLP Classifier.ipynb` | `outputs/` |
+| Classifications | `Hypercap CC NLP Classifier.ipynb` | `outputs/` |
+| Classifier metrics | `Hypercap CC NLP Analysis.ipynb` | `outputs/` |
 
 ## Quality checks / tests
 A synthetic small-note smoke test is recommended.
