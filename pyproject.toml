@@ -1,0 +1,40 @@
+[project]
+name = "hypercap-cc-nlp"
+version = "0.0.0"
+description = "Hypercapnia cohort assembly and NLP classifier for ED chief complaints in MIMIC-IV."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11,<3.12"
+dependencies = [
+  "pandas==2.2.2",
+  "numpy",
+  "pyarrow==16.1.0",
+  "SQLAlchemy==2.0.31",
+  "duckdb==1.0.0",
+  "psycopg2==2.9.9",
+  "jupyterlab==4.2.5",
+  "ipykernel==6.29.5",
+  "python-dotenv==1.0.1",
+  "matplotlib==3.8.4",
+  "seaborn",
+  "statsmodels",
+  "openpyxl",
+  "tableone",
+  "google-cloud-bigquery==3.25.0",
+  "google-cloud-bigquery-storage==2.25.0",
+  "db-dtypes==1.3.0",
+  # ydata-profiling moved to optional extra due to pandas compatibility constraints
+  "ftfy",
+  "symspellpy",
+  "spacy",
+  "requests",
+  "tqdm",
+  "wordcloud",
+  "torch",
+  "sentence-transformers",
+]
+
+[project.optional-dependencies]
+profiling = [
+  "ydata-profiling",
+]
