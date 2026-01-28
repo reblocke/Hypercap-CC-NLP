@@ -1,43 +1,34 @@
 Goal (incl. success criteria):
-- Switch repo to uv/pyproject/uv.lock workflow; update README with correct paths, BigQuery methods summary, and repo layout notes; refactor notebooks to use .env workflow.
+- Review notebook(s) for validation metrics details to answer reviewer feedback questions.
 
 Constraints/Assumptions:
-- Follow AGENTS.md instructions; Python-first; prioritize readability/reproducibility.
-- Use Ruff only if lint/format needed; avoid pip/conda in committed docs.
-- No Windows support required in README.
+- Follow AGENTS.md instructions; Python-first; prioritize accuracy and reproducibility.
+- Use evidence from notebooks; avoid speculation.
 
 Key decisions:
-- Use .env for configuration (BigQuery + working directory) across notebooks.
-- Pin Python to 3.11 in pyproject for uv lock; move ydata-profiling to optional extra due to pandas compatibility.
-- Remove legacy conda environment.yml.
+- Inspect Rater Agreement Analysis.ipynb for reviewer-vs-reviewer and model-vs-reviewer metrics.
+- Manuscript should report both mean set-F1 and micro set-F1.
 
 State:
-- Done: Updated README, created pyproject.toml and uv.lock, refactored notebooks for .env + WORK_DIR paths, removed environment.yml.
-- Now: Report changes and note uv lock warnings/conflict resolution.
-- Next: Apply any requested tweaks or run tests if asked.
+- Done: Scanned Rater Agreement Analysis.ipynb for κ/F1 definitions, reviewer-vs-reviewer agreement, micro/macro, per-category outputs.
+- Now: Summarize findings vs reviewer feedback questions.
+- Next: Provide response with file references and identify any gaps/clarifications needed.
 
 Done:
-- README.md updated for uv workflow, BigQuery methods summary, corrected notebook ordering, and accurate paths.
-- pyproject.toml added; uv.lock generated via uv for Python 3.11.
-- MIMICIV_hypercap_EXT_cohort.ipynb, Hypercap CC NLP Classifier.ipynb, Hypercap CC NLP Analysis.ipynb, Rater Agreement Analysis.ipynb refactored to load .env and use WORK_DIR/DATA_DIR.
-- environment.yml removed; README layout updated.
+- Updated ledger for validation-metrics review request.
+- Located set-level F1 (mean + micro) and per-category binary κ/AC1 stats in Rater Agreement Analysis.ipynb.
+- Verified reviewer-vs-reviewer and R3-vs-NLP agreement sections exist.
+- Added a manuscript draft paragraph and per-category summary outputs cell to Rater Agreement Analysis.ipynb.
 
 Now:
-- Prepare final response with summary and any follow-ups.
+- Note decision to report both mean and micro set-F1.
 
 Next:
-- If requested: adjust dependencies or clean notebook outputs.
+- Provide answers to feedback bullets with file references.
 
 Open questions (UNCONFIRMED if needed):
-- Whether to update Drafts notebooks to .env workflow.
+- Whether manuscript metrics are pulled directly from notebook outputs.
 
 Working set (files/ids/commands):
-- CONTINUITY.md
-- README.md
-- pyproject.toml
-- uv.lock
-- MIMICIV_hypercap_EXT_cohort.ipynb
-- Hypercap CC NLP Classifier.ipynb
-- Hypercap CC NLP Analysis.ipynb
 - Rater Agreement Analysis.ipynb
-- Command: uv lock --python 3.11
+- CONTINUITY.md
