@@ -144,6 +144,19 @@ If this section is empty or ambiguous, default to: correctness → clarity → r
   - label chunks clearly
   - keep reports narrative; keep heavy lifting in modules
 
+## Notebook edit/run protocol (Codex + VS Code)
+- Treat Codex edits as equivalent to manual edits.
+- After Codex changes a notebook:
+  - save the notebook
+  - re-run modified cells (or Restart Kernel → Run All if definitions/functions changed)
+- If edits are not appearing in VS Code:
+  - use “File: Revert File” or reload the window
+  - ensure `files.autoReload` is enabled
+- Preferred VS Code settings (user-level):
+  - `files.autoSave`: `onFocusChange`
+  - `files.autoReload`: `onFocusChange`
+  - `files.useExperimentalFileWatcher`: `true` (recommended for Box Sync paths)
+
 ## Modeling
 Choose tools that match the inferential goal:
 - Classical/statistical inference: `statsmodels` (including formula interfaces when helpful)
