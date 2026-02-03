@@ -5,6 +5,7 @@
   "ICD10_J9622",
   "ICD10_J9692",
   "ICD9_27803",
+  "abg_before_imv",
   "abg_hypercap_threshold",
   "admission_location",
   "admission_type",
@@ -43,6 +44,8 @@
   "first_abg_src",
   "first_abg_time",
   "first_icu_stay_id",
+  "first_imv_time",
+  "first_niv_time",
   "first_vbg_pco2",
   "first_vbg_ph",
   "first_vbg_src",
@@ -83,5 +86,6 @@
   "race_ed_raw",
   "race_hosp_raw",
   "subject_id",
+  "vbg_before_imv",
   "vbg_hypercap_threshold"
 ]

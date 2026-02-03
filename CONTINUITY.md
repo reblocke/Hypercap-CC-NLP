@@ -1,5 +1,5 @@
 Goal (incl. success criteria):
-- Troubleshoot the latest notebook error in MIMICIV_hypercap_EXT_cohort.ipynb.
+- Create a single merged spreadsheet that preserves the old 2025-10-14 cohort columns and appends new columns from the refactored outputs; document which sources contribute which fields.
 
 Constraints/Assumptions:
 - Follow AGENTS.md instructions; Python-first; prioritize accuracy and reproducibility.
@@ -9,10 +9,9 @@ Key decisions:
 - Use existing code/notebooks to determine cohort flow counts and definitions; flag gaps explicitly.
 
 State:
-- Done: Added missing-column guard for ICU POC panel aggregation.
-- Done: Added drop-before-merge to avoid duplicate POC flag columns.
-- Now: Ask user to re-run ICU POC panel cell.
-- Next: Confirm MergeError resolved.
+- Done: Notebook updated to emit merged CC spreadsheet and OR comorbidity flags across ED + hospital sources.
+- Now: Verified new 2026-02-02 CC output against old and merged files.
+- Next: Confirm if per-source comorbidity columns should remain.
 
 Done:
 - Updated ledger for cohort-construction review request.
@@ -38,18 +37,36 @@ Done:
 - Fixed lab item regex patterns (word boundaries) and added missing-column guard for panel aggregation.
 - Added missing-column guard for POC panel aggregation (pco2/ph/hco3/lactate).
 - Added guard to drop existing flag_any_gas_hypercapnia_poc before merging.
+- Inserted pipeline stages markdown, helper utilities, SQL registry, and QA checks in notebook.
+- Migrated 19 *_sql definitions into SQL registry and replaced run_sql_bq(...) calls to use sql("name").
+- Updated ED triage/vitals merge to select common keys dynamically (ed_stay_id or hadm_id).
+- Added ed_df column snapshot output in inventory cell.
+- Switched ICD comorbidity flags to SQL-side aggregation (per-hadm output).
+- Added prefix filters to reduce BigQuery CPU usage for ICD query.
+- Inserted execution timing note near top of notebook.
+- Redirected ed_vitals_long/labs_long/gas_panels/gas_panels_poc parquet outputs to DATA_DIR.
+- Redirected cohort_ed_stay.parquet to DATA_DIR.
+- Compared Excel outputs for column and key differences.
+- Extracted schema summaries for all Excel/Parquet files in MIMIC tabular data.
+- Created merged CC spreadsheet with old NLP columns + new refactor columns:
+  - mimic_hypercap_EXT_CC_with_NLP_plus_newcols_20260202_171627.xlsx (186 cols).
+- Modified comorbidity ICD flags to include ED + hospital sources (combined OR into flag_*).
+- Added merged CC export cell (outputs YYYY-MM-DD MIMICIV all with CC.xlsx).
+- Compared new 2026-02-02 CC file vs old/merged:
+  - New vs old: 0 diffs on shared columns; new has 75 extra columns.
+  - New vs merged: only diffs in combined comorbidity flags; new adds *_ed/_hosp columns.
 
 Now:
-- Ask user to re-run ICU POC panel aggregation cell.
+- Fixed QA cell to use per-stay gas_source_unknown_rate instead of undefined panel_source_unknown_rate.
+- Appended data dictionary export cell to notebook.
 
 Next:
-- Confirm successful re-run and no further join errors.
+- User to re-run notebook; verify new time-based fields and data dictionary outputs.
 
 Open questions (UNCONFIRMED if needed):
-- Whether ICU POC gas capture is required in your environment.
-- Preferred ICU LOS aggregation (sum vs max) if multiple stays.
+- Whether to keep per-source comorbidity columns (_hosp/_ed) in final outputs.
 
 Working set (files/ids/commands):
+- MIMIC tabular data/*.xlsx, *.parquet
 - MIMICIV_hypercap_EXT_cohort.ipynb
-- README.md
 - CONTINUITY.md
