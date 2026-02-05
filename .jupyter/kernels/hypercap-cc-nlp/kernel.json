@@ -1,0 +1,5 @@
+{
+  "argv": ["./.venv/bin/python", "-m", "ipykernel_launcher", "-f", "{connection_file}"],
+  "display_name": "Hypercap-CC-NLP (.venv)",
+  "language": "python"
+}

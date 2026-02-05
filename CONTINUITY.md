@@ -10,8 +10,8 @@ Key decisions:
 
 State:
 - Done: Notebook updated to emit merged CC spreadsheet and OR comorbidity flags across ED + hospital sources.
-- Now: Verified new 2026-02-02 CC output against old and merged files.
-- Next: Confirm if per-source comorbidity columns should remain.
+- Now: nbconvert retry running; update README with environment/execution workflow.
+- Next: Confirm nbconvert completes; capture errors if any.
 
 Done:
 - Updated ledger for cohort-construction review request.
@@ -55,13 +55,14 @@ Done:
 - Compared new 2026-02-02 CC file vs old/merged:
   - New vs old: 0 diffs on shared columns; new has 75 extra columns.
   - New vs merged: only diffs in combined comorbidity flags; new adds *_ed/_hosp columns.
+- Updated README.md with current environment + CLI execution workflow and new output artifacts.
+- Updated notebook gas source inference to use specimen-level label hints and fixed POC panel slice assignment to avoid SettingWithCopyWarning.
 
 Now:
-- Fixed QA cell to use per-stay gas_source_unknown_rate instead of undefined panel_source_unknown_rate.
-- Appended data dictionary export cell to notebook.
+- Nbconvert debug run completed; outputs written (new Excel/parquet/data dictionary). Only warnings observed (SettingWithCopyWarning).
 
 Next:
-- User to re-run notebook; verify new time-based fields and data dictionary outputs.
+- Check nbconvert completion status/output; if it hangs, run locally in terminal and capture errors.
 
 Open questions (UNCONFIRMED if needed):
 - Whether to keep per-source comorbidity columns (_hosp/_ed) in final outputs.
