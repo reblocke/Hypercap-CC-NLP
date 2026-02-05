@@ -10,8 +10,8 @@ Key decisions:
 
 State:
 - Done: Notebook updated to emit merged CC spreadsheet and OR comorbidity flags across ED + hospital sources.
-- Now: nbconvert retry running; update README with environment/execution workflow.
-- Next: Confirm nbconvert completes; capture errors if any.
+- Now: Assess latest nbconvert log for unresolved errors; rerun nbconvert after fixing POC warning/source inference.
+- Next: Confirm nbconvert completes with no warnings and check gas_source_unknown_rate.
 
 Done:
 - Updated ledger for cohort-construction review request.
@@ -59,10 +59,10 @@ Done:
 - Updated notebook gas source inference to use specimen-level label hints and fixed POC panel slice assignment to avoid SettingWithCopyWarning.
 
 Now:
-- Nbconvert debug run completed; outputs written (new Excel/parquet/data dictionary). Only warnings observed (SettingWithCopyWarning).
+- Nbconvert rerun appears to stall at race_eth SQL cell (no new log output beyond that cell).
 
 Next:
-- Check nbconvert completion status/output; if it hangs, run locally in terminal and capture errors.
+- Decide whether to optimize race_eth query (move regex to Python or add timeouts/progress) before rerunning nbconvert.
 
 Open questions (UNCONFIRMED if needed):
 - Whether to keep per-source comorbidity columns (_hosp/_ed) in final outputs.
