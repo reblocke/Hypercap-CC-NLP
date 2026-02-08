@@ -16,9 +16,9 @@ Key decisions:
 - Apply focused changes only in `.gitignore`, `.env.example`, `README.md`, and this ledger.
 
 State:
-- Done: user approved `.env` ignore/untrack + onboarding doc updates.
-- Now: patching files and untracking `.env`.
-- Next: run checks and push focused commit.
+- Done: `.env` hygiene + onboarding changes implemented and pushed.
+- Now: final handoff.
+- Next: none pending.
 
 Done:
 - Verified `.env` ignore state:
@@ -26,12 +26,23 @@ Done:
   - `git ls-files --stage -- .env` shows `.env` is tracked.
   - `git status --short -- .env` shows `.env` modified (`M .env`).
   - `git check-ignore` returns no matching ignore rule for `.env`.
+- Implemented changes:
+  - Added `.env` to `.gitignore`.
+  - Added `.env.example` template with required variables and placeholders.
+  - Updated README env section to use `cp .env.example .env` and fill local keys.
+  - Untracked `.env` with `git rm --cached .env` (local file retained).
+- Validation:
+  - `make test` -> `7 passed`
+  - `make lint` -> `All checks passed!`
+- Git:
+  - Commit: `72c531a` (`Stop tracking .env and add .env.example onboarding`)
+  - Pushed to `origin/main`.
 
 Now:
-- Implement and verify approved cleanup.
+- Deliver completion summary with file references.
 
 Next:
-- Commit/push cleanup so downstream users see `.env.example` onboarding.
+- None.
 
 Open questions (UNCONFIRMED if needed):
 - None.
@@ -45,3 +56,7 @@ Working set (files/ids/commands):
   - `git ls-files --stage -- .env`
   - `git check-ignore -v .env`
   - `git status --short -- .env`
+  - `git rm --cached .env`
+  - `make test && make lint`
+  - `git commit -m "Stop tracking .env and add .env.example onboarding"`
+  - `git push origin main`
