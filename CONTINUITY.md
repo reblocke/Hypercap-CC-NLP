@@ -15,8 +15,9 @@ Key decisions:
 State:
 - Done: merge completed into local `main`.
 - Done: validation checks passed on `main`.
-- Now: execute remote cleanup commands.
-- Next: summarize final branch state.
+- Done: remote cleanup completed (`main` pushed, feature branch removed remote/local).
+- Now: final handoff.
+- Next: none pending.
 
 Done:
 - Git status check:
@@ -31,15 +32,22 @@ Done:
   - Verification on `main`:
     - `make test` -> `7 passed`
     - `make lint` -> `All checks passed!`
+- Remote cleanup executed:
+  - `git push origin main` succeeded (`6cf226d..d04d617`).
+  - `git push origin --delete codex/hypercap-analysis-stabilize` succeeded.
+  - `git branch -d codex/hypercap-analysis-stabilize` succeeded locally.
+- Final branch state:
+  - `main` tracks `origin/main` at `d04d617`.
+  - No remaining local feature branches for this work.
 
 Now:
-- Run push/delete branch commands.
+- Deliver completion summary and note remaining untracked cache dirs.
 
 Next:
-- Confirm `git status`/`git branch -vv` after cleanup.
+- Optional: add `__pycache__/` to `.gitignore` if desired.
 
 Open questions (UNCONFIRMED if needed):
-- None.
+- UNCONFIRMED: whether to ignore/remove `src/hypercap_cc_nlp/__pycache__/` and `tests/__pycache__/` created during test runs.
 
 Working set (files/ids/commands):
 - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/CONTINUITY.md`
@@ -51,3 +59,7 @@ Working set (files/ids/commands):
   - `git add CONTINUITY.md && git commit -m "Update continuity ledger for merge operation"`
   - `git switch main && git merge --no-ff codex/hypercap-analysis-stabilize`
   - `make test && make lint`
+  - `git add CONTINUITY.md && git commit -m "Update continuity ledger for remote cleanup"`
+  - `git push origin main`
+  - `git push origin --delete codex/hypercap-analysis-stabilize`
+  - `git branch -d codex/hypercap-analysis-stabilize`
