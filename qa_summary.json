@@ -9,8 +9,57 @@
   "pct_any_gas_0_24h": 0.9468280427115041,
   "gas_source_other_rate": 1.0,
   "source_unknown_rate": 1.0,
+  "omr_diagnostics": {
+    "window_days": 365,
+    "source_rows_prepared": 46494,
+    "parsed_value_rows": 46489,
+    "ed_rows": 41394,
+    "ed_rows_eligible_for_join": 41394,
+    "subject_overlap_count": 2102,
+    "candidate_rows_after_subject_join": 7906,
+    "days_before_min": -4055,
+    "days_before_max": -262,
+    "nonnegative_candidate_rows": 0,
+    "within_window_candidate_rows": 0,
+    "eligible_ed_stays_with_candidates": 0,
+    "attached_non_null_counts": {
+      "bmi_closest_pre_ed": 0,
+      "height_closest_pre_ed": 0,
+      "weight_closest_pre_ed": 0
+    },
+    "source_rows_raw": 46494,
+    "prepared_rows": 46494
+  },
+  "unexpected_full_null_fields": [
+    "bmi_closest_pre_ed",
+    "height_closest_pre_ed",
+    "weight_closest_pre_ed"
+  ],
+  "expected_structural_null_fields": [],
+  "uom_expectation_checks": {
+    "expected_structural_null_fields": [
+      "poc_abg_ph_uom",
+      "poc_vbg_ph_uom",
+      "poc_other_ph_uom"
+    ],
+    "structural_null_checks": {},
+    "paco2_uom_checks": {
+      "poc_abg_paco2_uom": {
+        "present": false,
+        "reason": "missing_value_or_uom_column"
+      },
+      "poc_vbg_paco2_uom": {
+        "present": false,
+        "reason": "missing_value_or_uom_column"
+      },
+      "poc_other_paco2_uom": {
+        "present": false,
+        "reason": "missing_value_or_uom_column"
+      }
+    }
+  },
   "run_metadata": {
-    "run_utc": "2026-02-08T18:35:56.578100+00:00",
+    "run_utc": "2026-02-08T22:07:46.132727+00:00",
     "work_project": "mimic-hypercapnia",
     "physionet_project": "physionet-data",
     "datasets": {

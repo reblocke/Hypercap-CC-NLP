@@ -1,74 +1,76 @@
 Goal (incl. success criteria):
-- Refactor `Rater Agreement Analysis.ipynb` as a notebook-only implementation that is collaborator-shareable and reproducible, without changing statistical estimands/formulas or output file conventions.
+- Integrate `Rater Agreement Analysis.ipynb` into the canonical execution chain:
+  `MIMICIV_hypercap_EXT_cohort.ipynb -> Hypercap CC NLP Classifier.ipynb -> Rater Agreement Analysis.ipynb -> Hypercap CC NLP Analysis.ipynb`.
 - Success criteria:
-  - Single explicit config cell for paths/sheets/output dirs.
-  - Shared helper definitions deduplicated into one code cell.
-  - Fail-fast validation for required files/sheets/columns/key uniqueness.
-  - In-notebook assertions gate major computations.
-  - Notebook metadata normalized (repo-local kernel + valid cell IDs).
-  - Verification passes: `pytest`, `ruff`, headless notebook run, parity check against baseline outputs.
+  - Rater notebook uses canonical classifier output by default, with env override support.
+  - Rater join tolerates partial overlap and emits explicit unmatched/audit artifacts.
+  - Makefile includes `notebook-rater` and pipeline ordering includes rater before analysis.
+  - README documents updated order, overrides, and join-audit behavior.
+  - Repo checks pass.
 
 Constraints/Assumptions:
-- Keep all agreement logic in the notebook (no extraction to `src`).
-- Preserve statistical estimands and formulas.
-- Preserve existing output paths/files:
-  - `Annotation/Full Annotations/Agreement Metrics/`
-  - `annotation_agreement_outputs_nlp/`
-- Do not modify unrelated dirty files.
-- No new dependencies.
+- No changes to scientific estimands; metrics remain computed on matched rows.
+- No dependency additions.
+- Existing unrelated dirty files are not reverted.
+- Full pipeline notebook execution can be environment/runtime constrained.
 
 Key decisions:
-- Notebook-only refactor.
-- Explicit path configuration (no auto-discovery).
-- Assertions in notebook for deterministic checks.
-- Keep tracked output artifact workflow unchanged.
-- Keep canonical category normalization consistent with label normalization (fixes silent category drop).
+- Unmatched policy: warn + continue when matched rows > 0; fail when matched rows == 0.
+- Analysis stage remains ordered-independent from rater artifacts.
+- Canonical rater NLP input defaults to `MIMICIV all with CC_with_NLP.xlsx`.
 
 State:
-- Done: implementation + execution + verification.
-- Now: stage and create checkpoint commits for notebook and regenerated agreement artifacts only.
-- Next: final handoff summary.
+- Done: implementation and validation completed.
+- Now: final handoff summary.
+- Next: optional full `make notebook-pipeline` run in local environment if desired.
 
 Done:
-- Captured baseline snapshot to `/tmp/rater_agreement_baseline.json` from pre-refactor outputs.
+- Added `resolve_rater_nlp_input_path` to `src/hypercap_cc_nlp/workflow_contracts.py`.
+- Added `src/hypercap_cc_nlp/rater_core.py`:
+  - `normalize_join_keys`
+  - `build_r3_nlp_join_audit`
+- Exported new helpers in `src/hypercap_cc_nlp/__init__.py`.
+- Added tests:
+  - `tests/test_rater_core.py`
+  - updated `tests/test_workflow_contracts.py` for rater resolver.
 - Refactored `Rater Agreement Analysis.ipynb`:
-  - Added dedicated config cell with explicit paths.
-  - Added single shared helper cell (deduplicated logic used by both analyses).
-  - Added fail-fast validators for sheets/columns/unique merge keys.
-  - Added deterministic assertions for row counts, bounds, matrix shapes, and output schemas.
-  - Normalized notebook metadata to repo kernel (`hypercap-cc-nlp`) and ensured all cells have IDs.
-- Executed notebook headlessly end-to-end with nbconvert (`--inplace`), no cell errors.
-- Ran checks:
-  - `uv run pytest -q` -> `14 passed`
-  - `uv run --with ruff ruff check src tests` -> `All checks passed!`
-- Parity comparison against baseline:
-  - Set-level metrics remained aligned.
-  - Binary chance-corrected metrics changed because canonical category normalization now maps
-    `Diseases (patient-stated diagnosis)` correctly instead of silently dropping it.
-  - This bug fix changed related AC1/kappa aggregates and output file hashes as expected.
+  - canonical NLP resolver usage with `RATER_NLP_INPUT_FILENAME`
+  - optional `RATER_ANNOTATION_PATH`
+  - `src` bootstrap for imports
+  - helper-based join audit with explicit warnings
+  - new outputs:
+    - `annotation_agreement_outputs_nlp/R3_vs_NLP_unmatched_adjudicated_keys.csv`
+    - `annotation_agreement_outputs_nlp/R3_vs_NLP_unmatched_nlp_keys.csv`
+    - `annotation_agreement_outputs_nlp/R3_vs_NLP_join_audit.json`
+- Updated `Makefile`:
+  - new target `notebook-rater`
+  - `notebook-pipeline` now runs cohort -> classifier -> rater -> analysis.
+- Updated `README.md` pipeline order, overrides, and result mapping docs.
+- Validation:
+  - `uv run pytest -q tests/test_rater_core.py tests/test_workflow_contracts.py` (pass)
+  - `uv run --with ruff ruff check src tests` (pass)
+  - `make test` (pass, 25 tests)
+  - `make lint` (pass)
+  - `make notebook-rater` (pass; artifacts written)
+  - `make -n notebook-pipeline` confirms updated order.
 
 Now:
-- Create checkpoint commits for:
-  - `Rater Agreement Analysis.ipynb`
-  - regenerated outputs under `Annotation/Full Annotations/Agreement Metrics/`
-  - regenerated outputs under `annotation_agreement_outputs_nlp/`
-  - `CONTINUITY.md`
+- Deliver implementation summary and verification results.
 
 Next:
-- Provide final implementation/verification summary with file references and note intentional metric deltas.
+- Optional: run full `make notebook-pipeline` end-to-end in user environment.
 
 Open questions (UNCONFIRMED if needed):
-- None.
+- UNCONFIRMED: long-term preferred default annotation workbook filename/versioning policy.
 
 Working set (files/ids/commands):
 - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/CONTINUITY.md`
+- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/src/hypercap_cc_nlp/workflow_contracts.py`
+- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/src/hypercap_cc_nlp/rater_core.py`
+- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/src/hypercap_cc_nlp/__init__.py`
+- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/tests/test_workflow_contracts.py`
+- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/tests/test_rater_core.py`
 - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Rater Agreement Analysis.ipynb`
-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Annotation/Full Annotations/Agreement Metrics/all3_multirater_ac1_by_category.csv`
-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Annotation/Full Annotations/Agreement Metrics/pair_R1_R2_binary_stats.csv`
-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Annotation/Full Annotations/Agreement Metrics/pair_R1_R3_binary_stats.csv`
-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Annotation/Full Annotations/Agreement Metrics/pair_R2_R3_binary_stats.csv`
-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Annotation/Full Annotations/Agreement Metrics/summary.txt`
-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/annotation_agreement_outputs_nlp/R3_vs_NLP_binary_stats_by_category.csv`
-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/annotation_agreement_outputs_nlp/R3_vs_NLP_set_metrics_by_visit.csv`
-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/annotation_agreement_outputs_nlp/R3_vs_NLP_summary.txt`
-- `/tmp/rater_agreement_baseline.json`
+- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Makefile`
+- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/README.md`
+- Commands: `make test`, `make lint`, `make notebook-rater`, `make -n notebook-pipeline`

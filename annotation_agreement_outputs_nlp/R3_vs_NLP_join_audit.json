@@ -1,0 +1,14 @@
+{
+  "key_columns": [
+    "hadm_id",
+    "subject_id"
+  ],
+  "r3_rows": 160,
+  "nlp_rows": 41322,
+  "matched_rows": 160,
+  "unmatched_adjudicated_rows": 0,
+  "unmatched_nlp_rows": 41162,
+  "matched_rate_vs_adjudicated": 1.0,
+  "unmatched_rate_vs_adjudicated": 0.0,
+  "unmatched_rate_vs_nlp": 0.9961279705725764
+}

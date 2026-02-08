@@ -95,24 +95,54 @@ PY
 
 Note: `./.venv/bin/python -c "import os; print(bool(os.getenv('HF_TOKEN')))"` returns `False` unless `HF_TOKEN` is already exported in your shell environment.
 
-### 3) Run the notebooks in order (interactive)
-1. `MIMICIV_hypercap_EXT_cohort.ipynb` – cohort assembly using BigQuery 
-2. `Annotation/` – manual annotation workflow  
-3. `Rater Agreement Analysis.ipynb` – inter‑rater reliability  
-4. `Hypercap CC NLP Classifier.ipynb` – model training
-5. `Hypercap CC NLP Analysis.ipynb` – model evaluation and figure generation  
+Optional workflow overrides (defaults use canonical handoff files):
 
-### 4) Run a notebook headlessly (reproducible CLI)
-We ship a **repo‑local kernelspec** that points to `.venv/bin/python`. Use it to avoid kernel/venv drift:
+```bash
+CLASSIFIER_INPUT_FILENAME="MIMICIV all with CC.xlsx"      # optional override for classifier input
+RATER_NLP_INPUT_FILENAME="MIMICIV all with CC_with_NLP.xlsx"  # optional override for rater NLP input
+RATER_ANNOTATION_PATH="Annotation/Final 2025-10-14 Annotation Sample.xlsx"  # optional annotation workbook override
+ANALYSIS_INPUT_FILENAME="MIMICIV all with CC_with_NLP.xlsx"  # optional override for analysis input
+```
+
+### 3) Run the notebooks in order (interactive)
+Core pipeline:
+1. `MIMICIV_hypercap_EXT_cohort.ipynb` – cohort assembly using BigQuery
+2. `Hypercap CC NLP Classifier.ipynb` – consumes canonical cohort workbook and writes canonical NLP workbook
+3. `Rater Agreement Analysis.ipynb` – compares adjudicated labels to classifier output and writes agreement artifacts
+4. `Hypercap CC NLP Analysis.ipynb` – consumes canonical NLP workbook and produces analysis exports
+
+Related (independent) workflows:
+- `Annotation/` – manual annotation workflow
+
+### 4) Run the pipeline headlessly (reproducible CLI)
+Preferred deterministic entrypoint:
+
+```bash
+make notebook-pipeline
+```
+
+Run stages individually:
+
+```bash
+make notebook-cohort
+make notebook-classifier
+make notebook-rater
+make notebook-analysis
+```
+
+Direct `nbconvert` invocation is also supported. We ship a **repo‑local kernelspec** that points to `.venv/bin/python` to avoid kernel/venv drift:
+
 ```bash
 JUPYTER_PATH="$PWD/.jupyter" ./.venv/bin/python -m jupyter nbconvert \
   --to notebook --execute --inplace \
   --ClearOutputPreprocessor.enabled=True \
   --ExecutePreprocessor.timeout=0 \
   --ExecutePreprocessor.kernel_name=hypercap-cc-nlp \
-  "MIMICIV_hypercap_EXT_cohort.ipynb"
+  "Hypercap CC NLP Classifier.ipynb"
 ```
-If you prefer a user‑level kernel (for VS Code selection), you can also run:
+
+### 5) Install a user-level kernel (optional, VS Code selection)
+If you prefer a user-level kernel for editor selection, run:
 ```bash
 ./.venv/bin/python -m ipykernel install --user --name hypercap-cc-nlp --display-name "Python (hypercap-cc-nlp)"
 ```
@@ -149,7 +179,13 @@ Requires credentialed access to **MIMIC‑IV on BigQuery** (HOSP + ICU) and **MI
 ```
 
 ## Workflow overview
-MIMIC‑IV (BigQuery) → cohort assembly → manual annotation → agreement analysis → NLP classifier → evaluation artifacts.
+Canonical execution chain:
+- `MIMICIV_hypercap_EXT_cohort.ipynb` → `MIMIC tabular data/MIMICIV all with CC.xlsx`
+- `Hypercap CC NLP Classifier.ipynb` → `MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx`
+- `Rater Agreement Analysis.ipynb` reads the canonical NLP workbook above and writes join-audit artifacts plus agreement outputs.
+- `Hypercap CC NLP Analysis.ipynb` reads the canonical NLP workbook above.
+
+Annotation workbook curation remains an independent manual workflow.
 
 ## Methods summary (BigQuery pipeline)
 - Query MIMIC‑IV HOSP/ICU/ED in BigQuery and assemble an **ED‑stay** cohort anchored to the first ED visit per hospitalization.
@@ -165,7 +201,7 @@ MIMIC‑IV (BigQuery) → cohort assembly → manual annotation → agreement an
 | Cohort export | `MIMICIV_hypercap_EXT_cohort.ipynb` | `MIMIC tabular data/mimic_hypercap_EXT_bq_abg_vbg_<timestamp>.xlsx` |
 | ED‑CC‑only cohort | `MIMICIV_hypercap_EXT_cohort.ipynb` | `MIMIC tabular data/mimic_hypercap_EXT_EDcc_only_bq_abg_vbg_<timestamp>.xlsx` |
 | ED‑CC sample | `MIMICIV_hypercap_EXT_cohort.ipynb` | `MIMIC tabular data/mimic_hypercap_EXT_EDcc_sample160_bq_abg_vbg_<timestamp>.xlsx` |
-| Full CC workbook (no NLP) | `MIMICIV_hypercap_EXT_cohort.ipynb` | `MIMIC tabular data/YYYY-MM-DD MIMICIV all with CC.xlsx` |
+| Full CC workbook (no NLP) | `MIMICIV_hypercap_EXT_cohort.ipynb` | Canonical: `MIMIC tabular data/MIMICIV all with CC.xlsx`; archive: `MIMIC tabular data/prior runs/YYYY-MM-DD MIMICIV all with CC.xlsx` |
 | Data dictionary | `MIMICIV_hypercap_EXT_cohort.ipynb` | `MIMIC tabular data/YYYY-MM-DD MIMICIV all with CC_data_dictionary.xlsx` |
 | QA summary | `MIMICIV_hypercap_EXT_cohort.ipynb` | `qa_summary.json` |
 | Lab item map | `MIMICIV_hypercap_EXT_cohort.ipynb` | `lab_item_map.json` |
@@ -178,8 +214,17 @@ MIMIC‑IV (BigQuery) → cohort assembly → manual annotation → agreement an
 | Gas panels (ICU POC) | `MIMICIV_hypercap_EXT_cohort.ipynb` | `MIMIC tabular data/gas_panels_poc.parquet` |
 | Manual agreement metrics | `Rater Agreement Analysis.ipynb` | `Annotation/Full Annotations/Agreement Metrics/` |
 | NLP vs R3 agreement | `Rater Agreement Analysis.ipynb` | `annotation_agreement_outputs_nlp/` |
-| NLP‑augmented workbook | `Hypercap CC NLP Classifier.ipynb` | `MIMIC tabular data/*_with_NLP.xlsx` |
+| R3/NLP join audit | `Rater Agreement Analysis.ipynb` | `annotation_agreement_outputs_nlp/R3_vs_NLP_join_audit.json`, `annotation_agreement_outputs_nlp/R3_vs_NLP_unmatched_adjudicated_keys.csv`, `annotation_agreement_outputs_nlp/R3_vs_NLP_unmatched_nlp_keys.csv` |
+| NLP‑augmented workbook | `Hypercap CC NLP Classifier.ipynb` | Canonical: `MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx`; archive: `MIMIC tabular data/prior runs/YYYY-MM-DD MIMICIV all with CC_with_NLP.xlsx` |
 | Analysis exports | `Hypercap CC NLP Analysis.ipynb` | `Symptom_Composition_by_Hypercapnia_Definition.xlsx`, `Symptom_Composition_Pivot_ChartReady.xlsx` |
+
+Rater join policy:
+- Rater/NLP agreement is computed on matched `(hadm_id, subject_id)` rows.
+- Unmatched adjudicated and unmatched NLP keys are exported for audit, and the notebook continues when at least one matched row exists.
+
+Schema transition note:
+- Classifier intake now applies transitional aliases (`age`, `hr`, `rr`, `sbp`, `dbp`, `temp`, `spo2`, `race`) from canonical source columns when alias columns are absent.
+- Source columns are preserved; aliases are compatibility scaffolding and may be deprecated after full downstream migration.
 
 ## Quality checks / tests
 Run repo checks locally after dependency sync:
