@@ -1,31 +1,29 @@
-# Use one path: conda OR pure pip. Targets are idempotent.
+# Maintained convenience targets for the uv-based workflow.
 
-# -------- Conda workflow --------
-conda-create:
-	conda env create -f environment.yml || conda env update -f environment.yml
-	@echo "Activate: conda activate mimiciv-tabular"
-	@echo "Install Jupyter kernel:"
-	@echo "  python -m ipykernel install --user --name mimiciv-tabular --display-name 'Python (mimiciv-tabular)'"
+.PHONY: setup spacy-model kernel-install bq-auth test lint format smoke notebook-cohort
 
-# -------- Pure pip workflow --------
-venv-create:
-	python3 -m venv .venv
-	. .venv/bin/activate && python -m pip install --upgrade pip pip-tools
-	@echo "Activate: source .venv/bin/activate"
+setup:
+	uv sync
 
-pip-compile:
-	. .venv/bin/activate && pip-compile --generate-hashes -o requirements.txt requirements.in
+spacy-model:
+	./.venv/bin/python -m spacy download en_core_web_sm
 
-pip-sync:
-	. .venv/bin/activate && pip-sync requirements.txt
-	. .venv/bin/activate && python -m ipykernel install --user --name mimiciv-tabular --display-name 'Python (mimiciv-tabular)'
+kernel-install:
+	./.venv/bin/python -m ipykernel install --user --name hypercap-cc-nlp --display-name "Python (hypercap-cc-nlp)"
 
-# -------- Auth + tests --------
 bq-auth:
 	gcloud auth application-default login
 
-smoke:
-	. .venv/bin/activate 2>/dev/null || true; python smoke_test.py
+test:
+	uv run pytest -q
 
-# Phony
-.PHONY: conda-create venv-create pip-compile pip-sync bq-auth smoke
+lint:
+	uv run --with ruff ruff check src tests
+
+format:
+	uv run --with ruff ruff format src tests
+
+smoke: test
+
+notebook-cohort:
+	JUPYTER_PATH="$$PWD/.jupyter" ./.venv/bin/python -m jupyter nbconvert --to notebook --execute --inplace --ClearOutputPreprocessor.enabled=True --ExecutePreprocessor.timeout=0 --ExecutePreprocessor.kernel_name=hypercap-cc-nlp "MIMICIV_hypercap_EXT_cohort.ipynb"
