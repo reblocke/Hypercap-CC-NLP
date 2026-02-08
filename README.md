@@ -12,11 +12,48 @@ Until a manuscript/preprint is available, please cite the repository (and MIMIC 
 
 ## Quick start
 
-> You need credentialed access to MIMIC‑IV (structured) and, if using notes, MIMIC‑IV‑Note (see **Data access**). This repository is notebook‑driven; it does not install as a Python package.
+> You need credentialed access to MIMIC‑IV (structured) and, if using notes, MIMIC‑IV‑Note (see **Data access**). This repository is notebook-first; shared reusable logic lives under `src/hypercap_cc_nlp/`.
 
 ### 1) Create the environment (uv)
 ```bash
 uv sync
+```
+
+### 1a) Configure BigQuery CLI auth (one-time per machine)
+The cohort notebook expects Google Application Default Credentials.
+
+```bash
+gcloud init
+gcloud auth application-default login
+gcloud services enable bigquery.googleapis.com --project <your-billing-project-id>
+```
+
+### 1b) Install the required spaCy English model (`en_core_web_sm`)
+`Hypercap CC NLP Classifier.ipynb` now fails fast if this model is missing, to avoid silent NLP quality drift.
+
+```bash
+./.venv/bin/python -m spacy download en_core_web_sm
+```
+
+If your venv reports `No module named pip`, bootstrap pip first:
+```bash
+./.venv/bin/python -m ensurepip --upgrade
+./.venv/bin/python -m pip --version
+./.venv/bin/python -m spacy download en_core_web_sm
+```
+
+If `spacy download` fails due network/DNS restrictions, install the wheel directly (after downloading it from a machine with internet access):
+```bash
+./.venv/bin/python -m pip install /path/to/en_core_web_sm-3.8.0-py3-none-any.whl
+```
+
+Quick verification:
+```bash
+./.venv/bin/python - <<'PY'
+import spacy
+nlp = spacy.load("en_core_web_sm")
+print("Loaded spaCy model:", nlp.meta.get("name"), nlp.meta.get("version"))
+PY
 ```
 
 ### 2) Configure paths
@@ -30,6 +67,7 @@ BQ_DATASET_HOSP=mimiciv_3_1_hosp
 BQ_DATASET_ICU=mimiciv_3_1_icu
 BQ_DATASET_ED=mimiciv_ed
 WORK_DIR=/path/to/Hypercap-CC-NLP
+# HF_TOKEN=<optional-huggingface-token-for-authenticated-model-downloads>
 # GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
 ```
 
@@ -60,13 +98,18 @@ Requires credentialed access to **MIMIC‑IV on BigQuery** (HOSP + ICU) and **MI
 
 ## Environment
 - Environment files: `pyproject.toml` + `uv.lock`
+- Python: `>=3.11,<3.12`
 - OS: macOS / Linux
+- External tools: Google Cloud SDK (`gcloud`) for BigQuery auth
 - GPU not required unless deep models are added.
 
 ## Repository layout
 ```
+├── src/hypercap_cc_nlp/         # importable analysis helpers
+├── tests/                       # pytest coverage for core helpers
 ├── Annotation/
 ├── annotation_agreement_outputs_nlp/
+├── debug/abg_vbg_capture/       # ABG/VBG capture forensics (debug-only)
 ├── Drafts/                     # manuscript/abstract drafts
 ├── Legacy Code/                # prior versions / deprecated experiments
 ├── MIMIC tabular data/         # raw/derived data exports (not shared; request access)
@@ -103,6 +146,8 @@ MIMIC‑IV (BigQuery) → cohort assembly → manual annotation → agreement an
 | QA summary | `MIMICIV_hypercap_EXT_cohort.ipynb` | `qa_summary.json` |
 | Lab item map | `MIMICIV_hypercap_EXT_cohort.ipynb` | `lab_item_map.json` |
 | Lab unit audit | `MIMICIV_hypercap_EXT_cohort.ipynb` | `lab_unit_audit.csv` |
+| Current admission columns | `MIMICIV_hypercap_EXT_cohort.ipynb` | `current_columns.json` |
+| Current ED columns (if `ed_df` exists) | `MIMICIV_hypercap_EXT_cohort.ipynb` | `ed_columns.json` |
 | ED vitals (long) | `MIMICIV_hypercap_EXT_cohort.ipynb` | `MIMIC tabular data/ed_vitals_long.parquet` |
 | Labs (long) | `MIMICIV_hypercap_EXT_cohort.ipynb` | `MIMIC tabular data/labs_long.parquet` |
 | Gas panels (HOSP) | `MIMICIV_hypercap_EXT_cohort.ipynb` | `MIMIC tabular data/gas_panels.parquet` |
@@ -113,7 +158,30 @@ MIMIC‑IV (BigQuery) → cohort assembly → manual annotation → agreement an
 | Analysis exports | `Hypercap CC NLP Analysis.ipynb` | `Symptom_Composition_by_Hypercapnia_Definition.xlsx`, `Symptom_Composition_Pivot_ChartReady.xlsx` |
 
 ## Quality checks / tests
-A synthetic small-note smoke test is recommended.
+Run repo checks locally after dependency sync:
+
+```bash
+uv run pytest -q
+uv run --with ruff ruff check src tests
+```
+
+Optional formatting:
+
+```bash
+uv run --with ruff ruff format src tests
+```
+
+## Debug workflows
+`debug/abg_vbg_capture/` contains debug-only forensics notebooks for ABG/VBG capture deltas, including run order and generated artifacts:
+
+- `01_extract_current_vs_legacy.ipynb`
+- `02_reason_attribution.ipynb`
+- `03_fix_validation.ipynb`
+
+See `debug/abg_vbg_capture/README.md` for scope, inputs, and outputs.
+
+## Quarto / R note
+`Chart Review Sample Calc.qmd` uses R packages (`presize`, `kappaSize`, `irr`) for reference-standard power calculations.
 
 ## License
 Released under the **MIT License**.
