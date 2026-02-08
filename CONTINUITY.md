@@ -1,62 +1,74 @@
 Goal (incl. success criteria):
-- Implement `.env` hygiene and onboarding:
-  - ignore and untrack `.env`,
-  - add `.env.example`,
-  - update README so new users copy the example and fill their own keys.
+- Refactor `Rater Agreement Analysis.ipynb` as a notebook-only implementation that is collaborator-shareable and reproducible, without changing statistical estimands/formulas or output file conventions.
 - Success criteria:
-  - `.env` is no longer tracked.
-  - `.env.example` is present and documented in README.
-  - Instructions explicitly tell users to paste their own keys into `.env`.
+  - Single explicit config cell for paths/sheets/output dirs.
+  - Shared helper definitions deduplicated into one code cell.
+  - Fail-fast validation for required files/sheets/columns/key uniqueness.
+  - In-notebook assertions gate major computations.
+  - Notebook metadata normalized (repo-local kernel + valid cell IDs).
+  - Verification passes: `pytest`, `ruff`, headless notebook run, parity check against baseline outputs.
 
 Constraints/Assumptions:
-- Do not modify unrelated dirty files in working tree.
-- Keep token handling safe (never echo token value in outputs).
+- Keep all agreement logic in the notebook (no extraction to `src`).
+- Preserve statistical estimands and formulas.
+- Preserve existing output paths/files:
+  - `Annotation/Full Annotations/Agreement Metrics/`
+  - `annotation_agreement_outputs_nlp/`
+- Do not modify unrelated dirty files.
+- No new dependencies.
 
 Key decisions:
-- Apply focused changes only in `.gitignore`, `.env.example`, `README.md`, and this ledger.
+- Notebook-only refactor.
+- Explicit path configuration (no auto-discovery).
+- Assertions in notebook for deterministic checks.
+- Keep tracked output artifact workflow unchanged.
+- Keep canonical category normalization consistent with label normalization (fixes silent category drop).
 
 State:
-- Done: `.env` hygiene + onboarding changes implemented and pushed.
-- Now: final handoff.
-- Next: none pending.
+- Done: implementation + execution + verification.
+- Now: stage and create checkpoint commits for notebook and regenerated agreement artifacts only.
+- Next: final handoff summary.
 
 Done:
-- Verified `.env` ignore state:
-  - `.gitignore` currently contains no `.env` pattern.
-  - `git ls-files --stage -- .env` shows `.env` is tracked.
-  - `git status --short -- .env` shows `.env` modified (`M .env`).
-  - `git check-ignore` returns no matching ignore rule for `.env`.
-- Implemented changes:
-  - Added `.env` to `.gitignore`.
-  - Added `.env.example` template with required variables and placeholders.
-  - Updated README env section to use `cp .env.example .env` and fill local keys.
-  - Untracked `.env` with `git rm --cached .env` (local file retained).
-- Validation:
-  - `make test` -> `7 passed`
-  - `make lint` -> `All checks passed!`
-- Git:
-  - Commit: `72c531a` (`Stop tracking .env and add .env.example onboarding`)
-  - Pushed to `origin/main`.
+- Captured baseline snapshot to `/tmp/rater_agreement_baseline.json` from pre-refactor outputs.
+- Refactored `Rater Agreement Analysis.ipynb`:
+  - Added dedicated config cell with explicit paths.
+  - Added single shared helper cell (deduplicated logic used by both analyses).
+  - Added fail-fast validators for sheets/columns/unique merge keys.
+  - Added deterministic assertions for row counts, bounds, matrix shapes, and output schemas.
+  - Normalized notebook metadata to repo kernel (`hypercap-cc-nlp`) and ensured all cells have IDs.
+- Executed notebook headlessly end-to-end with nbconvert (`--inplace`), no cell errors.
+- Ran checks:
+  - `uv run pytest -q` -> `14 passed`
+  - `uv run --with ruff ruff check src tests` -> `All checks passed!`
+- Parity comparison against baseline:
+  - Set-level metrics remained aligned.
+  - Binary chance-corrected metrics changed because canonical category normalization now maps
+    `Diseases (patient-stated diagnosis)` correctly instead of silently dropping it.
+  - This bug fix changed related AC1/kappa aggregates and output file hashes as expected.
 
 Now:
-- Deliver completion summary with file references.
+- Create checkpoint commits for:
+  - `Rater Agreement Analysis.ipynb`
+  - regenerated outputs under `Annotation/Full Annotations/Agreement Metrics/`
+  - regenerated outputs under `annotation_agreement_outputs_nlp/`
+  - `CONTINUITY.md`
 
 Next:
-- None.
+- Provide final implementation/verification summary with file references and note intentional metric deltas.
 
 Open questions (UNCONFIRMED if needed):
 - None.
 
 Working set (files/ids/commands):
 - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/CONTINUITY.md`
-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/.gitignore`
-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/.env`
-- Commands used:
-  - `nl -ba .gitignore`
-  - `git ls-files --stage -- .env`
-  - `git check-ignore -v .env`
-  - `git status --short -- .env`
-  - `git rm --cached .env`
-  - `make test && make lint`
-  - `git commit -m "Stop tracking .env and add .env.example onboarding"`
-  - `git push origin main`
+- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Rater Agreement Analysis.ipynb`
+- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Annotation/Full Annotations/Agreement Metrics/all3_multirater_ac1_by_category.csv`
+- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Annotation/Full Annotations/Agreement Metrics/pair_R1_R2_binary_stats.csv`
+- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Annotation/Full Annotations/Agreement Metrics/pair_R1_R3_binary_stats.csv`
+- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Annotation/Full Annotations/Agreement Metrics/pair_R2_R3_binary_stats.csv`
+- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Annotation/Full Annotations/Agreement Metrics/summary.txt`
+- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/annotation_agreement_outputs_nlp/R3_vs_NLP_binary_stats_by_category.csv`
+- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/annotation_agreement_outputs_nlp/R3_vs_NLP_set_metrics_by_visit.csv`
+- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/annotation_agreement_outputs_nlp/R3_vs_NLP_summary.txt`
+- `/tmp/rater_agreement_baseline.json`
