@@ -16,8 +16,9 @@ State:
 - Done: merge completed into local `main`.
 - Done: validation checks passed on `main`.
 - Done: remote cleanup completed (`main` pushed, feature branch removed remote/local).
-- Now: apply cache cleanup + ignore update.
-- Next: verify git status and sync.
+- Done: cache cleanup + ignore update complete.
+- Now: final handoff.
+- Next: none pending.
 
 Done:
 - Git status check:
@@ -39,12 +40,21 @@ Done:
 - Final branch state:
   - `main` tracks `origin/main` at `d04d617`.
   - No remaining local feature branches for this work.
+- Final cache cleanup:
+  - Added `__pycache__/` to `.gitignore`.
+  - Removed `src/hypercap_cc_nlp/__pycache__/` and `tests/__pycache__/`.
+  - Re-ran checks:
+    - `make test` -> `7 passed`
+    - `make lint` -> `All checks passed!`
+  - Committed + pushed cleanup:
+    - commit `1f77348` on `main` (`Ignore and clean Python cache directories`)
+    - pushed to `origin/main`.
 
 Now:
-- Update `.gitignore`, remove cache dirs, verify status.
+- Deliver completion summary.
 
 Next:
-- Optional: commit/push cleanup commit.
+- None.
 
 Open questions (UNCONFIRMED if needed):
 - None.
