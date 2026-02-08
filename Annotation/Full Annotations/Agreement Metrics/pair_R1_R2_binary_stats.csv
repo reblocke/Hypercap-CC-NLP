@@ -10,7 +10,7 @@ category,N,percent_agreement,cohen_kappa,gwet_ac1,category_name
 8,160,1.0,,1.0,Symptom – Eye/Ear
 9,160,0.96875,0.7452229299363058,0.9643819149172993,Symptom – General
 10,160,1.0,,1.0,Symptom – Psychological
-11,160,1.0,,1.0,Diseases (patient-stated diagnosis)
+11,160,0.925,0.7427652733118973,0.8945518453427066,Diseases (patient–stated diagnosis)
 12,160,0.96875,0.7455470737913483,0.9643819149172993,Abnormal test result
 13,160,0.975,0.0,0.974367190003204,Diagnostic/Screening/Preventive
 14,160,1.0,1.0,1.0,Treatment/Medication

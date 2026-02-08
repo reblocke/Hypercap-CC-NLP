@@ -10,7 +10,7 @@ category,percent_agreement,gwet_ac1,prevalence,category_name
 8,1.0,1.0,0.0,Symptom – Eye/Ear
 9,0.9458333333333332,0.9360655737704916,0.08333333333333333,Symptom – General
 10,1.0,1.0,0.0,Symptom – Psychological
-11,1.0,1.0,0.0,Diseases (patient-stated diagnosis)
+11,0.95,0.929701230228471,0.175,Diseases (patient–stated diagnosis)
 12,0.9791666666666666,0.9761072783203416,0.06875,Abnormal test result
 13,0.9833333333333334,0.9830532410676459,0.008333333333333333,Diagnostic/Screening/Preventive
 14,0.9875,0.9871835950016021,0.0125,Treatment/Medication
