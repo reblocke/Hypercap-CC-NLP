@@ -1,73 +1,56 @@
 Goal (incl. success criteria):
-- Create a single merged spreadsheet that preserves the old 2025-10-14 cohort columns and appends new columns from the refactored outputs; document which sources contribute which fields.
+- Implement and verify fixes for residual output anomalies in `MIMICIV_hypercap_EXT_cohort.ipynb` so final outputs are semantically correct and reproducible.
+- Success = canonical workbook and QA artifacts show coherent ABG/VBG/other thresholds+flags, any-gas aggregation, and clear row-count semantics with no runtime errors.
 
 Constraints/Assumptions:
-- Follow AGENTS.md instructions; Python-first; prioritize accuracy and reproducibility.
-- Use evidence from notebooks; avoid speculation.
+- Preserve hadm-level canonical output contract (`MIMICIV all with CC.xlsx`).
+- Keep notebook runnable start-to-finish via VS Code and nbconvert.
+- Avoid adding debug-only forensic logic into production notebook.
 
 Key decisions:
-- Use existing code/notebooks to determine cohort flow counts and definitions; flag gaps explicitly.
+- Use threshold semantics: ABG >=45 mmHg, VBG >=50 mmHg, OTHER >=50 mmHg.
+- Keep source buckets as arterial / venous / other (exclude non-blood-gas CO2 labels).
+- Add atomic workbook write to prevent zero-byte canonical output if run is interrupted.
 
 State:
-- Done: Notebook updated to emit merged CC spreadsheet and OR comorbidity flags across ED + hospital sources.
-- Now: Assess latest nbconvert log for unresolved errors; rerun nbconvert after fixing POC warning/source inference.
-- Next: Confirm nbconvert completes with no warnings and check gas_source_unknown_rate.
+- Done: Debug forensics executed and Option B integrated.
+- Done: Threshold normalization and hadm->ed flag alignment are in notebook.
+- Done: Patched final export cell to write dated/canonical Excel via tmp file + `os.replace`.
+- Done: Terminated orphan nbconvert background process that had clobbered canonical workbook.
+- Done: Restored canonical workbook from latest successful dated artifact.
+- Now: Reporting verification and residual warnings.
+- Next: Optional cleanup of historical zero-byte archive artifacts and optional FutureWarning noise suppression.
 
 Done:
-- Updated ledger for cohort-construction review request.
-- Located cohort inclusion logic, thresholds, and printed counts in MIMICIV_hypercap_EXT_cohort.ipynb.
-- Added cohort flow count cell (ED/ICU/blood gas/hypercapnia/CC) to MIMICIV_hypercap_EXT_cohort.ipynb.
-- Added ascertainment overlap counts cell (ABG-only/VBG-only/both; ICD+gas) to MIMICIV_hypercap_EXT_cohort.ipynb.
-- Verified ICD code handling (any diagnosis; ED + hospital sources combined) and code list in MIMICIV_hypercap_EXT_cohort.ipynb.
-- Added ICD source flags and categorical source variable (ED vs HOSP vs BOTH vs NONE) in MIMICIV_hypercap_EXT_cohort.ipynb.
-- Added missingness summary cell (chief complaint, race/ethnicity, ED triage/vitals) in MIMICIV_hypercap_EXT_cohort.ipynb.
-- Added symptom distribution by overlap cell and exports in Hypercap CC NLP Analysis.ipynb.
-- Added rationale markdown cells and section headings across all notebooks (cohort, NLP classifier/analysis, rater agreement, legacy notebooks).
-- Added ED-stay cohort expansion section with inventory, enrichment, labs, OMR, comorbidities, timing phenotypes, QA, and output exports.
-- Added ICU POC gas capture (chartevents) phase with item discovery, extraction, panels, and incremental yield reporting.
-- Added Excel export for ED-stay cohort dataset.
-- Added two final Excel outputs: all encounters with ED linkage flag, and ED chief-complaint-only ED-stay rows.
-- Added safeguards to rename ed_stay_id from stay_id in ED triage/vitals data to avoid merge KeyError.
-- Replaced ED triage/vitals cell with forced re-query + column diagnostics and merges on ed_stay_id.
-- Audited notebooks for randomness; only random sampling found was already seeded.
-- Added ED unique count in inventory and grouped missing-fields report by section.
-- Added diagnostic fingerprint comment in ED triage/vitals cell.
-- Patched run_sql_bq to accumulate array parameters instead of overwriting query_parameters.
-- Added notebook edit/run protocol to AGENTS.md.
-- Fixed lab item regex patterns (word boundaries) and added missing-column guard for panel aggregation.
-- Added missing-column guard for POC panel aggregation (pco2/ph/hco3/lactate).
-- Added guard to drop existing flag_any_gas_hypercapnia_poc before merging.
-- Inserted pipeline stages markdown, helper utilities, SQL registry, and QA checks in notebook.
-- Migrated 19 *_sql definitions into SQL registry and replaced run_sql_bq(...) calls to use sql("name").
-- Updated ED triage/vitals merge to select common keys dynamically (ed_stay_id or hadm_id).
-- Added ed_df column snapshot output in inventory cell.
-- Switched ICD comorbidity flags to SQL-side aggregation (per-hadm output).
-- Added prefix filters to reduce BigQuery CPU usage for ICD query.
-- Inserted execution timing note near top of notebook.
-- Redirected ed_vitals_long/labs_long/gas_panels/gas_panels_poc parquet outputs to DATA_DIR.
-- Redirected cohort_ed_stay.parquet to DATA_DIR.
-- Compared Excel outputs for column and key differences.
-- Extracted schema summaries for all Excel/Parquet files in MIMIC tabular data.
-- Created merged CC spreadsheet with old NLP columns + new refactor columns:
-  - mimic_hypercap_EXT_CC_with_NLP_plus_newcols_20260202_171627.xlsx (186 cols).
-- Modified comorbidity ICD flags to include ED + hospital sources (combined OR into flag_*).
-- Added merged CC export cell (outputs YYYY-MM-DD MIMICIV all with CC.xlsx).
-- Compared new 2026-02-02 CC file vs old/merged:
-  - New vs old: 0 diffs on shared columns; new has 75 extra columns.
-  - New vs merged: only diffs in combined comorbidity flags; new adds *_ed/_hosp columns.
-- Updated README.md with current environment + CLI execution workflow and new output artifacts.
-- Updated notebook gas source inference to use specimen-level label hints and fixed POC panel slice assignment to avoid SettingWithCopyWarning.
+- `MIMICIV_hypercap_EXT_cohort.ipynb`: atomic write helper (`_atomic_write_excel`) added in final export cell.
+- Syntax check over notebook code cells passed (0 syntax errors).
+- Output integrity checks:
+  - Canonical workbook size restored to non-zero (32,703,370 bytes).
+  - Workbook rows: 41,322 (hadm-level with CC), unique `hadm_id` and `ed_stay_id` = 41,322.
+  - Key thresholds/flags non-zero and coherent:
+    - `abg_hypercap_threshold` 10,748
+    - `vbg_hypercap_threshold` 17,549
+    - `other_hypercap_threshold` 36,518
+    - `pco2_threshold_any` 41,080
+    - `flag_any_gas_hypercapnia` 41,080
+- `qa_summary.json` reflects expected rows (`hadm_cc_rows` 41,322; `ed_spine_rows` 41,394).
 
 Now:
-- Nbconvert rerun appears to stall at race_eth SQL cell (no new log output beyond that cell).
+- Residual warning profile:
+  - No notebook `output_type:error` present.
+  - One pandas `FutureWarning` remains in outputs (non-fatal).
+  - `gas_source_other_rate` remains 1.0 (expected under current source mapping logic).
 
 Next:
-- Decide whether to optimize race_eth query (move regex to Python or add timeouts/progress) before rerunning nbconvert.
+- If requested, patch non-fatal `FutureWarning` source.
+- If requested, add run lock/guard to prevent concurrent writer collisions.
 
 Open questions (UNCONFIRMED if needed):
-- Whether to keep per-source comorbidity columns (_hosp/_ed) in final outputs.
+- UNCONFIRMED: Whether to treat `gas_source_other_rate == 1.0` as acceptable current-state behavior or require additional source inference refinement now.
 
 Working set (files/ids/commands):
-- MIMIC tabular data/*.xlsx, *.parquet
-- MIMICIV_hypercap_EXT_cohort.ipynb
-- CONTINUITY.md
+- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMICIV_hypercap_EXT_cohort.ipynb`
+- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/MIMICIV all with CC.xlsx`
+- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-07 MIMICIV all with CC.xlsx`
+- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/qa_summary.json`
+- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/debug/abg_vbg_capture/artifacts/nbconvert_verify_debug_20260207_171136.log`

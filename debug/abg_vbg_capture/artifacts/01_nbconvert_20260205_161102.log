@@ -1,0 +1,4 @@
+[NbConvertApp] Converting notebook debug/abg_vbg_capture/01_extract_current_vs_legacy.ipynb to notebook
+/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/.venv/lib/python3.11/site-packages/nbformat/__init__.py:96: MissingIDFieldWarning: Cell is missing an id field, this will become a hard error in future nbformat versions. You may want to use `normalize()` on your notebooks before validations (available since nbformat 5.1.4). Previous versions of nbformat are fixing this issue transparently, and will stop doing so in the future.
+  validate(nb)
+[NbConvertApp] Writing 20794 bytes to debug/abg_vbg_capture/01_extract_current_vs_legacy.ipynb

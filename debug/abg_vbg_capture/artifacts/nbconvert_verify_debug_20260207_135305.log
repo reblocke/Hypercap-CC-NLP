@@ -1,0 +1,186 @@
+[NbConvertApp] Converting notebook MIMICIV_hypercap_EXT_cohort.ipynb to notebook
+Traceback (most recent call last):
+  File "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/.venv/bin/jupyter-nbconvert", line 12, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/.venv/lib/python3.11/site-packages/jupyter_core/application.py", line 284, in launch_instance
+    super().launch_instance(argv=argv, **kwargs)
+  File "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/.venv/lib/python3.11/site-packages/traitlets/config/application.py", line 1075, in launch_instance
+    app.start()
+  File "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/.venv/lib/python3.11/site-packages/nbconvert/nbconvertapp.py", line 420, in start
+    self.convert_notebooks()
+  File "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/.venv/lib/python3.11/site-packages/nbconvert/nbconvertapp.py", line 597, in convert_notebooks
+    self.convert_single_notebook(notebook_filename)
+  File "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/.venv/lib/python3.11/site-packages/nbconvert/nbconvertapp.py", line 563, in convert_single_notebook
+    output, resources = self.export_single_notebook(
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/.venv/lib/python3.11/site-packages/nbconvert/nbconvertapp.py", line 487, in export_single_notebook
+    output, resources = self.exporter.from_filename(
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/.venv/lib/python3.11/site-packages/nbconvert/exporters/exporter.py", line 201, in from_filename
+    return self.from_file(f, resources=resources, **kw)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/.venv/lib/python3.11/site-packages/nbconvert/exporters/exporter.py", line 220, in from_file
+    return self.from_notebook_node(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/.venv/lib/python3.11/site-packages/nbconvert/exporters/notebook.py", line 36, in from_notebook_node
+    nb_copy, resources = super().from_notebook_node(nb, resources, **kw)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/.venv/lib/python3.11/site-packages/nbconvert/exporters/exporter.py", line 154, in from_notebook_node
+    nb_copy, resources = self._preprocess(nb_copy, resources)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/.venv/lib/python3.11/site-packages/nbconvert/exporters/exporter.py", line 353, in _preprocess
+    nbc, resc = preprocessor(nbc, resc)
+                ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/.venv/lib/python3.11/site-packages/nbconvert/preprocessors/base.py", line 48, in __call__
+    return self.preprocess(nb, resources)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/.venv/lib/python3.11/site-packages/nbconvert/preprocessors/execute.py", line 103, in preprocess
+    self.preprocess_cell(cell, resources, index)
+  File "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/.venv/lib/python3.11/site-packages/nbconvert/preprocessors/execute.py", line 124, in preprocess_cell
+    cell = self.execute_cell(cell, index, store_history=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/.venv/lib/python3.11/site-packages/jupyter_core/utils/__init__.py", line 165, in wrapped
+    return loop.run_until_complete(inner)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/blocke/.local/share/uv/python/cpython-3.11.10-macos-aarch64-none/lib/python3.11/asyncio/base_events.py", line 654, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/.venv/lib/python3.11/site-packages/nbclient/client.py", line 1062, in async_execute_cell
+    await self._check_raise_for_error(cell, cell_index, exec_reply)
+  File "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/.venv/lib/python3.11/site-packages/nbclient/client.py", line 918, in _check_raise_for_error
+    raise CellExecutionError.from_cell_and_msg(cell, exec_reply_content)
+nbclient.exceptions.CellExecutionError: An error occurred while executing the following cell:
+------------------
+# Purpose: Define a reusable BigQuery execution helper so SQL calls are consistent across notebook stages.
+
+# ED triage and first ED vitals (reuse existing logic if present; otherwise join)
+
+def _needs_cols(df, cols):
+    return (df is None) or any(c not in df.columns for c in cols)
+
+# Use existing ed_triage / ed_first if already in memory from earlier cells
+try:
+    _ = ed_triage
+except NameError:
+    ed_triage = None
+
+try:
+    _ = ed_first
+except NameError:
+    ed_first = None
+
+# Force re-query if required keys are missing
+if _needs_cols(locals().get('ed_triage', None), ['ed_stay_id', 'hadm_id']):
+    ed_triage = None
+if _needs_cols(locals().get('ed_first', None), ['ed_stay_id']):
+    ed_first = None
+
+# If missing, re-run ED triage / first vitals queries with ed_stay_id output
+if ed_triage is None:
+    ed_triage_sql = f"""
+    WITH hadms AS (SELECT x AS hadm_id FROM UNNEST(@hadms) AS x)
+    SELECT
+      s.stay_id AS ed_stay_id,
+      s.hadm_id,
+      s.intime,
+      t.temperature    AS ed_triage_temp,
+      t.heartrate      AS ed_triage_hr,
+      t.resprate       AS ed_triage_rr,
+      t.o2sat          AS ed_triage_o2sat,
+      t.sbp            AS ed_triage_sbp,
+      t.dbp            AS ed_triage_dbp,
+      t.pain           AS ed_triage_pain,
+      t.acuity         AS ed_triage_acuity,
+      t.chiefcomplaint AS ed_triage_cc
+    FROM `{PHYS}.{ED}.edstays` s
+    JOIN hadms h ON h.hadm_id = s.hadm_id
+    LEFT JOIN `{PHYS}.{ED}.triage` t
+      ON t.stay_id = s.stay_id
+    """
+    ed_triage = run_sql_bq(sql("ed_triage_sql"), {'hadms': hadm_list})
+    print('ED triage rows:', len(ed_triage))
+
+if ed_first is None:
+    ed_first_vitals_sql = f"""
+    WITH hadms AS (SELECT x AS hadm_id FROM UNNEST(@hadms) AS x),
+    edmap AS (
+      SELECT stay_id, hadm_id
+      FROM `{PHYS}.{ED}.edstays`
+      WHERE hadm_id IN (SELECT hadm_id FROM hadms)
+    ),
+    vs AS (
+      SELECT stay_id, charttime, temperature, heartrate, resprate, o2sat, sbp, dbp, rhythm, pain
+      FROM `{PHYS}.{ED}.vitalsign`
+    ),
+    first_vs AS (
+      SELECT
+        v.stay_id,
+        (ARRAY_AGG(STRUCT(v.charttime, v.temperature, v.heartrate, v.resprate, v.o2sat, v.sbp, v.dbp, v.rhythm, v.pain)
+                   ORDER BY v.charttime LIMIT 1))[OFFSET(0)] AS pick
+      FROM vs v
+      JOIN edmap m USING (stay_id)
+      GROUP BY v.stay_id
+    )
+    SELECT
+      f.stay_id AS ed_stay_id,
+      pick.charttime AS ed_first_vitals_time,
+      pick.temperature AS ed_first_temp,
+      pick.heartrate AS ed_first_hr,
+      pick.resprate AS ed_first_rr,
+      pick.o2sat AS ed_first_o2sat,
+      pick.sbp AS ed_first_sbp,
+      pick.dbp AS ed_first_dbp,
+      pick.rhythm AS ed_first_rhythm,
+      pick.pain AS ed_first_pain
+    FROM first_vs f
+    """
+    ed_first = run_sql_bq(sql("ed_first_vitals_sql"), {'hadms': hadm_list})
+    print('ED first vitals rows:', len(ed_first))
+
+# Debug columns before merge
+print('ed_triage cols:', list(ed_triage.columns))
+print('ed_first cols:', list(ed_first.columns))
+print('ed_df cols:', list(ed_df.columns))
+
+if 'ed_stay_id' not in ed_df.columns:
+    raise KeyError('ed_df missing ed_stay_id; ensure ED spine cell ran.')
+
+# Merge ED triage + vitals onto ed_df with available keys
+merge_keys_triage = [k for k in ["ed_stay_id", "hadm_id"] if k in ed_df.columns and k in ed_triage.columns]
+if not merge_keys_triage:
+    raise KeyError("No common keys between ed_df and ed_triage")
+ed_df = ed_df.merge(ed_triage, on=merge_keys_triage, how="left")
+merge_keys_first = [k for k in ["ed_stay_id", "hadm_id"] if k in ed_df.columns and k in ed_first.columns]
+if not merge_keys_first:
+    raise KeyError("No common keys between ed_df and ed_first")
+ed_df = ed_df.merge(ed_first, on=merge_keys_first, how="left")
+
+
+
+
+
+------------------
+
+
+[31m---------------------------------------------------------------------------[39m
+[31mKeyError[39m                                  Traceback (most recent call last)
+[36mCell[39m[36m [39m[32mIn[27][39m[32m, line 47[39m
+[32m     26[39m [38;5;28;01mif[39;00m ed_triage [38;5;129;01mis[39;00m [38;5;28;01mNone[39;00m:
+[32m     27[39m     ed_triage_sql = [33mf[39m[33m"""[39m
+[32m     28[39m [33m    WITH hadms AS (SELECT x AS hadm_id FROM UNNEST(@hadms) AS x)[39m
+[32m     29[39m [33m    SELECT[39m
+[32m   (...)[39m[32m     45[39m [33m      ON t.stay_id = s.stay_id[39m
+[32m     46[39m [33m    [39m[33m"""[39m
+[32m---> [39m[32m47[39m     ed_triage = run_sql_bq([43msql[49m[43m([49m[33;43m"[39;49m[33;43med_triage_sql[39;49m[33;43m"[39;49m[43m)[49m, {[33m'[39m[33mhadms[39m[33m'[39m: hadm_list})
+[32m     48[39m     [38;5;28mprint[39m([33m'[39m[33mED triage rows:[39m[33m'[39m, [38;5;28mlen[39m(ed_triage))
+[32m     50[39m [38;5;28;01mif[39;00m ed_first [38;5;129;01mis[39;00m [38;5;28;01mNone[39;00m:
+
+[36mCell[39m[36m [39m[32mIn[1][39m[32m, line 11[39m, in [36msql[39m[34m(name)[39m
+[32m      9[39m [38;5;28;01mdef[39;00m[38;5;250m [39m[34msql[39m(name: [38;5;28mstr[39m) -> [38;5;28mstr[39m:
+[32m     10[39m     [38;5;28;01mif[39;00m name [38;5;129;01mnot[39;00m [38;5;129;01min[39;00m SQL:
+[32m---> [39m[32m11[39m         [38;5;28;01mraise[39;00m [38;5;167;01mKeyError[39;00m([33mf[39m[33m"[39m[33mSQL template not found: [39m[38;5;132;01m{[39;00mname[38;5;132;01m}[39;00m[33m"[39m)
+[32m     12[39m     [38;5;28;01mreturn[39;00m SQL[name]
+
+[31mKeyError[39m: 'SQL template not found: ed_triage_sql'
+

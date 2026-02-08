@@ -1,0 +1,19 @@
+{
+  "timestamp": "20260205_161205",
+  "h_old_n": 27459,
+  "h_current_n": 17424,
+  "h_union_n": 27459,
+  "query_times_seconds": {
+    "current_strict_s": 7.001098871231079,
+    "legacy_replay_s": 6.834758043289185,
+    "permissive_hadm_s": 5.898290157318115,
+    "permissive_long_s": 7.461390018463135
+  },
+  "output_files": {
+    "comparison_parquet": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/debug/abg_vbg_capture/artifacts/capture_comparison_20260205_161205.parquet",
+    "comparison_csv": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/debug/abg_vbg_capture/artifacts/capture_comparison_20260205_161205.csv",
+    "permissive_long_parquet": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/debug/abg_vbg_capture/artifacts/permissive_long_20260205_161205.parquet",
+    "label_audit_csv": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/debug/abg_vbg_capture/artifacts/permissive_label_audit_20260205_161205.csv",
+    "unit_audit_csv": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/debug/abg_vbg_capture/artifacts/permissive_unit_audit_20260205_161205.csv"
+  }
+}

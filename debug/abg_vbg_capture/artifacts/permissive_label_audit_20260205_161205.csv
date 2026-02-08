@@ -1,0 +1,5 @@
+source_system,itemid,label,n
+HOSP,50818,pco2,167836
+ICU,220235,arterial co2 pressure,104045
+ICU,226062,venous co2 pressure,33034
+ICU,220245,co2 production,28363

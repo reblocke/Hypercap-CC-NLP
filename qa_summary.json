@@ -1,8 +1,28 @@
 {
-  "ed_rows": 17449,
-  "ed_unique": 17449,
-  "icu_link_rate": 0.6625594589947849,
-  "pct_any_gas_0_6h": 0.41532466043899363,
-  "pct_any_gas_0_24h": 0.9639520889449252,
-  "source_unknown_rate": 1.0
+  "ed_spine_rows": 41394,
+  "ed_rows": 41394,
+  "ed_unique": 41394,
+  "hadm_rows": 115179,
+  "hadm_cc_rows": 41322,
+  "icu_link_rate": 0.770908827366285,
+  "pct_any_gas_0_6h": 0.37821906556505774,
+  "pct_any_gas_0_24h": 0.9468280427115041,
+  "gas_source_other_rate": 1.0,
+  "source_unknown_rate": 1.0,
+  "run_metadata": {
+    "run_utc": "2026-02-08T00:11:46.618118+00:00",
+    "work_project": "mimic-hypercapnia",
+    "physionet_project": "physionet-data",
+    "datasets": {
+      "hosp": "mimiciv_3_1_hosp",
+      "icu": "mimiciv_3_1_icu",
+      "ed": "mimiciv_ed"
+    },
+    "dataset_probes": {
+      "hosp": "physionet-data.mimiciv_3_1_hosp.admissions",
+      "icu": "physionet-data.mimiciv_3_1_icu.icustays",
+      "ed": "physionet-data.mimiciv_ed.edstays"
+    },
+    "notebook": "MIMICIV_hypercap_EXT_cohort.ipynb"
+  }
 }

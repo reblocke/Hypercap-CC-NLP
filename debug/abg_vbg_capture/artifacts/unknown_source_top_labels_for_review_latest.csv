@@ -1,0 +1,3 @@
+source_system,itemid,label,unit_norm,n_rows,n_hadm,ge50_n,ge45_n,median_pco2,p95_pco2,min_pco2,max_pco2
+HOSP,50818,pco2,mmhg,118288,16216,20846,35862,40.0,63.0,0.0,215.0
+ICU,220245,co2 production,ml/min,28363,3043,28218,28234,180.0,310.0,0.0,1104.0
