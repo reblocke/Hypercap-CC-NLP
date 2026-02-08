@@ -1,56 +1,45 @@
 Goal (incl. success criteria):
-- Implement and verify fixes for residual output anomalies in `MIMICIV_hypercap_EXT_cohort.ipynb` so final outputs are semantically correct and reproducible.
-- Success = canonical workbook and QA artifacts show coherent ABG/VBG/other thresholds+flags, any-gas aggregation, and clear row-count semantics with no runtime errors.
+- Execute the user-requested cleanup and ledger versioning steps:
+  - Remove untracked `__pycache__` directories and generated analysis `.xlsx` artifacts.
+  - Stage and commit `CONTINUITY.md` as a final small checkpoint commit.
+- Success criteria:
+  - Target untracked artifacts are removed from `git status`.
+  - `CONTINUITY.md` is committed on branch `codex/hypercap-analysis-stabilize`.
 
 Constraints/Assumptions:
-- Preserve hadm-level canonical output contract (`MIMICIV all with CC.xlsx`).
-- Keep notebook runnable start-to-finish via VS Code and nbconvert.
-- Avoid adding debug-only forensic logic into production notebook.
+- Do not touch unrelated modified files already present in the working tree.
+- Remove only explicitly requested untracked artifacts.
 
 Key decisions:
-- Use threshold semantics: ABG >=45 mmHg, VBG >=50 mmHg, OTHER >=50 mmHg.
-- Keep source buckets as arterial / venous / other (exclude non-blood-gas CO2 labels).
-- Add atomic workbook write to prevent zero-byte canonical output if run is interrupted.
+- Scope restricted to cleanup + ledger commit (no notebook/model logic changes).
 
 State:
-- Done: Debug forensics executed and Option B integrated.
-- Done: Threshold normalization and hadm->ed flag alignment are in notebook.
-- Done: Patched final export cell to write dated/canonical Excel via tmp file + `os.replace`.
-- Done: Terminated orphan nbconvert background process that had clobbered canonical workbook.
-- Done: Restored canonical workbook from latest successful dated artifact.
-- Now: Reporting verification and residual warnings.
-- Next: Optional cleanup of historical zero-byte archive artifacts and optional FutureWarning noise suppression.
+- Done: Cleanup and ledger versioning completed.
+- Now: Reporting completion and commit details.
+- Next: Wait for user’s next instruction.
 
 Done:
-- `MIMICIV_hypercap_EXT_cohort.ipynb`: atomic write helper (`_atomic_write_excel`) added in final export cell.
-- Syntax check over notebook code cells passed (0 syntax errors).
-- Output integrity checks:
-  - Canonical workbook size restored to non-zero (32,703,370 bytes).
-  - Workbook rows: 41,322 (hadm-level with CC), unique `hadm_id` and `ed_stay_id` = 41,322.
-  - Key thresholds/flags non-zero and coherent:
-    - `abg_hypercap_threshold` 10,748
-    - `vbg_hypercap_threshold` 17,549
-    - `other_hypercap_threshold` 36,518
-    - `pco2_threshold_any` 41,080
-    - `flag_any_gas_hypercapnia` 41,080
-- `qa_summary.json` reflects expected rows (`hadm_cc_rows` 41,322; `ed_spine_rows` 41,394).
+- Removed requested untracked artifacts:
+  - `Symptom_Composition_Pivot_ChartReady.xlsx`
+  - `Symptom_Composition_by_ABG_VBG_Overlap.xlsx`
+  - `Symptom_Composition_by_Hypercapnia_Definition.xlsx`
+  - `Symptom_Composition_by_ICD_Gas_Overlap.xlsx`
+  - `src/hypercap_cc_nlp/__pycache__/`
+  - `tests/__pycache__/`
+- Verified these untracked entries no longer appear in `git status`.
+- Updated `CONTINUITY.md` to final task state.
 
 Now:
-- Residual warning profile:
-  - No notebook `output_type:error` present.
-  - One pandas `FutureWarning` remains in outputs (non-fatal).
-  - `gas_source_other_rate` remains 1.0 (expected under current source mapping logic).
+- Share completion summary.
 
 Next:
-- If requested, patch non-fatal `FutureWarning` source.
-- If requested, add run lock/guard to prevent concurrent writer collisions.
+- None until user requests additional changes.
 
 Open questions (UNCONFIRMED if needed):
-- UNCONFIRMED: Whether to treat `gas_source_other_rate == 1.0` as acceptable current-state behavior or require additional source inference refinement now.
+- None.
 
 Working set (files/ids/commands):
-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMICIV_hypercap_EXT_cohort.ipynb`
-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/MIMICIV all with CC.xlsx`
-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-07 MIMICIV all with CC.xlsx`
-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/qa_summary.json`
-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/debug/abg_vbg_capture/artifacts/nbconvert_verify_debug_20260207_171136.log`
+- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/CONTINUITY.md`
+- Commands executed:
+  - `rm -rf Symptom_Composition_Pivot_ChartReady.xlsx Symptom_Composition_by_ABG_VBG_Overlap.xlsx Symptom_Composition_by_Hypercapnia_Definition.xlsx Symptom_Composition_by_ICD_Gas_Overlap.xlsx src/hypercap_cc_nlp/__pycache__ tests/__pycache__`
+  - `git status --short`
