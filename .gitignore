@@ -5,3 +5,4 @@
 /MIMIC tabular data/Prior versions
 /MIMIC tabular data
 __pycache__/
+.env

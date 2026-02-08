@@ -1,75 +1,47 @@
 Goal (incl. success criteria):
-- Perform final local cleanup for Python cache artifacts.
+- Implement `.env` hygiene and onboarding:
+  - ignore and untrack `.env`,
+  - add `.env.example`,
+  - update README so new users copy the example and fill their own keys.
 - Success criteria:
-  - Existing `__pycache__` directories under `src/` and `tests/` are removed.
-  - Future `__pycache__` directories are ignored via `.gitignore`.
-  - `main` remains clean/synced after optional commit+push.
+  - `.env` is no longer tracked.
+  - `.env.example` is present and documented in README.
+  - Instructions explicitly tell users to paste their own keys into `.env`.
 
 Constraints/Assumptions:
-- Preserve existing commit history; avoid rewriting or force operations.
-- Keep workflow novice-safe and reversible.
+- Do not modify unrelated dirty files in working tree.
+- Keep token handling safe (never echo token value in outputs).
 
 Key decisions:
-- Apply both cleanup actions requested: remove current cache dirs and add ignore rule.
+- Apply focused changes only in `.gitignore`, `.env.example`, `README.md`, and this ledger.
 
 State:
-- Done: merge completed into local `main`.
-- Done: validation checks passed on `main`.
-- Done: remote cleanup completed (`main` pushed, feature branch removed remote/local).
-- Done: cache cleanup + ignore update complete.
-- Now: final handoff.
-- Next: none pending.
+- Done: user approved `.env` ignore/untrack + onboarding doc updates.
+- Now: patching files and untracking `.env`.
+- Next: run checks and push focused commit.
 
 Done:
-- Git status check:
-  - Current branch: `codex/hypercap-analysis-stabilize`
-  - Working tree: clean
-  - Branch head: `7a209c4`
-  - `main` head: `6cf226d`
-- Actions executed:
-  - Committed ledger update on feature branch: `08be102`.
-  - Switched to `main` and merged with `--no-ff`:
-    - Merge commit: `9844a4d`.
-  - Verification on `main`:
-    - `make test` -> `7 passed`
-    - `make lint` -> `All checks passed!`
-- Remote cleanup executed:
-  - `git push origin main` succeeded (`6cf226d..d04d617`).
-  - `git push origin --delete codex/hypercap-analysis-stabilize` succeeded.
-  - `git branch -d codex/hypercap-analysis-stabilize` succeeded locally.
-- Final branch state:
-  - `main` tracks `origin/main` at `d04d617`.
-  - No remaining local feature branches for this work.
-- Final cache cleanup:
-  - Added `__pycache__/` to `.gitignore`.
-  - Removed `src/hypercap_cc_nlp/__pycache__/` and `tests/__pycache__/`.
-  - Re-ran checks:
-    - `make test` -> `7 passed`
-    - `make lint` -> `All checks passed!`
-  - Committed + pushed cleanup:
-    - commit `1f77348` on `main` (`Ignore and clean Python cache directories`)
-    - pushed to `origin/main`.
+- Verified `.env` ignore state:
+  - `.gitignore` currently contains no `.env` pattern.
+  - `git ls-files --stage -- .env` shows `.env` is tracked.
+  - `git status --short -- .env` shows `.env` modified (`M .env`).
+  - `git check-ignore` returns no matching ignore rule for `.env`.
 
 Now:
-- Deliver completion summary.
+- Implement and verify approved cleanup.
 
 Next:
-- None.
+- Commit/push cleanup so downstream users see `.env.example` onboarding.
 
 Open questions (UNCONFIRMED if needed):
 - None.
 
 Working set (files/ids/commands):
 - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/CONTINUITY.md`
-- Commands executed:
-  - `git status -sb`
-  - `git branch --show-current`
-  - `git branch -vv`
-  - `git log --oneline --decorate --graph --max-count=12 --all`
-  - `git add CONTINUITY.md && git commit -m "Update continuity ledger for merge operation"`
-  - `git switch main && git merge --no-ff codex/hypercap-analysis-stabilize`
-  - `make test && make lint`
-  - `git add CONTINUITY.md && git commit -m "Update continuity ledger for remote cleanup"`
-  - `git push origin main`
-  - `git push origin --delete codex/hypercap-analysis-stabilize`
-  - `git branch -d codex/hypercap-analysis-stabilize`
+- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/.gitignore`
+- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/.env`
+- Commands used:
+  - `nl -ba .gitignore`
+  - `git ls-files --stage -- .env`
+  - `git check-ignore -v .env`
+  - `git status --short -- .env`

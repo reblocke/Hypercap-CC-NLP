@@ -57,7 +57,15 @@ PY
 ```
 
 ### 2) Configure paths
-Create a `.env` file at the repo root:
+Copy the example env file, then paste your own local keys/paths:
+
+```bash
+cp .env.example .env
+```
+
+Then edit `.env` and replace placeholders (especially `WORK_PROJECT`, `WORK_DIR`, and any auth keys).
+
+Required keys are documented in `.env.example`:
 
 ```
 MIMIC_BACKEND=bigquery
@@ -67,9 +75,25 @@ BQ_DATASET_HOSP=mimiciv_3_1_hosp
 BQ_DATASET_ICU=mimiciv_3_1_icu
 BQ_DATASET_ED=mimiciv_ed
 WORK_DIR=/path/to/Hypercap-CC-NLP
-# HF_TOKEN=<optional-huggingface-token-for-authenticated-model-downloads>
-# GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+HF_TOKEN=hf_<your_token_here>  # optional
 ```
+
+`HF_TOKEN` is optional and only needed for authenticated Hugging Face model downloads.
+Do not commit your `.env` file.
+
+Verify from Python by explicitly loading `.env`:
+
+```bash
+./.venv/bin/python - <<'PY'
+import os
+from dotenv import load_dotenv
+
+load_dotenv(dotenv_path=".env")
+print("HF_TOKEN loaded:", bool(os.getenv("HF_TOKEN")))
+PY
+```
+
+Note: `./.venv/bin/python -c "import os; print(bool(os.getenv('HF_TOKEN')))"` returns `False` unless `HF_TOKEN` is already exported in your shell environment.
 
 ### 3) Run the notebooks in order (interactive)
 1. `MIMICIV_hypercap_EXT_cohort.ipynb` – cohort assembly using BigQuery 
