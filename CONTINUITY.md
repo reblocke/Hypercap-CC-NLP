@@ -12,9 +12,10 @@ Key decisions:
 - Since working tree is clean, perform a normal merge from branch into `main` without additional squashing/rebase.
 
 State:
-- Done: branch state inspected; branch is clean and ahead of `main`.
-- Now: perform merge into `main`.
-- Next: run checks and summarize.
+- Done: merge completed into local `main`.
+- Done: validation checks passed on `main`.
+- Now: handoff summary for user (including push guidance).
+- Next: optional push of `main` to `origin`.
 
 Done:
 - Git status check:
@@ -22,15 +23,22 @@ Done:
   - Working tree: clean
   - Branch head: `7a209c4`
   - `main` head: `6cf226d`
+- Actions executed:
+  - Committed ledger update on feature branch: `08be102`.
+  - Switched to `main` and merged with `--no-ff`:
+    - Merge commit: `9844a4d`.
+  - Verification on `main`:
+    - `make test` -> `7 passed`
+    - `make lint` -> `All checks passed!`
 
 Now:
-- Execute `git switch main` + `git merge codex/hypercap-analysis-stabilize`.
+- Summarize current branch status and remaining optional push step.
 
 Next:
-- Run `make test` and `make lint`.
+- Optional: run `git push origin main`.
 
 Open questions (UNCONFIRMED if needed):
-- UNCONFIRMED: push merged `main` to `origin` in this turn or leave local only.
+- UNCONFIRMED: user preference to push merged `main` now.
 
 Working set (files/ids/commands):
 - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/CONTINUITY.md`
@@ -39,3 +47,6 @@ Working set (files/ids/commands):
   - `git branch --show-current`
   - `git branch -vv`
   - `git log --oneline --decorate --graph --max-count=12 --all`
+  - `git add CONTINUITY.md && git commit -m "Update continuity ledger for merge operation"`
+  - `git switch main && git merge --no-ff codex/hypercap-analysis-stabilize`
+  - `make test && make lint`
