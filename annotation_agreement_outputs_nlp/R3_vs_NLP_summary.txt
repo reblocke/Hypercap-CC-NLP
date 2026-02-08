@@ -1,18 +1,20 @@
 === R3 (adjudicator) vs NLP: set-level (order-invariant) ===
 
 N_items         160.000000
-exact_rate        0.543750
-partial_rate      0.206250
-none_rate         0.250000
-mean_jaccard      0.638229
-mean_overlap      0.713542
-mean_f1_set       0.670982
-micro_f1_set      0.700935
+exact_rate        0.600000
+partial_rate      0.193750
+none_rate         0.206250
+mean_jaccard      0.679063
+mean_overlap      0.723958
+mean_f1_set       0.710655
+micro_f1_set      0.724211
+mean_len_a        1.487500
+mean_len_b        1.481250
 
 
 === R3 vs NLP: chance-corrected (binary per category) ===
 
-macro_cohen_kappa          0.496737
-macro_gwet_ac1             0.959330
-macro_percent_agreement    0.966544
-micro_percent_agreement    0.966544
+macro_cohen_kappa          0.472870
+macro_gwet_ac1             0.949117
+macro_percent_agreement    0.957353
+micro_percent_agreement    0.957353
