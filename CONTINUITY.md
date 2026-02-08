@@ -1,21 +1,22 @@
 Goal (incl. success criteria):
-- Merge all current work from `codex/hypercap-analysis-stabilize` back into `main`.
+- Complete final remote cleanup after merge.
 - Success criteria:
-  - `main` includes the latest branch head commit(s).
-  - Merge is clean and validation checks pass.
+  - Push local `main` to `origin/main`.
+  - Delete remote feature branch `origin/codex/hypercap-analysis-stabilize`.
+  - Delete local feature branch `codex/hypercap-analysis-stabilize`.
 
 Constraints/Assumptions:
 - Preserve existing commit history; avoid rewriting or force operations.
 - Keep workflow novice-safe and reversible.
 
 Key decisions:
-- Since working tree is clean, perform a normal merge from branch into `main` without additional squashing/rebase.
+- Perform cleanup in this order: push `main`, delete remote feature branch, delete local feature branch.
 
 State:
 - Done: merge completed into local `main`.
 - Done: validation checks passed on `main`.
-- Now: handoff summary for user (including push guidance).
-- Next: optional push of `main` to `origin`.
+- Now: execute remote cleanup commands.
+- Next: summarize final branch state.
 
 Done:
 - Git status check:
@@ -32,13 +33,13 @@ Done:
     - `make lint` -> `All checks passed!`
 
 Now:
-- Summarize current branch status and remaining optional push step.
+- Run push/delete branch commands.
 
 Next:
-- Optional: run `git push origin main`.
+- Confirm `git status`/`git branch -vv` after cleanup.
 
 Open questions (UNCONFIRMED if needed):
-- UNCONFIRMED: user preference to push merged `main` now.
+- None.
 
 Working set (files/ids/commands):
 - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/CONTINUITY.md`
