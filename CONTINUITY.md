@@ -1,23 +1,23 @@
 Goal (incl. success criteria):
-- Complete final remote cleanup after merge.
+- Perform final local cleanup for Python cache artifacts.
 - Success criteria:
-  - Push local `main` to `origin/main`.
-  - Delete remote feature branch `origin/codex/hypercap-analysis-stabilize`.
-  - Delete local feature branch `codex/hypercap-analysis-stabilize`.
+  - Existing `__pycache__` directories under `src/` and `tests/` are removed.
+  - Future `__pycache__` directories are ignored via `.gitignore`.
+  - `main` remains clean/synced after optional commit+push.
 
 Constraints/Assumptions:
 - Preserve existing commit history; avoid rewriting or force operations.
 - Keep workflow novice-safe and reversible.
 
 Key decisions:
-- Perform cleanup in this order: push `main`, delete remote feature branch, delete local feature branch.
+- Apply both cleanup actions requested: remove current cache dirs and add ignore rule.
 
 State:
 - Done: merge completed into local `main`.
 - Done: validation checks passed on `main`.
 - Done: remote cleanup completed (`main` pushed, feature branch removed remote/local).
-- Now: final handoff.
-- Next: none pending.
+- Now: apply cache cleanup + ignore update.
+- Next: verify git status and sync.
 
 Done:
 - Git status check:
@@ -41,13 +41,13 @@ Done:
   - No remaining local feature branches for this work.
 
 Now:
-- Deliver completion summary and note remaining untracked cache dirs.
+- Update `.gitignore`, remove cache dirs, verify status.
 
 Next:
-- Optional: add `__pycache__/` to `.gitignore` if desired.
+- Optional: commit/push cleanup commit.
 
 Open questions (UNCONFIRMED if needed):
-- UNCONFIRMED: whether to ignore/remove `src/hypercap_cc_nlp/__pycache__/` and `tests/__pycache__/` created during test runs.
+- None.
 
 Working set (files/ids/commands):
 - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/CONTINUITY.md`
