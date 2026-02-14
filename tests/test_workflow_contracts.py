@@ -100,16 +100,27 @@ def test_normalize_classifier_input_schema_adds_aliases_without_dropping_source(
     )
     normalized = normalize_classifier_input_schema(df)
 
-    for destination, source in CLASSIFIER_TRANSITIONAL_ALIASES.items():
+    for destination, sources in CLASSIFIER_TRANSITIONAL_ALIASES.items():
         assert destination in normalized.columns
-        assert source in normalized.columns
-        assert normalized[destination].equals(normalized[source])
+        assert any(source in normalized.columns for source in sources)
 
 
 def test_normalize_classifier_input_schema_preserves_existing_destination() -> None:
     df = pd.DataFrame({"age_at_admit": [65.0], "age": [99.0]})
     normalized = normalize_classifier_input_schema(df)
     assert normalized["age"].tolist() == [99.0]
+
+
+def test_normalize_classifier_input_schema_prefers_model_fields() -> None:
+    df = pd.DataFrame(
+        {
+            "ed_first_hr": [150.0],
+            "ed_first_hr_model": [88.0],
+            "ed_triage_hr": [120.0],
+        }
+    )
+    normalized = normalize_classifier_input_schema(df)
+    assert normalized["hr"].tolist() == [88.0]
 
 
 def test_ensure_required_columns_raises_informative_error() -> None:

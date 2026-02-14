@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, Sequence
 
 import pandas as pd
 
@@ -14,15 +14,20 @@ PRIOR_RUNS_DIRNAME = "prior runs"
 CANONICAL_COHORT_FILENAME = "MIMICIV all with CC.xlsx"
 CANONICAL_NLP_FILENAME = "MIMICIV all with CC_with_NLP.xlsx"
 
-CLASSIFIER_TRANSITIONAL_ALIASES: dict[str, str] = {
-    "age": "age_at_admit",
-    "hr": "ed_first_hr",
-    "rr": "ed_first_rr",
-    "sbp": "ed_first_sbp",
-    "dbp": "ed_first_dbp",
-    "temp": "ed_first_temp",
-    "spo2": "ed_first_o2sat",
-    "race": "race_ed_raw",
+CLASSIFIER_TRANSITIONAL_ALIASES: dict[str, tuple[str, ...]] = {
+    "age": ("age_at_admit",),
+    "hr": ("ed_first_hr_model", "ed_first_hr", "ed_triage_hr_model", "ed_triage_hr"),
+    "rr": ("ed_first_rr_model", "ed_first_rr", "ed_triage_rr_model", "ed_triage_rr"),
+    "sbp": ("ed_first_sbp_model", "ed_first_sbp", "ed_triage_sbp_model", "ed_triage_sbp"),
+    "dbp": ("ed_first_dbp_model", "ed_first_dbp", "ed_triage_dbp_model", "ed_triage_dbp"),
+    "temp": ("ed_first_temp_model", "ed_first_temp", "ed_triage_temp_model", "ed_triage_temp"),
+    "spo2": (
+        "ed_first_o2sat_model",
+        "ed_first_o2sat",
+        "ed_triage_o2sat_model",
+        "ed_triage_o2sat",
+    ),
+    "race": ("race_ed_raw",),
 }
 
 
@@ -90,7 +95,7 @@ def resolve_classifier_output_paths(
 
 def normalize_classifier_input_schema(
     df: pd.DataFrame,
-    alias_map: Mapping[str, str] | None = None,
+    alias_map: Mapping[str, str | Sequence[str]] | None = None,
 ) -> pd.DataFrame:
     """Add transitional alias columns for classifier compatibility.
 
@@ -98,9 +103,17 @@ def normalize_classifier_input_schema(
     """
     resolved_alias_map = alias_map or CLASSIFIER_TRANSITIONAL_ALIASES
     normalized = df.copy()
-    for destination, source in resolved_alias_map.items():
-        if destination not in normalized.columns and source in normalized.columns:
-            normalized[destination] = normalized[source]
+    for destination, source_spec in resolved_alias_map.items():
+        if destination in normalized.columns:
+            continue
+        if isinstance(source_spec, str):
+            candidate_sources = (source_spec,)
+        else:
+            candidate_sources = tuple(source_spec)
+        for source_name in candidate_sources:
+            if source_name in normalized.columns:
+                normalized[destination] = normalized[source_name]
+                break
     return normalized
 
 

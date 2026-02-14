@@ -102,6 +102,9 @@ CLASSIFIER_INPUT_FILENAME="MIMICIV all with CC.xlsx"      # optional override fo
 RATER_NLP_INPUT_FILENAME="MIMICIV all with CC_with_NLP.xlsx"  # optional override for rater NLP input
 RATER_ANNOTATION_PATH="Annotation/Final 2025-10-14 Annotation Sample.xlsx"  # optional annotation workbook override
 ANALYSIS_INPUT_FILENAME="MIMICIV all with CC_with_NLP.xlsx"  # optional override for analysis input
+COHORT_FAIL_ON_ALL_OTHER_SOURCE=1  # fail cohort run if gas source attribution collapses to all other/unknown
+COHORT_FAIL_ON_OMR_ATTACH_INCONSISTENCY=1  # fail when OMR +/-365-day candidates exist but attached outputs are all null
+COHORT_ALLOW_EMPTY_OMR=0  # set 1 to bypass strict OMR attach guard for intentional reruns
 ```
 
 ### 3) Run the notebooks in order (interactive)
@@ -185,6 +188,10 @@ Canonical execution chain:
 - `Rater Agreement Analysis.ipynb` reads the canonical NLP workbook above and writes join-audit artifacts plus agreement outputs.
 - `Hypercap CC NLP Analysis.ipynb` reads the canonical NLP workbook above.
 
+Anthropometric timing policy:
+- OMR anthropometrics use a tiered fallback: pre-ED (within 365 days) first, then post-ED (within 365 days).
+- Output provenance columns indicate uncertainty: `anthro_timing_tier`, `anthro_days_offset`, `anthro_chartdate`, `anthro_timing_uncertain`.
+
 Annotation workbook curation remains an independent manual workflow.
 
 ## Methods summary (BigQuery pipeline)
@@ -204,6 +211,9 @@ Annotation workbook curation remains an independent manual workflow.
 | Full CC workbook (no NLP) | `MIMICIV_hypercap_EXT_cohort.ipynb` | Canonical: `MIMIC tabular data/MIMICIV all with CC.xlsx`; archive: `MIMIC tabular data/prior runs/YYYY-MM-DD MIMICIV all with CC.xlsx` |
 | Data dictionary | `MIMICIV_hypercap_EXT_cohort.ipynb` | `MIMIC tabular data/YYYY-MM-DD MIMICIV all with CC_data_dictionary.xlsx` |
 | QA summary | `MIMICIV_hypercap_EXT_cohort.ipynb` | `qa_summary.json` |
+| Gas source audit | `MIMICIV_hypercap_EXT_cohort.ipynb` | `MIMIC tabular data/prior runs/YYYY-MM-DD gas_source_audit.json` |
+| First other-pCO2 audit | `MIMICIV_hypercap_EXT_cohort.ipynb` | `MIMIC tabular data/prior runs/YYYY-MM-DD first_other_pco2_audit.csv` |
+| Vitals outlier audit | `MIMICIV_hypercap_EXT_cohort.ipynb` | `MIMIC tabular data/prior runs/YYYY-MM-DD vitals_outlier_audit.csv` |
 | Lab item map | `MIMICIV_hypercap_EXT_cohort.ipynb` | `lab_item_map.json` |
 | Lab unit audit | `MIMICIV_hypercap_EXT_cohort.ipynb` | `lab_unit_audit.csv` |
 | Current admission columns | `MIMICIV_hypercap_EXT_cohort.ipynb` | `current_columns.json` |
@@ -221,10 +231,17 @@ Annotation workbook curation remains an independent manual workflow.
 Rater join policy:
 - Rater/NLP agreement is computed on matched `(hadm_id, subject_id)` rows.
 - Unmatched adjudicated and unmatched NLP keys are exported for audit, and the notebook continues when at least one matched row exists.
+- `R3_vs_NLP_join_audit.json` now includes `join_interpretation` and `severity`:
+  - `severity=info` when adjudicated rows are fully covered (`matched_rate_vs_adjudicated == 1.0`) and NLP has expected extras.
+  - `severity=warning` for partial adjudicated overlap.
 
 Schema transition note:
 - Classifier intake now applies transitional aliases (`age`, `hr`, `rr`, `sbp`, `dbp`, `temp`, `spo2`, `race`) from canonical source columns when alias columns are absent.
 - Source columns are preserved; aliases are compatibility scaffolding and may be deprecated after full downstream migration.
+
+Anthropometric provenance note:
+- `bmi_closest_pre_ed`, `height_closest_pre_ed`, and `weight_closest_pre_ed` may come from either pre-ED or bounded post-ED OMR fallback windows.
+- Use `anthro_timing_uncertain` (and `anthro_timing_tier`) for sensitivity analyses when restricting to temporally cleaner baseline measurements.
 
 ## Quality checks / tests
 Run repo checks locally after dependency sync:

@@ -2,7 +2,7 @@
 
 ## Project overview
 - This repository is a **Python-first** project for statistical programming, experimental analysis, and scientific computing.
-- The primary language is **Python**. Do not propose implementations in R, Julia, etc unless explicitly asked.
+- The primary language is **Python**. Do not propose non-Python implementations unless explicitly asked.
 - Priorities (in order):
   1) **Human time**: readability, maintainability, debuggability
   2) **Reproducibility**: deterministic runs, stable environments. It will only be run from start-to-finish
@@ -170,12 +170,37 @@ General modeling expectations:
 - Prefer returning tidy/tabular outputs (`pandas.DataFrame`) with clear column names and metadata.
 
 ## Visualization
-- Prefer `matplotlib` for publication-quality plots.
-- Every plot should:
-  - label axes and units
-  - include a clear title/caption
-  - avoid misleading scales
-  - be generated from deterministic code
+- Publication figures are **Python-first** (`matplotlib` primary; `seaborn` only as a thin styling/stat helper).
+- Migration note: legacy non-Python plotting-style guidance is replaced by equivalent Python standards below.
+- Start from output requirements, not defaults:
+  - define target journal/page width first, then set explicit `figsize` in inches
+  - decide single-column vs two-column layout before plotting
+  - use deterministic plotting code only (no manual post-hoc editing in GUI tools)
+- Typography and geometry:
+  - use one consistent font family across all figures in a manuscript
+  - set explicit font sizes for title, axis labels, ticks, legend, and annotations
+  - use readable stroke/marker sizes at final print size (avoid hairline strokes)
+  - keep panel aspect ratios intentional; avoid accidental distortion
+- Color and accessibility:
+  - default to colorblind-safe palettes; avoid red/green-only encodings
+  - ensure information is not color-only (use line type/marker shape where needed)
+  - verify contrast on white background and in grayscale
+- Axes, scales, and statistical integrity:
+  - label every axis with variable name and units
+  - prefer meaningful tick intervals and concise numeric formatting
+  - avoid truncated axes unless scientifically justified and explicitly signposted
+  - keep transformations (e.g., log scale) explicit in labels/captions
+  - show uncertainty (CI/SE/IQR) where inferential interpretation requires it
+- Legends, labels, and multi-panel layout:
+  - place legends where they do not occlude data; remove legends when direct labels are clearer
+  - keep category naming consistent across all figures/tables
+  - align panel limits/ticks across subplots when comparisons are intended
+  - use shared legends/titles for multi-panel figures to reduce clutter
+- Export and reproducibility defaults:
+  - always call `savefig(...)` with explicit `dpi`, `bbox_inches`, facecolor, and format
+  - prefer vector outputs (`.pdf`/`.svg`) for line art; high-DPI raster (`.png`, typically 300–600 DPI) for images/heatmaps
+  - keep `matplotlib` style centralized (project-level rcParams helper or context manager), not ad hoc per cell
+  - ensure figure scripts are restartable and regenerate identical outputs from a clean session
 
 ## Performance and optimization
 - Default stance: **do not optimize prematurely**. Write correct, clear code first.

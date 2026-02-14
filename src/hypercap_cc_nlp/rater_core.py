@@ -96,4 +96,12 @@ def build_r3_nlp_join_audit(
             "Check key consistency between annotation and NLP workbooks."
         )
 
+    matched_rate_vs_adjudicated = audit["matched_rate_vs_adjudicated"]
+    if matched_rate_vs_adjudicated == 1.0:
+        audit["join_interpretation"] = "adjudicated_fully_covered_subset"
+        audit["severity"] = "info"
+    else:
+        audit["join_interpretation"] = "partial_adjudicated_overlap"
+        audit["severity"] = "warning"
+
     return matched, unmatched_adjudicated, unmatched_nlp, audit

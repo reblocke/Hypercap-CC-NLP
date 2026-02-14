@@ -10,11 +10,16 @@ from .analysis_core import (
     to_binary_flag,
 )
 from .cohort_quality import (
+    DEFAULT_VITALS_MODEL_RANGES,
     EXPECTED_STRUCTURAL_NULL_FIELDS,
+    add_vitals_model_fields,
     attach_closest_pre_ed_omr,
+    assert_gas_source_coverage,
+    build_first_other_pco2_audit,
     classify_missingness_expectations,
     evaluate_uom_expectations,
     prepare_omr_records,
+    summarize_gas_source,
 )
 from .rater_core import build_r3_nlp_join_audit, normalize_join_keys
 from .workflow_contracts import (
@@ -39,14 +44,18 @@ __all__ = [
     "ensure_required_columns",
     "ensure_required_workflow_columns",
     "EXPECTED_STRUCTURAL_NULL_FIELDS",
+    "DEFAULT_VITALS_MODEL_RANGES",
     "CANONICAL_COHORT_FILENAME",
     "CANONICAL_NLP_FILENAME",
     "CLASSIFIER_TRANSITIONAL_ALIASES",
     "DATA_DIRNAME",
     "PRIOR_RUNS_DIRNAME",
     "data_dir",
+    "add_vitals_model_fields",
     "attach_closest_pre_ed_omr",
+    "assert_gas_source_coverage",
     "build_r3_nlp_join_audit",
+    "build_first_other_pco2_audit",
     "classify_missingness_expectations",
     "evaluate_uom_expectations",
     "normalize_classifier_input_schema",
@@ -57,6 +66,7 @@ __all__ = [
     "resolve_classifier_output_paths",
     "resolve_rater_nlp_input_path",
     "resolve_analysis_paths",
+    "summarize_gas_source",
     "symptom_distribution_by_overlap",
     "to_binary_flag",
 ]

@@ -10,5 +10,7 @@
   "unmatched_nlp_rows": 41162,
   "matched_rate_vs_adjudicated": 1.0,
   "unmatched_rate_vs_adjudicated": 0.0,
-  "unmatched_rate_vs_nlp": 0.9961279705725764
+  "unmatched_rate_vs_nlp": 0.9961279705725764,
+  "join_interpretation": "adjudicated_fully_covered_subset",
+  "severity": "info"
 }
