@@ -63,9 +63,9 @@ Copy the example env file, then paste your own local keys/paths:
 cp .env.example .env
 ```
 
-Then edit `.env` and replace placeholders (especially `WORK_PROJECT`, `WORK_DIR`, and any auth keys).
+Then edit `.env` and replace placeholders (especially `WORK_PROJECT` and any auth keys).
 
-Required keys are documented in `.env.example`:
+Required keys for the default BigQuery workflow are documented in `.env.example`:
 
 ```
 MIMIC_BACKEND=bigquery
@@ -74,11 +74,16 @@ BQ_PHYSIONET_PROJECT=physionet-data
 BQ_DATASET_HOSP=mimiciv_3_1_hosp
 BQ_DATASET_ICU=mimiciv_3_1_icu
 BQ_DATASET_ED=mimiciv_ed
-WORK_DIR=/path/to/Hypercap-CC-NLP
 HF_TOKEN=hf_<your_token_here>  # optional
 ```
 
 `HF_TOKEN` is optional and only needed for authenticated Hugging Face model downloads.
+`WORK_DIR` is optional but recommended for reproducibility manifests:
+
+```
+WORK_DIR=/path/to/Hypercap-CC-NLP
+```
+
 Do not commit your `.env` file.
 
 Verify from Python by explicitly loading `.env`:
@@ -102,10 +107,14 @@ CLASSIFIER_INPUT_FILENAME="MIMICIV all with CC.xlsx"      # optional override fo
 RATER_NLP_INPUT_FILENAME="MIMICIV all with CC_with_NLP.xlsx"  # optional override for rater NLP input
 RATER_ANNOTATION_PATH="Annotation/Final 2025-10-14 Annotation Sample.xlsx"  # optional annotation workbook override
 ANALYSIS_INPUT_FILENAME="MIMICIV all with CC_with_NLP.xlsx"  # optional override for analysis input
+BQ_QUERY_TIMEOUT_SECS=1800  # optional BigQuery timeout for cohort query execution
+WRITE_ARCHIVE_XLSX_EXPORTS=0  # set 1 to write additional legacy/timestamped XLSX archive exports
 COHORT_FAIL_ON_ALL_OTHER_SOURCE=1  # fail cohort run if gas source attribution collapses to all other/unknown
 COHORT_FAIL_ON_OMR_ATTACH_INCONSISTENCY=1  # fail when OMR +/-365-day candidates exist but attached outputs are all null
 COHORT_ALLOW_EMPTY_OMR=0  # set 1 to bypass strict OMR attach guard for intentional reruns
 ```
+
+`GOOGLE_APPLICATION_CREDENTIALS` is also supported (optional) when you prefer service-account auth over ADC login.
 
 ### 3) Run the notebooks in order (interactive)
 Core pipeline:
@@ -131,6 +140,12 @@ make notebook-cohort
 make notebook-classifier
 make notebook-rater
 make notebook-analysis
+```
+
+Run the full deep-dive audit (checks + full rerun + artifact/metric/log audit):
+
+```bash
+make notebook-pipeline-audit
 ```
 
 Direct `nbconvert` invocation is also supported. We ship a **repo‑local kernelspec** that points to `.venv/bin/python` to avoid kernel/venv drift:
@@ -186,7 +201,7 @@ Canonical execution chain:
 - `MIMICIV_hypercap_EXT_cohort.ipynb` → `MIMIC tabular data/MIMICIV all with CC.xlsx`
 - `Hypercap CC NLP Classifier.ipynb` → `MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx`
 - `Rater Agreement Analysis.ipynb` reads the canonical NLP workbook above and writes join-audit artifacts plus agreement outputs.
-- `Hypercap CC NLP Analysis.ipynb` reads the canonical NLP workbook above.
+- `Hypercap CC NLP Analysis.ipynb` reads the canonical NLP workbook above (ordered after rater in `make notebook-pipeline`, but does not consume rater artifacts).
 
 Anthropometric timing policy:
 - OMR anthropometrics use a tiered fallback: pre-ED (within 365 days) first, then post-ED (within 365 days).
@@ -205,12 +220,16 @@ Annotation workbook curation remains an independent manual workflow.
 ## Results mapping
 | Artifact | Notebook | Output path |
 |---|---|---|
-| Cohort export | `MIMICIV_hypercap_EXT_cohort.ipynb` | `MIMIC tabular data/mimic_hypercap_EXT_bq_abg_vbg_<timestamp>.xlsx` |
-| ED‑CC‑only cohort | `MIMICIV_hypercap_EXT_cohort.ipynb` | `MIMIC tabular data/mimic_hypercap_EXT_EDcc_only_bq_abg_vbg_<timestamp>.xlsx` |
-| ED‑CC sample | `MIMICIV_hypercap_EXT_cohort.ipynb` | `MIMIC tabular data/mimic_hypercap_EXT_EDcc_sample160_bq_abg_vbg_<timestamp>.xlsx` |
+| Cohort export (optional archive) | `MIMICIV_hypercap_EXT_cohort.ipynb` | `MIMIC tabular data/prior runs/mimic_hypercap_EXT_bq_abg_vbg_<timestamp>.xlsx` (`WRITE_ARCHIVE_XLSX_EXPORTS=1`) |
+| ED‑CC‑only cohort (optional archive) | `MIMICIV_hypercap_EXT_cohort.ipynb` | `MIMIC tabular data/prior runs/mimic_hypercap_EXT_EDcc_only_bq_abg_vbg_<timestamp>.xlsx` (`WRITE_ARCHIVE_XLSX_EXPORTS=1`) |
+| ED‑CC sample (optional archive) | `MIMICIV_hypercap_EXT_cohort.ipynb` | `MIMIC tabular data/prior runs/mimic_hypercap_EXT_EDcc_sample<N>_bq_abg_vbg_<timestamp>.xlsx` (`WRITE_ARCHIVE_XLSX_EXPORTS=1`, `N` defaults to 160) |
+| ED‑stay workbook (optional archive) | `MIMICIV_hypercap_EXT_cohort.ipynb` | `MIMIC tabular data/prior runs/mimic_hypercap_EXT_EDstay_bq_gas_<timestamp>.xlsx` (`WRITE_ARCHIVE_XLSX_EXPORTS=1`) |
+| All-encounters workbook (optional archive) | `MIMICIV_hypercap_EXT_cohort.ipynb` | `MIMIC tabular data/prior runs/mimic_hypercap_EXT_all_encounters_bq_<timestamp>.xlsx` (`WRITE_ARCHIVE_XLSX_EXPORTS=1`) |
+| ED‑CC ED-stay workbook (optional archive) | `MIMICIV_hypercap_EXT_cohort.ipynb` | `MIMIC tabular data/prior runs/mimic_hypercap_EXT_EDcc_only_edstay_bq_<timestamp>.xlsx` (`WRITE_ARCHIVE_XLSX_EXPORTS=1`) |
 | Full CC workbook (no NLP) | `MIMICIV_hypercap_EXT_cohort.ipynb` | Canonical: `MIMIC tabular data/MIMICIV all with CC.xlsx`; archive: `MIMIC tabular data/prior runs/YYYY-MM-DD MIMICIV all with CC.xlsx` |
-| Data dictionary | `MIMICIV_hypercap_EXT_cohort.ipynb` | `MIMIC tabular data/YYYY-MM-DD MIMICIV all with CC_data_dictionary.xlsx` |
+| Data dictionary | `MIMICIV_hypercap_EXT_cohort.ipynb` | `MIMIC tabular data/prior runs/YYYY-MM-DD MIMICIV all with CC_data_dictionary.xlsx` and `.csv` |
 | QA summary | `MIMICIV_hypercap_EXT_cohort.ipynb` | `qa_summary.json` |
+| OMR diagnostics | `MIMICIV_hypercap_EXT_cohort.ipynb` | `MIMIC tabular data/prior runs/YYYY-MM-DD omr_diagnostics.json` |
 | Gas source audit | `MIMICIV_hypercap_EXT_cohort.ipynb` | `MIMIC tabular data/prior runs/YYYY-MM-DD gas_source_audit.json` |
 | First other-pCO2 audit | `MIMICIV_hypercap_EXT_cohort.ipynb` | `MIMIC tabular data/prior runs/YYYY-MM-DD first_other_pco2_audit.csv` |
 | Vitals outlier audit | `MIMICIV_hypercap_EXT_cohort.ipynb` | `MIMIC tabular data/prior runs/YYYY-MM-DD vitals_outlier_audit.csv` |
@@ -218,15 +237,16 @@ Annotation workbook curation remains an independent manual workflow.
 | Lab unit audit | `MIMICIV_hypercap_EXT_cohort.ipynb` | `lab_unit_audit.csv` |
 | Current admission columns | `MIMICIV_hypercap_EXT_cohort.ipynb` | `current_columns.json` |
 | Current ED columns (if `ed_df` exists) | `MIMICIV_hypercap_EXT_cohort.ipynb` | `ed_columns.json` |
-| ED vitals (long) | `MIMICIV_hypercap_EXT_cohort.ipynb` | `MIMIC tabular data/ed_vitals_long.parquet` |
-| Labs (long) | `MIMICIV_hypercap_EXT_cohort.ipynb` | `MIMIC tabular data/labs_long.parquet` |
-| Gas panels (HOSP) | `MIMICIV_hypercap_EXT_cohort.ipynb` | `MIMIC tabular data/gas_panels.parquet` |
-| Gas panels (ICU POC) | `MIMICIV_hypercap_EXT_cohort.ipynb` | `MIMIC tabular data/gas_panels_poc.parquet` |
-| Manual agreement metrics | `Rater Agreement Analysis.ipynb` | `Annotation/Full Annotations/Agreement Metrics/` |
-| NLP vs R3 agreement | `Rater Agreement Analysis.ipynb` | `annotation_agreement_outputs_nlp/` |
+| ED-stay cohort parquet snapshot | `MIMICIV_hypercap_EXT_cohort.ipynb` | `MIMIC tabular data/prior runs/cohort_ed_stay_<timestamp>.parquet` |
+| ED vitals (long) parquet snapshot | `MIMICIV_hypercap_EXT_cohort.ipynb` | `MIMIC tabular data/prior runs/ed_vitals_long_<timestamp>.parquet` |
+| Labs (long) parquet snapshot | `MIMICIV_hypercap_EXT_cohort.ipynb` | `MIMIC tabular data/prior runs/labs_long_<timestamp>.parquet` |
+| Gas panels (HOSP) parquet snapshot | `MIMICIV_hypercap_EXT_cohort.ipynb` | `MIMIC tabular data/prior runs/gas_panels_<timestamp>.parquet` |
+| Gas panels (ICU POC) parquet snapshot | `MIMICIV_hypercap_EXT_cohort.ipynb` | `MIMIC tabular data/prior runs/gas_panels_poc_<timestamp>.parquet` |
+| Manual agreement metrics | `Rater Agreement Analysis.ipynb` | `Annotation/Full Annotations/Agreement Metrics/` (pairwise set metrics, binary stats, AC1 summary) |
+| NLP vs R3 agreement outputs | `Rater Agreement Analysis.ipynb` | `annotation_agreement_outputs_nlp/R3_vs_NLP_set_metrics_by_visit.csv`, `annotation_agreement_outputs_nlp/R3_vs_NLP_binary_stats_by_category.csv`, `annotation_agreement_outputs_nlp/R3_vs_NLP_summary.txt` |
 | R3/NLP join audit | `Rater Agreement Analysis.ipynb` | `annotation_agreement_outputs_nlp/R3_vs_NLP_join_audit.json`, `annotation_agreement_outputs_nlp/R3_vs_NLP_unmatched_adjudicated_keys.csv`, `annotation_agreement_outputs_nlp/R3_vs_NLP_unmatched_nlp_keys.csv` |
 | NLP‑augmented workbook | `Hypercap CC NLP Classifier.ipynb` | Canonical: `MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx`; archive: `MIMIC tabular data/prior runs/YYYY-MM-DD MIMICIV all with CC_with_NLP.xlsx` |
-| Analysis exports | `Hypercap CC NLP Analysis.ipynb` | `Symptom_Composition_by_Hypercapnia_Definition.xlsx`, `Symptom_Composition_Pivot_ChartReady.xlsx` |
+| Analysis exports | `Hypercap CC NLP Analysis.ipynb` | `Symptom_Composition_by_Hypercapnia_Definition.xlsx`, `Symptom_Composition_Pivot_ChartReady.xlsx`, `Symptom_Composition_by_ABG_VBG_Overlap.xlsx`, `Symptom_Composition_by_ICD_Gas_Overlap.xlsx` |
 
 Rater join policy:
 - Rater/NLP agreement is computed on matched `(hadm_id, subject_id)` rows.
@@ -251,11 +271,47 @@ uv run pytest -q
 uv run --with ruff ruff check src tests
 ```
 
+Equivalent Make targets:
+
+```bash
+make test
+make lint
+```
+
 Optional formatting:
 
 ```bash
 uv run --with ruff ruff format src tests
 ```
+
+## Pipeline deep-dive audit
+Use `make notebook-pipeline-audit` to run:
+1. `make lint` and `make test`
+2. full 4-stage notebook pipeline (`cohort -> classifier -> rater -> analysis`)
+3. artifact contract checks, hard-fail QA checks, log scanning, and drift checks vs latest baseline
+
+Audit outputs are written to:
+- `debug/pipeline_audit/<run_id>/run_manifest.json`
+- `debug/pipeline_audit/<run_id>/logs/01_cohort.log` ... `04_analysis.log`
+- `debug/pipeline_audit/<run_id>/audit_report.json`
+- `debug/pipeline_audit/<run_id>/audit_summary.md`
+- `debug/pipeline_audit/<run_id>/metric_drift.csv`
+- `debug/pipeline_audit/<run_id>/warnings_index.csv`
+
+Interpretation:
+- `status=fail`: one or more P0/P1 findings (blocking)
+- `status=warning`: no P0/P1 findings, but at least one P2 finding
+- `status=pass`: no findings
+
+Current expected non-blocking warning:
+- `missing_work_dir_env_key` when `.env` omits `WORK_DIR`; pipeline remains valid, but manifest portability is reduced.
+
+Reproducibility checklist:
+- Rebuild environment from lockfile: `uv sync --frozen`
+- Keep `.env` populated for BigQuery datasets/project and (recommended) `WORK_DIR`
+- Keep ADC valid: `gcloud auth application-default login`
+- Ensure spaCy model exists: `make spacy-model`
+- Run `make notebook-pipeline-audit` and archive the generated `debug/pipeline_audit/<run_id>/` folder with results.
 
 ## Debug workflows
 `debug/abg_vbg_capture/` contains debug-only forensics notebooks for ABG/VBG capture deltas, including run order and generated artifacts:

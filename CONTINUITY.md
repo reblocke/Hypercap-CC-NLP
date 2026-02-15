@@ -1,55 +1,65 @@
 Goal (incl. success criteria):
-- Port the linked blog's figure-styling guidance into `AGENTS.md` as Python-first instructions.
+- Implement an end-to-end pipeline reliability + reproducibility deep-dive workflow.
 - Success criteria:
-  - `AGENTS.md` contains explicit publication-ready plotting guidance for Python (`matplotlib`-first).
-  - R/`ggplot2`-specific style directives are not present in `AGENTS.md`.
-  - Existing project constraints (Python-first, reproducibility, deterministic runs) remain intact.
-  - Repo standard checks run successfully after docs edit.
+  - New codified audit command runs full notebook pipeline with isolated stage logs.
+  - Audit validates contracts, numerical sanity, drift against latest prior run, and log findings.
+  - Audit emits machine-readable and human-readable reports.
+  - Critical P0/P1 findings can be remediated and verified in the same run cycle.
+  - README documents deep-dive runbook and reproducibility checklist.
 
 Constraints/Assumptions:
-- Scope is limited to `AGENTS.md` (+ ledger updates).
-- No dependency changes.
-- No scientific-method changes.
-- Source URL is currently unreachable from shell (`curl` DNS failure), so mapping is best-effort from standard publication-figure practices.
+- No scientific threshold/estimand changes.
+- No dependency additions unless strictly necessary.
+- Baseline drift reference defaults to latest successful dated prior run.
+- Existing dirty workspace state is preserved.
 
 Key decisions:
-- Keep Python-first project policy unchanged.
-- Expand the `Visualization` section with a concrete Python style checklist:
-  - typography, sizing, line widths, color/contrast, axes/ticks, legends, multi-panel consistency, and export formats.
-- Add deterministic plotting defaults (explicit size, rcParams policy, explicit save settings).
-- Preserve Quarto usage guidance as tooling-neutral (not R-specific styling).
+- Implement new audit module under `src/hypercap_cc_nlp/pipeline_audit.py`.
+- Add CLI entry script `scripts/run_pipeline_audit.py`.
+- Add Make target `notebook-pipeline-audit`.
+- Fail on key anomalies (P0/P1), keep lower-severity issues as warnings.
+- Include preflight manifest capture (env/tooling/git versions and selected env knobs).
 
 State:
-- Done: previous notebook/pipeline stabilization work exists in working tree.
-- Now: styling port and verification completed.
-- Next: await user follow-up on any refinements.
+- Done: deep-dive audit module, CLI, tests, Make target, and README runbook are implemented.
+- Now: final handoff summary with verification artifacts.
+- Next: optional follow-up to clear non-blocking P2 warning by setting `WORK_DIR` in `.env`.
 
 Done:
-- Re-read current `AGENTS.md` and identified visualization section to expand.
-- Re-attempted source fetch:
-  - `curl -sSL https://jaquent.github.io/2026/02/creating-actually-publication-ready-figures-for-journals-using-ggplot2/`
-  - Result: `Could not resolve host` (still blocked).
-- Updated `AGENTS.md` visualization guidance to a full Python publication-figure standard:
-  - typography, sizing, color/accessibility, axes/scales integrity, legends/multi-panel layout, export/reproducibility defaults.
-- Removed R-specific style wording from `AGENTS.md` (`R`, `ggplot2`, `Rscript` no longer present).
-- Ran repo checks successfully:
-  - `make lint` → pass.
-  - `make test` → pass (`33 passed`).
+- Confirmed current executable pipeline targets in `Makefile`.
+- Confirmed current canonical outputs and dated baselines in `MIMIC tabular data/prior runs/`.
+- Confirmed current QA artifacts (`qa_summary.json`, rater join audit artifacts) and current metrics availability.
+- Added `src/hypercap_cc_nlp/pipeline_audit.py` with:
+  - stage-isolated run execution/log capture
+  - artifact/schema/hard-fail validations
+  - drift calculations and log pattern scanning
+  - consolidated report + markdown summary output
+- Added `scripts/run_pipeline_audit.py` CLI entrypoint.
+- Added `tests/test_pipeline_audit.py` for audit contracts and status logic.
+- Added `make notebook-pipeline-audit` target.
+- Remediated false-blocking preflight finding by reclassifying missing `.env` `WORK_DIR` from P1 to P2 advisory.
+- Completed rerun: `make notebook-pipeline-audit` finished with `status=warning`, `P0=0`, `P1=0`, `P2=1`.
+- Updated `README.md` with deep-dive audit runbook and reproducibility checklist.
 
 Now:
-- None.
+- Prepare final implementation summary with paths, checks, and remaining advisory.
 
 Next:
-- If needed, tune the visualization checklist for a specific journal style guide.
+- Optional: set `WORK_DIR` in `.env` to remove advisory `missing_work_dir_env_key`.
+- Optional: archive `debug/pipeline_audit/20260214_230044/` with run artifacts.
 
 Open questions (UNCONFIRMED if needed):
-- UNCONFIRMED: exact one-to-one mapping fidelity to the unavailable blog page; content will follow publication-standard Python equivalents.
+- None.
 
 Working set (files/ids/commands):
 - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/CONTINUITY.md`
-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/AGENTS.md`
+- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/src/hypercap_cc_nlp/pipeline_audit.py`
+- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/scripts/run_pipeline_audit.py`
+- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/tests/test_pipeline_audit.py`
+- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Makefile`
+- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/README.md`
+- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/debug/pipeline_audit/20260214_230044/audit_report.json`
 - Commands:
-  - `curl -sSL "https://jaquent.github.io/2026/02/creating-actually-publication-ready-figures-for-journals-using-ggplot2/"`
-  - `rg -n "\\bR\\b|ggplot2|Rscript" AGENTS.md`
-  - `make lint`
-  - `make test`
+  - `uv run pytest -q tests/test_pipeline_audit.py`
+  - `uv run --with ruff ruff check src tests`
+  - `make notebook-pipeline-audit`

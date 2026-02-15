@@ -21,6 +21,17 @@ from .cohort_quality import (
     prepare_omr_records,
     summarize_gas_source,
 )
+from .pipeline_audit import (
+    build_audit_report,
+    collect_run_manifest,
+    compute_metric_drift,
+    load_and_validate_artifacts,
+    resolve_baseline_metrics,
+    run_pipeline_with_logs,
+    run_preflight_checks,
+    scan_logs_for_findings,
+    write_audit_summary_markdown,
+)
 from .rater_core import build_r3_nlp_join_audit, normalize_join_keys
 from .workflow_contracts import (
     CANONICAL_COHORT_FILENAME,
@@ -57,16 +68,25 @@ __all__ = [
     "build_r3_nlp_join_audit",
     "build_first_other_pco2_audit",
     "classify_missingness_expectations",
+    "collect_run_manifest",
+    "compute_metric_drift",
+    "build_audit_report",
     "evaluate_uom_expectations",
+    "load_and_validate_artifacts",
     "normalize_classifier_input_schema",
     "normalize_join_keys",
     "prepare_omr_records",
+    "resolve_baseline_metrics",
     "resolve_analysis_input_path",
     "resolve_classifier_input_path",
     "resolve_classifier_output_paths",
     "resolve_rater_nlp_input_path",
     "resolve_analysis_paths",
+    "run_pipeline_with_logs",
+    "run_preflight_checks",
+    "scan_logs_for_findings",
     "summarize_gas_source",
     "symptom_distribution_by_overlap",
     "to_binary_flag",
+    "write_audit_summary_markdown",
 ]

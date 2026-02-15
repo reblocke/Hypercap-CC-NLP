@@ -1,0 +1,33 @@
+{
+  "run_id": "20260214_230044",
+  "generated_utc": "2026-02-14T23:00:44.690126+00:00",
+  "work_dir": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP",
+  "python_version": "3.11.10 (main, Oct 16 2024, 08:56:36) [Clang 18.1.8 ]",
+  "uv_version": "uv 0.9.28 (Homebrew 2026-01-29)",
+  "git": {
+    "branch": "main",
+    "commit": "a4f11da88ed2f21b9b1a65525686f402ceb13ee9",
+    "dirty": true
+  },
+  "package_versions": {
+    "pandas": "2.2.2",
+    "numpy": "2.3.5",
+    "spacy": "3.8.11",
+    "torch": "2.10.0",
+    "sentence-transformers": "5.2.2"
+  },
+  "env_knobs": {
+    "WORK_DIR": "<unset>",
+    "CLASSIFIER_INPUT_FILENAME": "<unset>",
+    "RATER_NLP_INPUT_FILENAME": "<unset>",
+    "RATER_ANNOTATION_PATH": "<unset>",
+    "ANALYSIS_INPUT_FILENAME": "<unset>",
+    "BQ_QUERY_TIMEOUT_SECS": "<unset>",
+    "WRITE_ARCHIVE_XLSX_EXPORTS": "<unset>",
+    "COHORT_FAIL_ON_ALL_OTHER_SOURCE": "<unset>",
+    "COHORT_FAIL_ON_OMR_ATTACH_INCONSISTENCY": "<unset>",
+    "COHORT_ALLOW_EMPTY_OMR": "<unset>",
+    "GOOGLE_APPLICATION_CREDENTIALS": "<unset>",
+    "HF_TOKEN": "<unset>"
+  }
+}

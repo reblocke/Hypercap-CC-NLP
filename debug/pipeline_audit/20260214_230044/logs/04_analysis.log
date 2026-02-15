@@ -1,0 +1,3 @@
+JUPYTER_PATH="$PWD/.jupyter" ./.venv/bin/python -m jupyter nbconvert --to notebook --execute --inplace --ClearOutputPreprocessor.enabled=True --ExecutePreprocessor.timeout=0 --ExecutePreprocessor.kernel_name=hypercap-cc-nlp "Hypercap CC NLP Analysis.ipynb"
+[NbConvertApp] Converting notebook Hypercap CC NLP Analysis.ipynb to notebook
+[NbConvertApp] Writing 233300 bytes to Hypercap CC NLP Analysis.ipynb

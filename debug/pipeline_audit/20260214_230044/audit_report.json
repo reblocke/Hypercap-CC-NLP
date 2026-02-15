@@ -1,0 +1,287 @@
+{
+  "run_id": "20260214_230044",
+  "generated_utc": "2026-02-14T23:19:10.217990+00:00",
+  "strictness": "fail_on_key_anomalies",
+  "status": "warning",
+  "summary": {
+    "p0_count": 0,
+    "p1_count": 0,
+    "p2_count": 1,
+    "total_findings": 1
+  },
+  "manifest": {
+    "run_id": "20260214_230044",
+    "generated_utc": "2026-02-14T23:00:44.690126+00:00",
+    "work_dir": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP",
+    "python_version": "3.11.10 (main, Oct 16 2024, 08:56:36) [Clang 18.1.8 ]",
+    "uv_version": "uv 0.9.28 (Homebrew 2026-01-29)",
+    "git": {
+      "branch": "main",
+      "commit": "a4f11da88ed2f21b9b1a65525686f402ceb13ee9",
+      "dirty": true
+    },
+    "package_versions": {
+      "pandas": "2.2.2",
+      "numpy": "2.3.5",
+      "spacy": "3.8.11",
+      "torch": "2.10.0",
+      "sentence-transformers": "5.2.2"
+    },
+    "env_knobs": {
+      "WORK_DIR": "<unset>",
+      "CLASSIFIER_INPUT_FILENAME": "<unset>",
+      "RATER_NLP_INPUT_FILENAME": "<unset>",
+      "RATER_ANNOTATION_PATH": "<unset>",
+      "ANALYSIS_INPUT_FILENAME": "<unset>",
+      "BQ_QUERY_TIMEOUT_SECS": "<unset>",
+      "WRITE_ARCHIVE_XLSX_EXPORTS": "<unset>",
+      "COHORT_FAIL_ON_ALL_OTHER_SOURCE": "<unset>",
+      "COHORT_FAIL_ON_OMR_ATTACH_INCONSISTENCY": "<unset>",
+      "COHORT_ALLOW_EMPTY_OMR": "<unset>",
+      "GOOGLE_APPLICATION_CREDENTIALS": "<unset>",
+      "HF_TOKEN": "<unset>"
+    }
+  },
+  "baseline": {
+    "baseline_mode": "latest",
+    "baseline_date": "2026-02-14",
+    "metrics": {
+      "cohort_rows": 41322.0,
+      "classifier_rows": 41322.0,
+      "gas_source_other_rate": 0.7711144274014472,
+      "first_other_pco2_pct_eq_160_poc": 0.1367172642716365,
+      "icu_link_rate": 0.770908827366285,
+      "pct_any_gas_0_6h": 0.37821906556505774,
+      "pct_any_gas_0_24h": 0.9468280427115041
+    },
+    "sources": {
+      "cohort_rows": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-14 MIMICIV all with CC.xlsx",
+      "classifier_rows": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-14 MIMICIV all with CC_with_NLP.xlsx",
+      "gas_source_other_rate": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-14 gas_source_audit.json",
+      "first_other_pco2_pct_eq_160_poc": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-14 first_other_pco2_audit.csv",
+      "icu_link_rate": "pre_run_qa_summary.json",
+      "pct_any_gas_0_6h": "pre_run_qa_summary.json",
+      "pct_any_gas_0_24h": "pre_run_qa_summary.json"
+    }
+  },
+  "pipeline_run": {
+    "started_utc": "2026-02-14T23:00:47.655019+00:00",
+    "ended_utc": "2026-02-14T23:16:24.944961+00:00",
+    "duration_s": 937.289942,
+    "success": true,
+    "stages": [
+      {
+        "command": "make notebook-cohort",
+        "returncode": 0,
+        "started_utc": "2026-02-14T23:00:47.655121+00:00",
+        "ended_utc": "2026-02-14T23:09:02.612294+00:00",
+        "duration_s": 494.957173,
+        "line_count": 3,
+        "log_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/debug/pipeline_audit/20260214_230044/logs/01_cohort.log",
+        "stage_id": "01_cohort",
+        "status": "ok"
+      },
+      {
+        "command": "make notebook-classifier",
+        "returncode": 0,
+        "started_utc": "2026-02-14T23:09:02.637017+00:00",
+        "ended_utc": "2026-02-14T23:14:49.148525+00:00",
+        "duration_s": 346.511508,
+        "line_count": 3,
+        "log_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/debug/pipeline_audit/20260214_230044/logs/02_classifier.log",
+        "stage_id": "02_classifier",
+        "status": "ok"
+      },
+      {
+        "command": "make notebook-rater",
+        "returncode": 0,
+        "started_utc": "2026-02-14T23:14:49.158906+00:00",
+        "ended_utc": "2026-02-14T23:15:36.806795+00:00",
+        "duration_s": 47.647889,
+        "line_count": 3,
+        "log_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/debug/pipeline_audit/20260214_230044/logs/03_rater.log",
+        "stage_id": "03_rater",
+        "status": "ok"
+      },
+      {
+        "command": "make notebook-analysis",
+        "returncode": 0,
+        "started_utc": "2026-02-14T23:15:36.810206+00:00",
+        "ended_utc": "2026-02-14T23:16:24.944073+00:00",
+        "duration_s": 48.133867,
+        "line_count": 3,
+        "log_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/debug/pipeline_audit/20260214_230044/logs/04_analysis.log",
+        "stage_id": "04_analysis",
+        "status": "ok"
+      }
+    ]
+  },
+  "artifact_checks": {
+    "cohort_workbook": {
+      "path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/MIMICIV all with CC.xlsx",
+      "exists": true,
+      "fresh": true,
+      "size_bytes": 36384748,
+      "mtime_utc": "2026-02-14T23:08:57.717807+00:00"
+    },
+    "classifier_workbook": {
+      "path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx",
+      "exists": true,
+      "fresh": true,
+      "size_bytes": 45334054,
+      "mtime_utc": "2026-02-14T23:13:01.088679+00:00"
+    },
+    "qa_summary": {
+      "path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/qa_summary.json",
+      "exists": true,
+      "fresh": true,
+      "size_bytes": 8997,
+      "mtime_utc": "2026-02-14T23:05:56.962579+00:00"
+    },
+    "rater_join_audit": {
+      "path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/annotation_agreement_outputs_nlp/R3_vs_NLP_join_audit.json",
+      "exists": true,
+      "fresh": true,
+      "size_bytes": 394,
+      "mtime_utc": "2026-02-14T23:15:36.353104+00:00"
+    },
+    "rater_summary": {
+      "path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/annotation_agreement_outputs_nlp/R3_vs_NLP_summary.txt",
+      "exists": true,
+      "fresh": true,
+      "size_bytes": 1293,
+      "mtime_utc": "2026-02-14T23:15:36.353746+00:00"
+    },
+    "analysis_export_1": {
+      "path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Symptom_Composition_by_Hypercapnia_Definition.xlsx",
+      "exists": true,
+      "fresh": true,
+      "size_bytes": 6920,
+      "mtime_utc": "2026-02-14T23:16:23.856339+00:00"
+    },
+    "analysis_export_2": {
+      "path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Symptom_Composition_Pivot_ChartReady.xlsx",
+      "exists": true,
+      "fresh": true,
+      "size_bytes": 5480,
+      "mtime_utc": "2026-02-14T23:16:23.859442+00:00"
+    },
+    "analysis_export_3": {
+      "path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Symptom_Composition_by_ABG_VBG_Overlap.xlsx",
+      "exists": true,
+      "fresh": true,
+      "size_bytes": 5371,
+      "mtime_utc": "2026-02-14T23:16:24.276104+00:00"
+    },
+    "analysis_export_4": {
+      "path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Symptom_Composition_by_ICD_Gas_Overlap.xlsx",
+      "exists": true,
+      "fresh": true,
+      "size_bytes": 5366,
+      "mtime_utc": "2026-02-14T23:16:24.279240+00:00"
+    }
+  },
+  "current_metrics": {
+    "cohort_rows": 41322.0,
+    "classifier_rows": 41322.0,
+    "icu_link_rate": 0.770908827366285,
+    "pct_any_gas_0_6h": 0.37821906556505774,
+    "pct_any_gas_0_24h": 0.9468280427115041,
+    "gas_source_other_rate": 0.7711144274014472,
+    "first_other_pco2_pct_eq_160_poc": 0.1367172643
+  },
+  "metric_drift": [
+    {
+      "metric": "classifier_rows",
+      "current_value": 41322.0,
+      "baseline_value": 41322.0,
+      "delta": 0.0,
+      "abs_delta": 0.0,
+      "relative_delta": 0.0,
+      "compare_type": "relative",
+      "warn_threshold": 0.05,
+      "fail_threshold": 0.1,
+      "severity": "ok"
+    },
+    {
+      "metric": "cohort_rows",
+      "current_value": 41322.0,
+      "baseline_value": 41322.0,
+      "delta": 0.0,
+      "abs_delta": 0.0,
+      "relative_delta": 0.0,
+      "compare_type": "relative",
+      "warn_threshold": 0.05,
+      "fail_threshold": 0.1,
+      "severity": "ok"
+    },
+    {
+      "metric": "first_other_pco2_pct_eq_160_poc",
+      "current_value": 0.1367172643,
+      "baseline_value": 0.1367172642716365,
+      "delta": 2.8363505988338034e-11,
+      "abs_delta": 2.8363505988338034e-11,
+      "relative_delta": 2.0746104114535267e-10,
+      "compare_type": "absolute",
+      "warn_threshold": 0.05,
+      "fail_threshold": 0.1,
+      "severity": "ok"
+    },
+    {
+      "metric": "gas_source_other_rate",
+      "current_value": 0.7711144274014472,
+      "baseline_value": 0.7711144274014472,
+      "delta": 0.0,
+      "abs_delta": 0.0,
+      "relative_delta": 0.0,
+      "compare_type": "absolute",
+      "warn_threshold": 0.04,
+      "fail_threshold": 0.08,
+      "severity": "ok"
+    },
+    {
+      "metric": "icu_link_rate",
+      "current_value": 0.770908827366285,
+      "baseline_value": 0.770908827366285,
+      "delta": 0.0,
+      "abs_delta": 0.0,
+      "relative_delta": 0.0,
+      "compare_type": "absolute",
+      "warn_threshold": 0.04,
+      "fail_threshold": 0.08,
+      "severity": "ok"
+    },
+    {
+      "metric": "pct_any_gas_0_24h",
+      "current_value": 0.9468280427115041,
+      "baseline_value": 0.9468280427115041,
+      "delta": 0.0,
+      "abs_delta": 0.0,
+      "relative_delta": 0.0,
+      "compare_type": "absolute",
+      "warn_threshold": 0.04,
+      "fail_threshold": 0.08,
+      "severity": "ok"
+    },
+    {
+      "metric": "pct_any_gas_0_6h",
+      "current_value": 0.37821906556505774,
+      "baseline_value": 0.37821906556505774,
+      "delta": 0.0,
+      "abs_delta": 0.0,
+      "relative_delta": 0.0,
+      "compare_type": "absolute",
+      "warn_threshold": 0.04,
+      "fail_threshold": 0.08,
+      "severity": "ok"
+    }
+  ],
+  "findings": [
+    {
+      "severity": "P2",
+      "category": "preflight",
+      "code": "missing_work_dir_env_key",
+      "message": "Optional .env key WORK_DIR is unset; reproducibility manifest will rely on cwd."
+    }
+  ]
+}

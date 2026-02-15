@@ -1,0 +1,8 @@
+metric,current_value,baseline_value,delta,abs_delta,relative_delta,compare_type,warn_threshold,fail_threshold,severity
+classifier_rows,41322.0,41322.0,0.0,0.0,0.0,relative,0.05,0.1,ok
+cohort_rows,41322.0,41322.0,0.0,0.0,0.0,relative,0.05,0.1,ok
+first_other_pco2_pct_eq_160_poc,0.1367172643,0.1367172642716365,2.8363505988338034e-11,2.8363505988338034e-11,2.0746104114535267e-10,absolute,0.05,0.1,ok
+gas_source_other_rate,0.7711144274014472,0.7711144274014472,0.0,0.0,0.0,absolute,0.04,0.08,ok
+icu_link_rate,0.770908827366285,0.770908827366285,0.0,0.0,0.0,absolute,0.04,0.08,ok
+pct_any_gas_0_24h,0.9468280427115041,0.9468280427115041,0.0,0.0,0.0,absolute,0.04,0.08,ok
+pct_any_gas_0_6h,0.37821906556505774,0.37821906556505774,0.0,0.0,0.0,absolute,0.04,0.08,ok

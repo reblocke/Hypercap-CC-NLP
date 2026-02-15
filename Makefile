@@ -1,6 +1,6 @@
 # Maintained convenience targets for the uv-based workflow.
 
-.PHONY: setup spacy-model kernel-install bq-auth test lint format smoke notebook-cohort notebook-classifier notebook-rater notebook-analysis notebook-pipeline
+.PHONY: setup spacy-model kernel-install bq-auth test lint format smoke notebook-cohort notebook-classifier notebook-rater notebook-analysis notebook-pipeline notebook-pipeline-audit
 
 setup:
 	uv sync
@@ -44,3 +44,6 @@ notebook-analysis:
 	JUPYTER_PATH="$$PWD/.jupyter" ./.venv/bin/python -m jupyter nbconvert --to notebook --execute --inplace --ClearOutputPreprocessor.enabled=True --ExecutePreprocessor.timeout=0 --ExecutePreprocessor.kernel_name=hypercap-cc-nlp "Hypercap CC NLP Analysis.ipynb"
 
 notebook-pipeline: notebook-cohort notebook-classifier notebook-rater notebook-analysis
+
+notebook-pipeline-audit: lint test
+	uv run python scripts/run_pipeline_audit.py --baseline latest --strictness fail_on_key_anomalies
