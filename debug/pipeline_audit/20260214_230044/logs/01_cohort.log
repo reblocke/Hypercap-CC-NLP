@@ -1,3 +1,0 @@
-JUPYTER_PATH="$PWD/.jupyter" ./.venv/bin/python -m jupyter nbconvert --to notebook --execute --inplace --ClearOutputPreprocessor.enabled=True --ExecutePreprocessor.timeout=0 --ExecutePreprocessor.kernel_name=hypercap-cc-nlp "MIMICIV_hypercap_EXT_cohort.ipynb"
-[NbConvertApp] Converting notebook MIMICIV_hypercap_EXT_cohort.ipynb to notebook
-[NbConvertApp] Writing 285050 bytes to MIMICIV_hypercap_EXT_cohort.ipynb

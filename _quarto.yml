@@ -1,0 +1,23 @@
+project:
+  type: default
+  render:
+    - "MIMICIV_hypercap_EXT_cohort.qmd"
+    - "Hypercap CC NLP Classifier.qmd"
+    - "Rater Agreement Analysis.qmd"
+    - "Hypercap CC NLP Analysis.qmd"
+    - "Chart Review Sample Calc.qmd"
+
+execute:
+  echo: true
+  warning: false
+  message: false
+  error: false
+  freeze: false
+
+format:
+  pdf:
+    toc: true
+    number-sections: true
+    code-overflow: wrap
+    keep-tex: false
+    include-in-header: quarto-pdf-header.tex

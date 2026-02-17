@@ -1,3 +1,0 @@
-JUPYTER_PATH="$PWD/.jupyter" ./.venv/bin/python -m jupyter nbconvert --to notebook --execute --inplace --ClearOutputPreprocessor.enabled=True --ExecutePreprocessor.timeout=0 --ExecutePreprocessor.kernel_name=hypercap-cc-nlp "Rater Agreement Analysis.ipynb"
-[NbConvertApp] Converting notebook Rater Agreement Analysis.ipynb to notebook
-[NbConvertApp] Writing 63076 bytes to Rater Agreement Analysis.ipynb

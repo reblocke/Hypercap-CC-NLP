@@ -3,7 +3,11 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from hypercap_cc_nlp.rater_core import build_r3_nlp_join_audit, normalize_join_keys
+from hypercap_cc_nlp.rater_core import (
+    build_r3_nlp_join_audit,
+    hash_join_keys,
+    normalize_join_keys,
+)
 
 
 def test_normalize_join_keys_coerces_to_nullable_int() -> None:
@@ -90,3 +94,17 @@ def test_build_r3_nlp_join_audit_marks_full_coverage_as_info() -> None:
     assert audit["matched_rate_vs_adjudicated"] == 1.0
     assert audit["join_interpretation"] == "adjudicated_fully_covered_subset"
     assert audit["severity"] == "info"
+
+
+def test_hash_join_keys_returns_only_hash_column() -> None:
+    frame = pd.DataFrame(
+        {
+            "hadm_id": [1, 2],
+            "subject_id": [10, 20],
+        }
+    )
+    hashed = hash_join_keys(frame, key_cols=["hadm_id", "subject_id"])
+
+    assert list(hashed.columns) == ["key_hash"]
+    assert len(hashed) == 2
+    assert hashed["key_hash"].str.len().eq(64).all()

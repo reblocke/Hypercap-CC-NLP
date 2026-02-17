@@ -1,0 +1,34 @@
+=== R3 vs NLP join audit ===
+
+key_columns                                 [hadm_id, subject_id]
+r3_rows                                                       160
+nlp_rows                                                    41322
+matched_rows                                                  160
+unmatched_adjudicated_rows                                      0
+unmatched_nlp_rows                                          41162
+matched_rate_vs_adjudicated                                   1.0
+unmatched_rate_vs_adjudicated                                 0.0
+unmatched_rate_vs_nlp                                    0.996128
+join_interpretation              adjudicated_fully_covered_subset
+severity                                                     info
+
+=== R3 (adjudicator) vs NLP: set-level (order-invariant) ===
+
+N_items         160.000000
+exact_rate        0.600000
+partial_rate      0.193750
+none_rate         0.206250
+mean_jaccard      0.679063
+mean_overlap      0.723958
+mean_f1_set       0.710655
+micro_f1_set      0.724211
+mean_len_a        1.487500
+mean_len_b        1.481250
+
+
+=== R3 vs NLP: chance-corrected (binary per category) ===
+
+macro_cohen_kappa          0.472870
+macro_gwet_ac1             0.949117
+macro_percent_agreement    0.957353
+micro_percent_agreement    0.957353

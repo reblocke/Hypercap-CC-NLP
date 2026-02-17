@@ -1,0 +1,67 @@
+{
+  "run_id": "rater_20260217_014808",
+  "generated_utc": "2026-02-17T08:48:08.653701+00:00",
+  "work_dir": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP",
+  "python_version": "3.11.10 (main, Oct 16 2024, 08:56:36) [Clang 18.1.8 ]",
+  "uv_version": "uv 0.9.28 (Homebrew 2026-01-29)",
+  "git": {
+    "branch": "main",
+    "commit": "4305b1efb4f9cadbff5019af8a0b0002eb185eb8",
+    "dirty": true
+  },
+  "package_versions": {
+    "pandas": "2.2.2",
+    "numpy": "2.3.5",
+    "spacy": "3.8.11",
+    "torch": "2.10.0",
+    "sentence-transformers": "5.2.2"
+  },
+  "env_knobs": {
+    "WORK_DIR": "<unset>",
+    "CLASSIFIER_INPUT_FILENAME": "<unset>",
+    "RATER_NLP_INPUT_FILENAME": "<unset>",
+    "RATER_ANNOTATION_PATH": "<unset>",
+    "ANALYSIS_INPUT_FILENAME": "<unset>",
+    "BQ_QUERY_TIMEOUT_SECS": "<unset>",
+    "WRITE_ARCHIVE_XLSX_EXPORTS": "<unset>",
+    "COHORT_FAIL_ON_ALL_OTHER_SOURCE": "<unset>",
+    "COHORT_WARN_OTHER_RATE": "<unset>",
+    "COHORT_FAIL_OTHER_RATE": "<unset>",
+    "COHORT_GAS_SOURCE_INFERENCE_MODE": "<unset>",
+    "COHORT_FAIL_ON_OMR_ATTACH_INCONSISTENCY": "<unset>",
+    "COHORT_ALLOW_EMPTY_OMR": "<unset>",
+    "COHORT_ANTHRO_MIN_BMI_COVERAGE": "<unset>",
+    "RUN_MANIFEST_STAGE_SCOPE": "<unset>",
+    "GOOGLE_APPLICATION_CREDENTIALS": "<unset>",
+    "HF_TOKEN": "<set>"
+  },
+  "stage": "rater",
+  "inputs": {
+    "annotation_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Annotation/Final 2025-10-14 Annotation Sample.xlsx",
+    "annotation_sheet": "cohort_cc_sample",
+    "nlp_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx",
+    "nlp_sheet": 0
+  },
+  "join_audit": {
+    "key_columns": [
+      "hadm_id",
+      "subject_id"
+    ],
+    "r3_rows": 160,
+    "nlp_rows": 41322,
+    "matched_rows": 160,
+    "unmatched_adjudicated_rows": 0,
+    "unmatched_nlp_rows": 41162,
+    "matched_rate_vs_adjudicated": 1.0,
+    "unmatched_rate_vs_adjudicated": 0.0,
+    "unmatched_rate_vs_nlp": 0.9961279705725764,
+    "join_interpretation": "adjudicated_fully_covered_subset",
+    "severity": "info"
+  },
+  "outputs": {
+    "summary_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/annotation_agreement_outputs_nlp/R3_vs_NLP_summary.txt",
+    "join_audit_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/annotation_agreement_outputs_nlp/R3_vs_NLP_join_audit.json",
+    "input_manifest_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/annotation_agreement_outputs_nlp/R3_vs_NLP_input_manifest.json",
+    "matched_key_hashes_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/annotation_agreement_outputs_nlp/R3_vs_NLP_matched_key_hashes.csv"
+  }
+}

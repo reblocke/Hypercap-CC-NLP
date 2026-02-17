@@ -24,6 +24,7 @@ from hypercap_cc_nlp.pipeline_audit import (  # noqa: E402
     collect_run_manifest,
     compute_metric_drift,
     load_and_validate_artifacts,
+    resolve_stage_commands,
     resolve_baseline_metrics,
     run_pipeline_with_logs,
     run_preflight_checks,
@@ -44,6 +45,12 @@ def _parse_args() -> argparse.Namespace:
         default="fail_on_key_anomalies",
         choices=("fail_on_key_anomalies",),
         help="Audit strictness policy.",
+    )
+    parser.add_argument(
+        "--pipeline-mode",
+        default="notebook",
+        choices=("notebook", "quarto"),
+        help="Execution mode for stage commands.",
     )
     parser.add_argument(
         "--run-id",
@@ -75,11 +82,20 @@ def main() -> int:
             pre_run_qa_summary = None
 
     manifest = collect_run_manifest(work_dir, run_id)
+    manifest["pipeline_mode"] = args.pipeline_mode
     preflight_findings = run_preflight_checks(work_dir)
+    stage_commands = resolve_stage_commands(args.pipeline_mode)
+    consistency_command = (
+        "make quarto-pipeline"
+        if args.pipeline_mode == "quarto"
+        else "make notebook-pipeline"
+    )
     pipeline_run = run_pipeline_with_logs(
         work_dir,
         logs_dir,
+        stage_commands=stage_commands,
         run_consistency_check=args.consistency_check,
+        consistency_command=consistency_command,
     )
     artifact_result = load_and_validate_artifacts(
         work_dir,

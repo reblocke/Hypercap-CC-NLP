@@ -7,23 +7,136 @@
   "icu_link_rate": 0.770908827366285,
   "pct_any_gas_0_6h": 0.37821906556505774,
   "pct_any_gas_0_24h": 0.9468280427115041,
-  "gas_source_other_rate": 0.7711144274014472,
+  "gas_source_other_rate": 0.548049457171136,
+  "gas_source_other_rate_warn_threshold": 0.5,
+  "gas_source_other_rate_fail_threshold": null,
   "source_unknown_rate": 0.0,
   "gas_source_audit": {
     "panel_rows": 194997,
     "source_present": true,
     "source_counts": {
-      "other": 150365,
-      "venous": 23167,
-      "arterial": 21465
+      "other": 106868,
+      "venous": 49943,
+      "arterial": 38186
     },
     "source_rates": {
-      "other": 0.7711144274014472,
-      "venous": 0.11880695600445135,
-      "arterial": 0.11007861659410145
+      "other": 0.548049457171136,
+      "venous": 0.2561218890547034,
+      "arterial": 0.19582865377416062
     },
-    "all_other_or_unknown": false
+    "all_other_or_unknown": false,
+    "tier_counts": {
+      "fallback_other": 106868,
+      "specimen_text": 44632,
+      "cluster_inheritance": 43497
+    },
+    "tier_rates": {
+      "fallback_other": 0.548049457171136,
+      "specimen_text": 0.2288855725985528,
+      "cluster_inheritance": 0.22306497023031124
+    },
+    "mode": "metadata_only",
+    "resolved_rows": 88129,
+    "resolved_rate": 0.45195054282886404,
+    "unresolved_specimen_id_count": 106812,
+    "unresolved_specimen_id_examples": [
+      1068183,
+      2752210,
+      12826971,
+      39367736,
+      45465398,
+      54325826,
+      95145860,
+      97178600,
+      920460,
+      12895434,
+      30523970,
+      36908160,
+      68228568,
+      68489379,
+      89489818,
+      96329217,
+      10427599,
+      35664365,
+      77560572,
+      20755486
+    ],
+    "unresolved_value_text_top": {
+      "___": 18967,
+      "0.8": 4983,
+      "0.7": 4856,
+      "0.9": 4593,
+      "0.6": 3906,
+      "1.0": 3821,
+      "139": 3772,
+      "138": 3741,
+      "140": 3513,
+      "104": 3408,
+      "103": 3364,
+      "102": 3353,
+      "137": 3187,
+      "1.1": 3133,
+      "105": 3077
+    },
+    "unresolved_label_top": {
+      "Sodium | Blood": 47074,
+      "Chloride | Blood": 46503,
+      "Creatinine | Blood": 46134,
+      "Hemoglobin | Blood": 43276,
+      "Lactate | Blood": 9754,
+      "Sodium, Urine | Urine": 3056,
+      "Creatinine, Urine | Urine": 2824,
+      "Sodium, Whole Blood | Blood": 2530,
+      "Chloride, Urine | Urine": 1955,
+      "pH | Blood": 1877,
+      "Calculated Total CO2 | Blood": 1536,
+      "pCO2 | Blood": 1536,
+      "Chloride, Whole Blood | Blood": 1283,
+      "Specimen Type | Blood": 1117,
+      "Calculated Bicarbonate, Whole Blood | Blood": 966
+    },
+    "baseline_other_rate": 0.548049457171136,
+    "baseline_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-16 gas_source_audit.json",
+    "relative_reduction_vs_baseline": 0.0,
+    "relative_reduction_target": 0.1
   },
+  "gas_source_overlap_summary": [
+    {
+      "gas_overlap": "OTHER",
+      "count": 17506,
+      "percent": 42.29
+    },
+    {
+      "gas_overlap": "VBG+OTHER",
+      "count": 8038,
+      "percent": 19.42
+    },
+    {
+      "gas_overlap": "ABG+OTHER",
+      "count": 6073,
+      "percent": 14.67
+    },
+    {
+      "gas_overlap": "ABG+VBG+OTHER",
+      "count": 4967,
+      "percent": 12.0
+    },
+    {
+      "gas_overlap": "VBG",
+      "count": 4567,
+      "percent": 11.03
+    },
+    {
+      "gas_overlap": "NO_GAS",
+      "count": 242,
+      "percent": 0.58
+    },
+    {
+      "gas_overlap": "ABG+VBG",
+      "count": 1,
+      "percent": 0.0
+    }
+  ],
   "omr_diagnostics": {
     "window_days": 365,
     "source_rows_prepared": 46494,
@@ -57,6 +170,10 @@
       "missing": 0.997922404213171
     },
     "timing_uncertain_count": 86,
+    "anthro_source_counts": {
+      "missing": 41308,
+      "omr": 86
+    },
     "source_rows_raw": 46494,
     "prepared_rows": 46494
   },
@@ -87,6 +204,115 @@
     "pre_ed_365": 0.0,
     "post_ed_365": 0.002077595786829009,
     "missing": 0.997922404213171
+  },
+  "anthro_coverage_audit": {
+    "row_count": 41394,
+    "field_nonnull_counts": {
+      "bmi_closest_pre_ed": 21132,
+      "height_closest_pre_ed": 21147,
+      "weight_closest_pre_ed": 36462
+    },
+    "field_nonnull_rates": {
+      "bmi_closest_pre_ed": 0.5105087693868676,
+      "height_closest_pre_ed": 0.5108711407450355,
+      "weight_closest_pre_ed": 0.8808522974344107
+    },
+    "source_counts": {
+      "icu_charted": 36382,
+      "missing": 4926,
+      "omr": 86
+    },
+    "source_rates": {
+      "icu_charted": 0.878919650190849,
+      "missing": 0.11900275402232208,
+      "omr": 0.002077595786829009
+    },
+    "timing_basis_counts": {
+      "nearest_anytime": 36382,
+      "missing": 4926,
+      "post": 86
+    },
+    "timing_basis_rates": {
+      "nearest_anytime": 0.878919650190849,
+      "missing": 0.11900275402232208,
+      "post": 0.002077595786829009
+    },
+    "omr": {
+      "window_days": 365,
+      "source_rows_prepared": 46494,
+      "parsed_value_rows": 46489,
+      "ed_rows": 41394,
+      "ed_rows_eligible_for_join": 41394,
+      "subject_overlap_count": 2102,
+      "candidate_rows_after_subject_join": 7906,
+      "days_before_min": -4055,
+      "days_before_max": -262,
+      "nonnegative_candidate_rows": 0,
+      "pre_window_candidate_rows": 0,
+      "post_window_candidate_rows": 112,
+      "closest_absolute_candidate_rows": 112,
+      "within_window_candidate_rows": 0,
+      "eligible_ed_stays_with_candidates": 86,
+      "attached_non_null_counts": {
+        "bmi_closest_pre_ed": 49,
+        "height_closest_pre_ed": 6,
+        "weight_closest_pre_ed": 44
+      },
+      "attached_any_non_null_rows": 86,
+      "selected_tier_counts": {
+        "pre_ed_365": 0,
+        "post_ed_365": 86,
+        "missing": 41308
+      },
+      "selected_tier_rates": {
+        "pre_ed_365": 0.0,
+        "post_ed_365": 0.002077595786829009,
+        "missing": 0.997922404213171
+      },
+      "timing_uncertain_count": 86,
+      "anthro_source_counts": {
+        "missing": 41308,
+        "omr": 86
+      },
+      "source_rows_raw": 46494,
+      "prepared_rows": 46494
+    },
+    "charted_fallback": {
+      "charted_rows_input": 727074,
+      "charted_rows_usable": 727074,
+      "nearest_anytime": true,
+      "filled_counts": {
+        "bmi_closest_pre_ed": 0,
+        "height_closest_pre_ed": 21141,
+        "weight_closest_pre_ed": 36418
+      },
+      "rows_with_any_charted_fill": 36448,
+      "subject_overlap_count": 26145,
+      "fallback_source_counts": {
+        "icu_charted": 36382,
+        "omr": 66
+      },
+      "bmi_filled_from_height_weight": 21083,
+      "enabled": true
+    }
+  },
+  "charted_anthro_diagnostics": {
+    "charted_rows_input": 727074,
+    "charted_rows_usable": 727074,
+    "nearest_anytime": true,
+    "filled_counts": {
+      "bmi_closest_pre_ed": 0,
+      "height_closest_pre_ed": 21141,
+      "weight_closest_pre_ed": 36418
+    },
+    "rows_with_any_charted_fill": 36448,
+    "subject_overlap_count": 26145,
+    "fallback_source_counts": {
+      "icu_charted": 36382,
+      "omr": 66
+    },
+    "bmi_filled_from_height_weight": 21083,
+    "enabled": true
   },
   "unexpected_full_null_fields": [],
   "expected_structural_null_fields": [],
@@ -208,112 +434,330 @@
   ],
   "vitals_outlier_audit": [
     {
+      "domain": "vitals",
       "raw_column": "ed_first_dbp",
       "model_column": "ed_first_dbp_model",
+      "outlier_flag_column": "ed_first_dbp_outlier_flag",
       "lower_bound": 20.0,
       "upper_bound": 200.0,
       "nonnull_n": 33943,
       "out_of_range_n": 41,
-      "out_of_range_pct": 0.0012079074
+      "out_of_range_pct": 0.0012079074,
+      "example_outlier_values": "19; 11; 7; 885; 4115"
     },
     {
+      "domain": "vitals",
       "raw_column": "ed_first_hr",
       "model_column": "ed_first_hr_model",
+      "outlier_flag_column": "ed_first_hr_outlier_flag",
       "lower_bound": 20.0,
       "upper_bound": 250.0,
       "nonnull_n": 34427,
       "out_of_range_n": 4,
-      "out_of_range_pct": 0.0001161879
+      "out_of_range_pct": 0.0001161879,
+      "example_outlier_values": "16.0; 7.0; 14.0; 6.0"
     },
     {
+      "domain": "vitals",
       "raw_column": "ed_first_o2sat",
       "model_column": "ed_first_o2sat_model",
+      "outlier_flag_column": "ed_first_o2sat_outlier_flag",
       "lower_bound": 40.0,
       "upper_bound": 100.0,
       "nonnull_n": 32727,
       "out_of_range_n": 19,
-      "out_of_range_pct": 0.0005805604
+      "out_of_range_pct": 0.0005805604,
+      "example_outlier_values": "10.0; 9.0; 20.0; 35.0; 8.0"
     },
     {
+      "domain": "vitals",
       "raw_column": "ed_first_rr",
       "model_column": "ed_first_rr_model",
+      "outlier_flag_column": "ed_first_rr_outlier_flag",
       "lower_bound": 4.0,
       "upper_bound": 80.0,
       "nonnull_n": 34016,
       "out_of_range_n": 3,
-      "out_of_range_pct": 8.81938e-05
+      "out_of_range_pct": 8.81938e-05,
+      "example_outlier_values": "2.0; 100.0"
     },
     {
+      "domain": "vitals",
       "raw_column": "ed_first_sbp",
       "model_column": "ed_first_sbp_model",
+      "outlier_flag_column": "ed_first_sbp_outlier_flag",
       "lower_bound": 40.0,
       "upper_bound": 300.0,
       "nonnull_n": 33943,
       "out_of_range_n": 34,
-      "out_of_range_pct": 0.0010016793
+      "out_of_range_pct": 0.0010016793,
+      "example_outlier_values": "13; 11; 14; 10; 15"
     },
     {
+      "domain": "vitals",
       "raw_column": "ed_first_temp",
       "model_column": "ed_first_temp_model",
+      "outlier_flag_column": "ed_first_temp_outlier_flag",
       "lower_bound": 90.0,
       "upper_bound": 110.0,
       "nonnull_n": 25279,
       "out_of_range_n": 165,
-      "out_of_range_pct": 0.0065271569
+      "out_of_range_pct": 0.0065271569,
+      "example_outlier_values": "36.7; 36.4; 36.1; 36.6; 36.2"
     },
     {
+      "domain": "vitals",
       "raw_column": "ed_triage_dbp",
       "model_column": "ed_triage_dbp_model",
+      "outlier_flag_column": "ed_triage_dbp_outlier_flag",
       "lower_bound": 20.0,
       "upper_bound": 200.0,
       "nonnull_n": 32692,
       "out_of_range_n": 55,
-      "out_of_range_pct": 0.0016823688
+      "out_of_range_pct": 0.0016823688,
+      "example_outlier_values": "11.0; 15.0; 18.0; 10.0; 13.0"
     },
     {
+      "domain": "vitals",
       "raw_column": "ed_triage_hr",
       "model_column": "ed_triage_hr_model",
+      "outlier_flag_column": "ed_triage_hr_outlier_flag",
       "lower_bound": 20.0,
       "upper_bound": 250.0,
       "nonnull_n": 32882,
       "out_of_range_n": 4,
-      "out_of_range_pct": 0.0001216471
+      "out_of_range_pct": 0.0001216471,
+      "example_outlier_values": "18.0; 1228.0; 14.0; 16.0"
     },
     {
+      "domain": "vitals",
       "raw_column": "ed_triage_o2sat",
       "model_column": "ed_triage_o2sat_model",
+      "outlier_flag_column": "ed_triage_o2sat_outlier_flag",
       "lower_bound": 40.0,
       "upper_bound": 100.0,
       "nonnull_n": 32266,
       "out_of_range_n": 15,
-      "out_of_range_pct": 0.0004648856
+      "out_of_range_pct": 0.0004648856,
+      "example_outlier_values": "9.0; 1000.0; 1001.0; 980.0; 120.0"
     },
     {
+      "domain": "vitals",
       "raw_column": "ed_triage_rr",
       "model_column": "ed_triage_rr_model",
+      "outlier_flag_column": "ed_triage_rr_outlier_flag",
       "lower_bound": 4.0,
       "upper_bound": 80.0,
       "nonnull_n": 32275,
       "out_of_range_n": 9,
-      "out_of_range_pct": 0.0002788536
+      "out_of_range_pct": 0.0002788536,
+      "example_outlier_values": "2.0; 162.0; 100.0; 1.0; 189.0"
     },
     {
+      "domain": "vitals",
       "raw_column": "ed_triage_sbp",
       "model_column": "ed_triage_sbp_model",
+      "outlier_flag_column": "ed_triage_sbp_outlier_flag",
       "lower_bound": 40.0,
       "upper_bound": 300.0,
       "nonnull_n": 32824,
       "out_of_range_n": 21,
-      "out_of_range_pct": 0.0006397758
+      "out_of_range_pct": 0.0006397758,
+      "example_outlier_values": "14.0; 13.0; 15.0; 18.0; 12.0"
     },
     {
+      "domain": "vitals",
       "raw_column": "ed_triage_temp",
       "model_column": "ed_triage_temp_model",
+      "outlier_flag_column": "ed_triage_temp_outlier_flag",
       "lower_bound": 90.0,
       "upper_bound": 110.0,
       "nonnull_n": 31350,
       "out_of_range_n": 107,
-      "out_of_range_pct": 0.0034130781
+      "out_of_range_pct": 0.0034130781,
+      "example_outlier_values": "36.7; 36.2; 36.6; 37.0; 36.1"
+    }
+  ],
+  "outliers_audit": [
+    {
+      "domain": "vitals",
+      "raw_column": "ed_first_dbp",
+      "model_column": "ed_first_dbp_model",
+      "outlier_flag_column": "ed_first_dbp_outlier_flag",
+      "lower_bound": 20.0,
+      "upper_bound": 200.0,
+      "nonnull_n": 33943,
+      "out_of_range_n": 41,
+      "out_of_range_pct": 0.0012079074,
+      "example_outlier_values": "19; 11; 7; 885; 4115"
+    },
+    {
+      "domain": "vitals",
+      "raw_column": "ed_first_hr",
+      "model_column": "ed_first_hr_model",
+      "outlier_flag_column": "ed_first_hr_outlier_flag",
+      "lower_bound": 20.0,
+      "upper_bound": 250.0,
+      "nonnull_n": 34427,
+      "out_of_range_n": 4,
+      "out_of_range_pct": 0.0001161879,
+      "example_outlier_values": "16.0; 7.0; 14.0; 6.0"
+    },
+    {
+      "domain": "vitals",
+      "raw_column": "ed_first_o2sat",
+      "model_column": "ed_first_o2sat_model",
+      "outlier_flag_column": "ed_first_o2sat_outlier_flag",
+      "lower_bound": 40.0,
+      "upper_bound": 100.0,
+      "nonnull_n": 32727,
+      "out_of_range_n": 19,
+      "out_of_range_pct": 0.0005805604,
+      "example_outlier_values": "10.0; 9.0; 20.0; 35.0; 8.0"
+    },
+    {
+      "domain": "vitals",
+      "raw_column": "ed_first_rr",
+      "model_column": "ed_first_rr_model",
+      "outlier_flag_column": "ed_first_rr_outlier_flag",
+      "lower_bound": 4.0,
+      "upper_bound": 80.0,
+      "nonnull_n": 34016,
+      "out_of_range_n": 3,
+      "out_of_range_pct": 8.81938e-05,
+      "example_outlier_values": "2.0; 100.0"
+    },
+    {
+      "domain": "vitals",
+      "raw_column": "ed_first_sbp",
+      "model_column": "ed_first_sbp_model",
+      "outlier_flag_column": "ed_first_sbp_outlier_flag",
+      "lower_bound": 40.0,
+      "upper_bound": 300.0,
+      "nonnull_n": 33943,
+      "out_of_range_n": 34,
+      "out_of_range_pct": 0.0010016793,
+      "example_outlier_values": "13; 11; 14; 10; 15"
+    },
+    {
+      "domain": "vitals",
+      "raw_column": "ed_first_temp",
+      "model_column": "ed_first_temp_model",
+      "outlier_flag_column": "ed_first_temp_outlier_flag",
+      "lower_bound": 90.0,
+      "upper_bound": 110.0,
+      "nonnull_n": 25279,
+      "out_of_range_n": 165,
+      "out_of_range_pct": 0.0065271569,
+      "example_outlier_values": "36.7; 36.4; 36.1; 36.6; 36.2"
+    },
+    {
+      "domain": "vitals",
+      "raw_column": "ed_triage_dbp",
+      "model_column": "ed_triage_dbp_model",
+      "outlier_flag_column": "ed_triage_dbp_outlier_flag",
+      "lower_bound": 20.0,
+      "upper_bound": 200.0,
+      "nonnull_n": 32692,
+      "out_of_range_n": 55,
+      "out_of_range_pct": 0.0016823688,
+      "example_outlier_values": "11.0; 15.0; 18.0; 10.0; 13.0"
+    },
+    {
+      "domain": "vitals",
+      "raw_column": "ed_triage_hr",
+      "model_column": "ed_triage_hr_model",
+      "outlier_flag_column": "ed_triage_hr_outlier_flag",
+      "lower_bound": 20.0,
+      "upper_bound": 250.0,
+      "nonnull_n": 32882,
+      "out_of_range_n": 4,
+      "out_of_range_pct": 0.0001216471,
+      "example_outlier_values": "18.0; 1228.0; 14.0; 16.0"
+    },
+    {
+      "domain": "vitals",
+      "raw_column": "ed_triage_o2sat",
+      "model_column": "ed_triage_o2sat_model",
+      "outlier_flag_column": "ed_triage_o2sat_outlier_flag",
+      "lower_bound": 40.0,
+      "upper_bound": 100.0,
+      "nonnull_n": 32266,
+      "out_of_range_n": 15,
+      "out_of_range_pct": 0.0004648856,
+      "example_outlier_values": "9.0; 1000.0; 1001.0; 980.0; 120.0"
+    },
+    {
+      "domain": "vitals",
+      "raw_column": "ed_triage_rr",
+      "model_column": "ed_triage_rr_model",
+      "outlier_flag_column": "ed_triage_rr_outlier_flag",
+      "lower_bound": 4.0,
+      "upper_bound": 80.0,
+      "nonnull_n": 32275,
+      "out_of_range_n": 9,
+      "out_of_range_pct": 0.0002788536,
+      "example_outlier_values": "2.0; 162.0; 100.0; 1.0; 189.0"
+    },
+    {
+      "domain": "vitals",
+      "raw_column": "ed_triage_sbp",
+      "model_column": "ed_triage_sbp_model",
+      "outlier_flag_column": "ed_triage_sbp_outlier_flag",
+      "lower_bound": 40.0,
+      "upper_bound": 300.0,
+      "nonnull_n": 32824,
+      "out_of_range_n": 21,
+      "out_of_range_pct": 0.0006397758,
+      "example_outlier_values": "14.0; 13.0; 15.0; 18.0; 12.0"
+    },
+    {
+      "domain": "vitals",
+      "raw_column": "ed_triage_temp",
+      "model_column": "ed_triage_temp_model",
+      "outlier_flag_column": "ed_triage_temp_outlier_flag",
+      "lower_bound": 90.0,
+      "upper_bound": 110.0,
+      "nonnull_n": 31350,
+      "out_of_range_n": 107,
+      "out_of_range_pct": 0.0034130781,
+      "example_outlier_values": "36.7; 36.2; 36.6; 37.0; 36.1"
+    },
+    {
+      "domain": "gas",
+      "raw_column": "first_lactate",
+      "model_column": "first_lactate_model",
+      "outlier_flag_column": "first_lactate_outlier_flag",
+      "lower_bound": 0.0,
+      "upper_bound": 30.0,
+      "nonnull_n": 20249,
+      "out_of_range_n": 0,
+      "out_of_range_pct": 0.0,
+      "example_outlier_values": ""
+    },
+    {
+      "domain": "gas",
+      "raw_column": "first_pco2",
+      "model_column": "first_pco2_model",
+      "outlier_flag_column": "first_pco2_outlier_flag",
+      "lower_bound": 10.0,
+      "upper_bound": 200.0,
+      "nonnull_n": 17585,
+      "out_of_range_n": 9,
+      "out_of_range_pct": 0.0005117998,
+      "example_outlier_values": "9.0; 8.0; 7.0"
+    },
+    {
+      "domain": "gas",
+      "raw_column": "first_ph",
+      "model_column": "first_ph_model",
+      "outlier_flag_column": "first_ph_outlier_flag",
+      "lower_bound": 6.8,
+      "upper_bound": 7.8,
+      "nonnull_n": 18486,
+      "out_of_range_n": 16,
+      "out_of_range_pct": 0.0008655199,
+      "example_outlier_values": "6.69; 6.66; 6.36; 6.59; 6.6"
     }
   ],
   "qa_status": "pass",
@@ -323,7 +767,7 @@
     "gas_source_other_rate_high"
   ],
   "run_metadata": {
-    "run_utc": "2026-02-14T23:00:57.578094+00:00",
+    "run_utc": "2026-02-17T08:25:23.009490+00:00",
     "work_project": "mimic-hypercapnia",
     "physionet_project": "physionet-data",
     "datasets": {

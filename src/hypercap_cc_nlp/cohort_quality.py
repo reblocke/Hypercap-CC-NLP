@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 import pandas as pd
 
@@ -19,6 +19,10 @@ OMR_PROVENANCE_COLUMNS = (
     "anthro_days_offset",
     "anthro_chartdate",
     "anthro_timing_uncertain",
+    "anthro_source",
+    "anthro_obstime",
+    "anthro_hours_offset",
+    "anthro_timing_basis",
 )
 
 OMR_TIMING_TIERS = ("pre_ed_365", "post_ed_365", "missing")
@@ -50,7 +54,22 @@ DEFAULT_VITALS_MODEL_RANGES: dict[str, tuple[float, float]] = {
     "ed_first_temp": (90.0, 110.0),
 }
 
+DEFAULT_GAS_MODEL_RANGES: dict[str, tuple[float, float]] = {
+    "first_ph": (6.8, 7.8),
+    "first_pco2": (10.0, 200.0),
+    "first_other_pco2": (10.0, 200.0),
+    "first_lactate": (0.0, 30.0),
+}
+
 _NUMERIC_TOKEN_PATTERN = re.compile(r"(-?\d+(?:\.\d+)?)")
+_ARTERIAL_HINT_PATTERN = re.compile(
+    r"(arterial|abg|a[- ]?line|art line|\bart\b|\bartery\b)",
+    re.I,
+)
+_VENOUS_HINT_PATTERN = re.compile(
+    r"(venous|vbg|cvbg|mixed venous|central venous|\bven\b)",
+    re.I,
+)
 
 
 def _to_int64(series: pd.Series) -> pd.Series:
@@ -138,6 +157,27 @@ def attach_closest_pre_ed_omr(
             updated["anthro_timing_uncertain"] = updated[
                 "anthro_timing_uncertain"
             ].astype("boolean")
+        if "anthro_source" not in updated.columns:
+            updated["anthro_source"] = "missing"
+        else:
+            updated["anthro_source"] = (
+                updated["anthro_source"].astype(str).replace({"": "missing"}).fillna("missing")
+            )
+        if "anthro_obstime" not in updated.columns:
+            updated["anthro_obstime"] = pd.NaT
+        else:
+            updated["anthro_obstime"] = pd.to_datetime(updated["anthro_obstime"], errors="coerce")
+        if "anthro_hours_offset" not in updated.columns:
+            updated["anthro_hours_offset"] = pd.NA
+        updated["anthro_hours_offset"] = pd.to_numeric(
+            updated["anthro_hours_offset"], errors="coerce"
+        )
+        if "anthro_timing_basis" not in updated.columns:
+            updated["anthro_timing_basis"] = "missing"
+        else:
+            updated["anthro_timing_basis"] = (
+                updated["anthro_timing_basis"].astype(str).replace({"": "missing"}).fillna("missing")
+            )
 
         missing_mask = updated["anthro_timing_tier"].eq("missing")
         pre_mask = updated["anthro_timing_tier"].eq("pre_ed_365")
@@ -145,6 +185,13 @@ def attach_closest_pre_ed_omr(
         updated.loc[pre_mask, "anthro_timing_uncertain"] = False
         updated.loc[post_mask, "anthro_timing_uncertain"] = True
         updated.loc[missing_mask, "anthro_timing_uncertain"] = pd.NA
+        updated.loc[pre_mask | post_mask, "anthro_source"] = "omr"
+        updated.loc[missing_mask, "anthro_source"] = "missing"
+        updated.loc[pre_mask, "anthro_timing_basis"] = "pre"
+        updated.loc[post_mask, "anthro_timing_basis"] = "post"
+        updated.loc[missing_mask, "anthro_timing_basis"] = "missing"
+        updated.loc[missing_mask, "anthro_obstime"] = pd.NaT
+        updated.loc[missing_mask, "anthro_hours_offset"] = pd.NA
 
         return updated
 
@@ -326,6 +373,16 @@ def attach_closest_pre_ed_omr(
         selected["anthro_timing_uncertain"] = selected["anthro_timing_tier"].eq(
             "post_ed_365"
         )
+        selected["anthro_source"] = "omr"
+        selected["anthro_obstime"] = pd.to_datetime(
+            selected["anthro_chartdate"], errors="coerce"
+        )
+        selected["anthro_hours_offset"] = pd.to_numeric(
+            selected["anthro_days_offset"], errors="coerce"
+        ) * 24.0
+        selected["anthro_timing_basis"] = selected["anthro_timing_tier"].map(
+            {"pre_ed_365": "pre", "post_ed_365": "post"}
+        ).fillna("missing")
 
         updates = selected[
             [
@@ -359,8 +416,303 @@ def attach_closest_pre_ed_omr(
     diagnostics["timing_uncertain_count"] = int(
         updated["anthro_timing_uncertain"].fillna(False).sum()
     )
+    diagnostics["anthro_source_counts"] = {
+        str(key): int(value)
+        for key, value in updated["anthro_source"].fillna("missing")
+        .astype(str)
+        .value_counts(dropna=False)
+        .items()
+    }
 
     return updated, diagnostics
+
+
+def _infer_route_hint_text(value: object) -> str | None:
+    text = "" if pd.isna(value) else str(value).strip().lower()
+    if not text or text in {"nan", "none"}:
+        return None
+    if _ARTERIAL_HINT_PATTERN.search(text):
+        return "arterial"
+    if _VENOUS_HINT_PATTERN.search(text):
+        return "venous"
+    return None
+
+
+def _resolve_route_hints(values: Sequence[str]) -> tuple[str | None, bool, int]:
+    hints = [str(value).strip().lower() for value in values if str(value).strip()]
+    arterial_n = sum(1 for value in hints if value == "arterial")
+    venous_n = sum(1 for value in hints if value == "venous")
+    conflict = arterial_n > 0 and venous_n > 0
+    if conflict:
+        return None, True, int(len(hints))
+    if arterial_n > 0:
+        return "arterial", False, int(len(hints))
+    if venous_n > 0:
+        return "venous", False, int(len(hints))
+    return None, False, int(len(hints))
+
+
+def infer_panel_gas_source_metadata(
+    panel_df: pd.DataFrame,
+    labs_df: pd.DataFrame,
+    labitems_df: pd.DataFrame,
+    *,
+    specimen_source_itemids: Sequence[int] | None = None,
+    pco2_itemids: Sequence[int] | None = None,
+    mode: str = "metadata_only",
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Infer gas panel source from metadata/text hints with tier diagnostics.
+
+    Tier precedence:
+      1. Specimen/source row text (``value_text`` from specimen/source itemids),
+      2. ``d_labitems`` label/fluid hints,
+      3. Panel co-occurrence hints (pCO2-labeled rows + free-text),
+      4. Fallback ``other``.
+    """
+    if mode != "metadata_only":
+        raise ValueError(
+            "infer_panel_gas_source_metadata supports only mode='metadata_only'."
+        )
+
+    required_panel = {"ed_stay_id", "specimen_id"}
+    missing_panel = sorted(required_panel.difference(panel_df.columns))
+    if missing_panel:
+        raise KeyError(
+            "infer_panel_gas_source_metadata missing panel columns: "
+            f"{missing_panel}"
+        )
+    required_labs = {"ed_stay_id", "specimen_id", "itemid"}
+    missing_labs = sorted(required_labs.difference(labs_df.columns))
+    if missing_labs:
+        raise KeyError(
+            "infer_panel_gas_source_metadata missing labs columns: "
+            f"{missing_labs}"
+        )
+    required_labitems = {"itemid"}
+    missing_labitems = sorted(required_labitems.difference(labitems_df.columns))
+    if missing_labitems:
+        raise KeyError(
+            "infer_panel_gas_source_metadata missing labitems columns: "
+            f"{missing_labitems}"
+        )
+
+    key_cols = ["ed_stay_id", "specimen_id"]
+    panel = panel_df.copy()
+    panel["source"] = pd.Series(pd.NA, index=panel.index, dtype="string")
+    panel["source_inference_tier"] = "fallback_other"
+    panel["source_hint_conflict"] = pd.Series(False, index=panel.index, dtype="boolean")
+    panel["source_hint_count"] = pd.Series(pd.NA, index=panel.index, dtype="Int64")
+
+    labs = labs_df.copy()
+    labs["itemid"] = pd.to_numeric(labs["itemid"], errors="coerce").astype("Int64")
+    labs["specimen_id"] = pd.to_numeric(labs["specimen_id"], errors="coerce").astype(
+        "Int64"
+    )
+    labs = labs.loc[labs["itemid"].notna() & labs["specimen_id"].notna()].copy()
+    if labs.empty:
+        panel["source"] = "other"
+        diagnostics = summarize_gas_source(panel)
+        diagnostics.update(
+            {
+                "mode": mode,
+                "resolved_rows": 0,
+                "resolved_rate": 0.0,
+                "unresolved_specimen_id_count": 0,
+                "unresolved_specimen_id_examples": [],
+                "unresolved_value_text_top": {},
+                "unresolved_label_top": {},
+            }
+        )
+        return panel, diagnostics
+
+    if "value_text" in labs.columns:
+        labs["value_text_norm"] = (
+            labs["value_text"]
+            .astype("string")
+            .fillna("")
+            .str.strip()
+            .str.lower()
+        )
+    else:
+        labs["value_text_norm"] = ""
+
+    labitems = labitems_df.copy()
+    labitems["itemid"] = pd.to_numeric(labitems["itemid"], errors="coerce").astype(
+        "Int64"
+    )
+    for text_col in ("label", "fluid"):
+        if text_col not in labitems.columns:
+            labitems[text_col] = ""
+    labitems["label_norm"] = labitems["label"].astype("string").fillna("").str.strip()
+    labitems["fluid_norm"] = labitems["fluid"].astype("string").fillna("").str.strip()
+    labitems["item_route_hint"] = (
+        (labitems["label_norm"] + " " + labitems["fluid_norm"])
+        .str.strip()
+        .map(_infer_route_hint_text)
+    )
+    item_meta = (
+        labitems.dropna(subset=["itemid"])
+        .drop_duplicates(subset=["itemid"])
+        .set_index("itemid")[["label_norm", "fluid_norm", "item_route_hint"]]
+    )
+    labs = labs.merge(item_meta, left_on="itemid", right_index=True, how="left")
+    labs["item_route_hint"] = labs["item_route_hint"].astype("string")
+    labs["text_route_hint"] = labs["value_text_norm"].map(_infer_route_hint_text).astype(
+        "string"
+    )
+    labs["label_fluid_text"] = (
+        labs["label_norm"].fillna("").astype(str).str.strip()
+        + " | "
+        + labs["fluid_norm"].fillna("").astype(str).str.strip()
+    ).str.strip(" |")
+
+    def _build_tier_mapping(
+        frame: pd.DataFrame,
+        *,
+        hint_column: str,
+        tier_name: str,
+    ) -> pd.DataFrame:
+        subset = frame[key_cols + [hint_column]].copy()
+        subset = subset.loc[subset[hint_column].notna()].copy()
+        if subset.empty:
+            return pd.DataFrame(
+                columns=[
+                    *key_cols,
+                    "tier_source",
+                    "tier_conflict",
+                    "tier_hint_count",
+                    "tier_name",
+                ]
+            )
+
+        grouped = (
+            subset.groupby(key_cols, dropna=False)[hint_column]
+            .agg(list)
+            .reset_index(name="hints")
+        )
+        rows: list[dict[str, Any]] = []
+        for _, grouped_row in grouped.iterrows():
+            source, conflict, hint_count = _resolve_route_hints(grouped_row["hints"])
+            rows.append(
+                {
+                    "ed_stay_id": grouped_row["ed_stay_id"],
+                    "specimen_id": grouped_row["specimen_id"],
+                    "tier_source": source,
+                    "tier_conflict": bool(conflict),
+                    "tier_hint_count": int(hint_count),
+                    "tier_name": tier_name,
+                }
+            )
+        resolved = pd.DataFrame(rows)
+        return resolved.loc[resolved["tier_source"].notna()].reset_index(drop=True)
+
+    specimen_source_itemid_set = {
+        int(item) for item in (specimen_source_itemids or []) if pd.notna(item)
+    }
+    pco2_itemid_set = {int(item) for item in (pco2_itemids or []) if pd.notna(item)}
+
+    tier1 = _build_tier_mapping(
+        labs.loc[labs["itemid"].astype("Int64").isin(specimen_source_itemid_set)],
+        hint_column="text_route_hint",
+        tier_name="specimen_text",
+    )
+    tier2 = _build_tier_mapping(
+        labs,
+        hint_column="item_route_hint",
+        tier_name="label_fluid",
+    )
+    tier3_candidates = labs.copy()
+    if pco2_itemid_set:
+        tier3_candidates = tier3_candidates.loc[
+            tier3_candidates["itemid"].astype("Int64").isin(pco2_itemid_set)
+            | tier3_candidates["text_route_hint"].notna()
+        ].copy()
+    tier3_candidates["panel_route_hint"] = tier3_candidates["item_route_hint"].fillna(
+        tier3_candidates["text_route_hint"]
+    )
+    tier3 = _build_tier_mapping(
+        tier3_candidates,
+        hint_column="panel_route_hint",
+        tier_name="panel_cooccurrence",
+    )
+
+    for tier_frame in (tier1, tier2, tier3):
+        if tier_frame.empty:
+            continue
+        panel = panel.merge(
+            tier_frame[
+                key_cols
+                + ["tier_source", "tier_conflict", "tier_hint_count", "tier_name"]
+            ],
+            on=key_cols,
+            how="left",
+        )
+        assign_mask = panel["source"].isna() & panel["tier_source"].notna()
+        panel.loc[assign_mask, "source"] = panel.loc[assign_mask, "tier_source"]
+        panel.loc[assign_mask, "source_inference_tier"] = panel.loc[
+            assign_mask, "tier_name"
+        ]
+        selected_conflict = panel.loc[assign_mask, "tier_conflict"].astype("boolean")
+        panel.loc[assign_mask, "source_hint_conflict"] = selected_conflict.fillna(False)
+        panel.loc[assign_mask, "source_hint_count"] = pd.to_numeric(
+            panel.loc[assign_mask, "tier_hint_count"], errors="coerce"
+        ).astype("Int64")
+        panel = panel.drop(
+            columns=["tier_source", "tier_conflict", "tier_hint_count", "tier_name"]
+        )
+
+    panel["source"] = panel["source"].fillna("other").astype("string")
+    panel["source"] = panel["source"].replace({"unknown": "other"})
+    panel.loc[panel["source"].eq("other"), "source_inference_tier"] = panel.loc[
+        panel["source"].eq("other"), "source_inference_tier"
+    ].replace({"": "fallback_other"}).fillna("fallback_other")
+    panel["source_inference_tier"] = panel["source_inference_tier"].astype("string")
+    panel["source_hint_conflict"] = (
+        panel["source_hint_conflict"].fillna(False).astype("boolean")
+    )
+
+    diagnostics = summarize_gas_source(panel)
+    total = max(int(len(panel)), 1)
+    diagnostics["mode"] = mode
+    diagnostics["resolved_rows"] = int(
+        panel["source"].isin({"arterial", "venous"}).sum()
+    )
+    diagnostics["resolved_rate"] = float(diagnostics["resolved_rows"] / total)
+
+    unresolved = panel.loc[panel["source"].eq("other"), key_cols].drop_duplicates()
+    diagnostics["unresolved_specimen_id_count"] = int(unresolved["specimen_id"].nunique())
+    diagnostics["unresolved_specimen_id_examples"] = (
+        unresolved["specimen_id"].dropna().astype(int).head(20).tolist()
+    )
+    if unresolved.empty:
+        diagnostics["unresolved_value_text_top"] = {}
+        diagnostics["unresolved_label_top"] = {}
+        return panel, diagnostics
+
+    unresolved_labs = labs.merge(unresolved, on=key_cols, how="inner")
+    unresolved_value_text = (
+        unresolved_labs["value_text_norm"]
+        .replace({"": pd.NA})
+        .dropna()
+        .astype(str)
+        .value_counts()
+        .head(15)
+    )
+    unresolved_label_text = (
+        unresolved_labs["label_fluid_text"]
+        .replace({"": pd.NA})
+        .dropna()
+        .astype(str)
+        .value_counts()
+        .head(15)
+    )
+    diagnostics["unresolved_value_text_top"] = {
+        str(key): int(value) for key, value in unresolved_value_text.items()
+    }
+    diagnostics["unresolved_label_top"] = {
+        str(key): int(value) for key, value in unresolved_label_text.items()
+    }
+    return panel, diagnostics
 
 
 def summarize_gas_source(panel_df: pd.DataFrame) -> dict[str, Any]:
@@ -373,6 +725,8 @@ def summarize_gas_source(panel_df: pd.DataFrame) -> dict[str, Any]:
             "source_counts": {},
             "source_rates": {},
             "all_other_or_unknown": False,
+            "tier_counts": {},
+            "tier_rates": {},
         }
 
     if "source" not in panel_df.columns:
@@ -382,6 +736,8 @@ def summarize_gas_source(panel_df: pd.DataFrame) -> dict[str, Any]:
             "source_counts": {},
             "source_rates": {},
             "all_other_or_unknown": True,
+            "tier_counts": {},
+            "tier_rates": {},
         }
 
     source = (
@@ -397,6 +753,21 @@ def summarize_gas_source(panel_df: pd.DataFrame) -> dict[str, Any]:
     all_other_or_unknown = bool(
         total_rows > 0 and set(source_counts.keys()).issubset({"other", "unknown"})
     )
+    tier_counts: dict[str, int] = {}
+    tier_rates: dict[str, float] = {}
+    if "source_inference_tier" in panel_df.columns:
+        tier = (
+            panel_df["source_inference_tier"]
+            .astype(str)
+            .str.strip()
+            .str.lower()
+            .replace({"": "unknown", "nan": "unknown", "none": "unknown"})
+            .fillna("unknown")
+        )
+        tier_counts = {
+            str(key): int(value) for key, value in tier.value_counts(dropna=False).items()
+        }
+        tier_rates = {key: float(value / total_rows) for key, value in tier_counts.items()}
 
     return {
         "panel_rows": total_rows,
@@ -404,6 +775,8 @@ def summarize_gas_source(panel_df: pd.DataFrame) -> dict[str, Any]:
         "source_counts": source_counts,
         "source_rates": source_rates,
         "all_other_or_unknown": all_other_or_unknown,
+        "tier_counts": tier_counts,
+        "tier_rates": tier_rates,
     }
 
 
@@ -422,6 +795,290 @@ def assert_gas_source_coverage(
             "Gas source attribution classified all panel rows as other/unknown. "
             "Set COHORT_FAIL_ON_ALL_OTHER_SOURCE=0 to bypass this guard."
         )
+
+
+def build_gas_source_overlap_summary(ed_df: pd.DataFrame) -> pd.DataFrame:
+    """Build ABG/VBG/OTHER overlap counts and percentages."""
+    frame = ed_df.copy()
+    abg = pd.to_numeric(frame.get("flag_abg_hypercapnia", 0), errors="coerce").fillna(0).astype(int)
+    vbg = pd.to_numeric(frame.get("flag_vbg_hypercapnia", 0), errors="coerce").fillna(0).astype(int)
+    other = pd.to_numeric(frame.get("flag_other_hypercapnia", 0), errors="coerce").fillna(0).astype(int)
+
+    labels = []
+    for a, v, o in zip(abg.tolist(), vbg.tolist(), other.tolist(), strict=False):
+        parts: list[str] = []
+        if a == 1:
+            parts.append("ABG")
+        if v == 1:
+            parts.append("VBG")
+        if o == 1:
+            parts.append("OTHER")
+        labels.append("+".join(parts) if parts else "NO_GAS")
+
+    counts = pd.Series(labels, dtype="string").value_counts(dropna=False).rename_axis("gas_overlap").reset_index(name="count")
+    total = max(int(counts["count"].sum()), 1)
+    counts["percent"] = counts["count"].astype(float) / total * 100.0
+    counts["percent"] = counts["percent"].round(2)
+    return counts.sort_values(["count", "gas_overlap"], ascending=[False, True]).reset_index(drop=True)
+
+
+def add_gas_model_fields(
+    ed_df: pd.DataFrame,
+    *,
+    ranges: Mapping[str, tuple[float, float]] | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Create cleaned gas model fields and a field-level outlier audit."""
+    resolved_ranges = dict(ranges or DEFAULT_GAS_MODEL_RANGES)
+    updated = ed_df.copy()
+    audit_rows: list[dict[str, Any]] = []
+
+    for raw_column, (lower_bound, upper_bound) in resolved_ranges.items():
+        if raw_column not in updated.columns:
+            continue
+        numeric = pd.to_numeric(updated[raw_column], errors="coerce")
+        out_of_range = numeric.notna() & ((numeric < lower_bound) | (numeric > upper_bound))
+        model_column = f"{raw_column}_model"
+        outlier_flag_column = f"{raw_column}_outlier_flag"
+        updated[model_column] = numeric.where(~out_of_range)
+        updated[outlier_flag_column] = out_of_range.astype("boolean")
+        nonnull_n = int(numeric.notna().sum())
+        outlier_n = int(out_of_range.sum())
+        examples = (
+            numeric.loc[out_of_range]
+            .round(4)
+            .value_counts()
+            .head(5)
+            .index.astype(str)
+            .tolist()
+        )
+        audit_rows.append(
+            {
+                "domain": "gas",
+                "raw_column": raw_column,
+                "model_column": model_column,
+                "outlier_flag_column": outlier_flag_column,
+                "lower_bound": float(lower_bound),
+                "upper_bound": float(upper_bound),
+                "nonnull_n": nonnull_n,
+                "out_of_range_n": outlier_n,
+                "out_of_range_pct": float(outlier_n / nonnull_n) if nonnull_n else 0.0,
+                "example_outlier_values": "; ".join(examples),
+            }
+        )
+
+    audit = pd.DataFrame(audit_rows).sort_values("raw_column").reset_index(drop=True)
+    return updated, audit
+
+
+def attach_charted_anthro_fallback(
+    ed_df: pd.DataFrame,
+    charted_df: pd.DataFrame,
+    *,
+    nearest_anytime: bool = True,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Fill missing anthropometrics from charted records with nearest-time selection."""
+    required_ed = {"ed_stay_id", "subject_id", "ed_intime"}
+    missing_ed = sorted(required_ed.difference(ed_df.columns))
+    if missing_ed:
+        raise KeyError(f"attach_charted_anthro_fallback missing ED columns: {missing_ed}")
+
+    required_charted = {"subject_id", "obs_time", "result_name", "result_value_num"}
+    missing_charted = sorted(required_charted.difference(charted_df.columns))
+    if missing_charted:
+        raise KeyError(
+            "attach_charted_anthro_fallback missing charted columns: "
+            f"{missing_charted}"
+        )
+
+    updated = ed_df.copy()
+    for output_column in OMR_OUTPUT_COLUMNS:
+        if output_column not in updated.columns:
+            updated[output_column] = pd.NA
+    if "anthro_source" not in updated.columns:
+        updated["anthro_source"] = "missing"
+    else:
+        updated["anthro_source"] = (
+            updated["anthro_source"].astype(str).replace({"": "missing"}).fillna("missing")
+        )
+    if "anthro_obstime" not in updated.columns:
+        updated["anthro_obstime"] = pd.NaT
+    else:
+        updated["anthro_obstime"] = pd.to_datetime(updated["anthro_obstime"], errors="coerce")
+    if "anthro_hours_offset" not in updated.columns:
+        updated["anthro_hours_offset"] = pd.NA
+    updated["anthro_hours_offset"] = pd.to_numeric(updated["anthro_hours_offset"], errors="coerce")
+    if "anthro_timing_basis" not in updated.columns:
+        updated["anthro_timing_basis"] = "missing"
+    if "anthro_timing_uncertain" not in updated.columns:
+        updated["anthro_timing_uncertain"] = pd.Series([pd.NA] * len(updated), dtype="boolean")
+    else:
+        updated["anthro_timing_uncertain"] = updated["anthro_timing_uncertain"].astype("boolean")
+
+    charted = charted_df.copy()
+    charted["subject_id"] = _to_int64(charted["subject_id"])
+    charted["obs_time"] = pd.to_datetime(charted["obs_time"], errors="coerce")
+    charted["result_name"] = charted["result_name"].astype(str).str.strip().str.lower()
+    charted["result_value_num"] = pd.to_numeric(charted["result_value_num"], errors="coerce")
+    if "source" not in charted.columns:
+        charted["source"] = "icu_charted"
+    charted["source"] = charted["source"].astype(str).replace({"": "icu_charted"}).fillna("icu_charted")
+    charted = charted.loc[
+        charted["subject_id"].notna()
+        & charted["obs_time"].notna()
+        & charted["result_name"].isin(OMR_RESULT_NAMES)
+        & charted["result_value_num"].notna()
+    ].copy()
+
+    diagnostics: dict[str, Any] = {
+        "charted_rows_input": int(len(charted_df)),
+        "charted_rows_usable": int(len(charted)),
+        "nearest_anytime": bool(nearest_anytime),
+        "filled_counts": {column: 0 for column in OMR_OUTPUT_COLUMNS},
+        "rows_with_any_charted_fill": 0,
+    }
+    if charted.empty:
+        return updated, diagnostics
+
+    ed_norm = updated[["ed_stay_id", "subject_id", "ed_intime"]].copy()
+    ed_norm["subject_id"] = _to_int64(ed_norm["subject_id"])
+    ed_norm["ed_intime_dt"] = pd.to_datetime(ed_norm["ed_intime"], errors="coerce")
+    ed_norm = ed_norm.loc[ed_norm["subject_id"].notna() & ed_norm["ed_intime_dt"].notna()].copy()
+    if ed_norm.empty:
+        return updated, diagnostics
+
+    merged = ed_norm.merge(charted, on="subject_id", how="inner")
+    if merged.empty:
+        diagnostics["subject_overlap_count"] = 0
+        return updated, diagnostics
+    diagnostics["subject_overlap_count"] = int(merged["subject_id"].nunique())
+    merged["hours_offset"] = (
+        (merged["obs_time"] - merged["ed_intime_dt"]).dt.total_seconds() / 3600.0
+    )
+    merged["abs_hours_offset"] = merged["hours_offset"].abs()
+    if not nearest_anytime:
+        merged = merged.loc[merged["abs_hours_offset"] <= 24.0].copy()
+
+    output_to_name = {
+        "bmi_closest_pre_ed": "bmi",
+        "height_closest_pre_ed": "height",
+        "weight_closest_pre_ed": "weight",
+    }
+    any_fill_mask = pd.Series(False, index=updated.index)
+    for output_column, result_name in output_to_name.items():
+        subset = merged.loc[merged["result_name"] == result_name].copy()
+        if subset.empty:
+            continue
+        selected = (
+            subset.sort_values(
+                ["ed_stay_id", "abs_hours_offset", "obs_time"],
+                ascending=[True, True, True],
+            )
+            .groupby("ed_stay_id", as_index=False)
+            .first()
+        )
+        selected = selected.rename(
+            columns={
+                "result_value_num": f"{output_column}__candidate",
+                "obs_time": f"{output_column}__obs_time",
+                "hours_offset": f"{output_column}__hours_offset",
+                "source": f"{output_column}__source",
+            }
+        )
+        keep_columns = [
+            "ed_stay_id",
+            f"{output_column}__candidate",
+            f"{output_column}__obs_time",
+            f"{output_column}__hours_offset",
+            f"{output_column}__source",
+        ]
+        updated = updated.merge(selected[keep_columns], on="ed_stay_id", how="left")
+
+        fill_mask = updated[output_column].isna() & updated[f"{output_column}__candidate"].notna()
+        updated.loc[fill_mask, output_column] = updated.loc[fill_mask, f"{output_column}__candidate"]
+
+        provenance_mask = fill_mask & updated["anthro_source"].isin({"missing", "nan"})
+        updated.loc[provenance_mask, "anthro_source"] = updated.loc[
+            provenance_mask, f"{output_column}__source"
+        ]
+        updated.loc[provenance_mask, "anthro_obstime"] = pd.to_datetime(
+            updated.loc[provenance_mask, f"{output_column}__obs_time"], errors="coerce"
+        )
+        updated.loc[provenance_mask, "anthro_hours_offset"] = pd.to_numeric(
+            updated.loc[provenance_mask, f"{output_column}__hours_offset"], errors="coerce"
+        )
+        updated.loc[provenance_mask, "anthro_timing_basis"] = "nearest_anytime"
+        updated.loc[provenance_mask, "anthro_timing_uncertain"] = True
+
+        any_fill_mask = any_fill_mask | fill_mask
+        diagnostics["filled_counts"][output_column] = int(fill_mask.sum())
+
+        drop_columns = [
+            f"{output_column}__candidate",
+            f"{output_column}__obs_time",
+            f"{output_column}__hours_offset",
+            f"{output_column}__source",
+        ]
+        updated = updated.drop(columns=drop_columns)
+
+    diagnostics["rows_with_any_charted_fill"] = int(any_fill_mask.sum())
+    diagnostics["fallback_source_counts"] = {
+        str(key): int(value)
+        for key, value in updated.loc[any_fill_mask, "anthro_source"]
+        .fillna("missing")
+        .astype(str)
+        .value_counts(dropna=False)
+        .items()
+    }
+    return updated, diagnostics
+
+
+def build_anthro_coverage_audit(ed_df: pd.DataFrame) -> dict[str, Any]:
+    """Summarize anthropometric coverage and provenance rates."""
+    total_rows = max(int(len(ed_df)), 1)
+    field_counts = {
+        column: int(pd.to_numeric(ed_df[column], errors="coerce").notna().sum())
+        for column in OMR_OUTPUT_COLUMNS
+        if column in ed_df.columns
+    }
+    field_rates = {column: float(count / total_rows) for column, count in field_counts.items()}
+
+    source_counts: dict[str, int] = {}
+    source_rates: dict[str, float] = {}
+    if "anthro_source" in ed_df.columns:
+        source_counts = {
+            str(key): int(value)
+            for key, value in ed_df["anthro_source"]
+            .fillna("missing")
+            .astype(str)
+            .value_counts(dropna=False)
+            .items()
+        }
+        source_rates = {key: float(value / total_rows) for key, value in source_counts.items()}
+
+    timing_basis_counts: dict[str, int] = {}
+    timing_basis_rates: dict[str, float] = {}
+    if "anthro_timing_basis" in ed_df.columns:
+        timing_basis_counts = {
+            str(key): int(value)
+            for key, value in ed_df["anthro_timing_basis"]
+            .fillna("missing")
+            .astype(str)
+            .value_counts(dropna=False)
+            .items()
+        }
+        timing_basis_rates = {
+            key: float(value / total_rows) for key, value in timing_basis_counts.items()
+        }
+
+    return {
+        "row_count": int(len(ed_df)),
+        "field_nonnull_counts": field_counts,
+        "field_nonnull_rates": field_rates,
+        "source_counts": source_counts,
+        "source_rates": source_rates,
+        "timing_basis_counts": timing_basis_counts,
+        "timing_basis_rates": timing_basis_rates,
+    }
 
 
 def build_first_other_pco2_audit(ed_df: pd.DataFrame) -> pd.DataFrame:
@@ -541,7 +1198,11 @@ def add_vitals_model_fields(
     """Create cleaned vitals model fields and return field-level outlier audit.
 
     The function preserves original raw columns and writes cleaned values to
-    ``<raw_column>_model``. Out-of-range values are nulled in model fields.
+    ``<raw_column>_model``. For temperature columns, it also writes explicit
+    Fahrenheit/Celsius variants:
+    - ``<raw_column>_f_model`` (native Fahrenheit cleaned values)
+    - ``<raw_column>_c_model`` (derived Celsius)
+    Out-of-range values are nulled in model fields.
     """
     resolved_ranges = dict(ranges or DEFAULT_VITALS_MODEL_RANGES)
     updated = ed_df.copy()
@@ -555,18 +1216,39 @@ def add_vitals_model_fields(
             (numeric < lower_bound) | (numeric > upper_bound)
         )
         model_column = f"{raw_column}_model"
-        updated[model_column] = numeric.where(~out_of_range)
+        outlier_flag_column = f"{raw_column}_outlier_flag"
+        cleaned = numeric.where(~out_of_range)
+        if raw_column.endswith("_temp"):
+            temp_f_column = f"{raw_column}_f_model"
+            temp_c_column = f"{raw_column}_c_model"
+            updated[temp_f_column] = cleaned
+            updated[temp_c_column] = (updated[temp_f_column] - 32.0) * (5.0 / 9.0)
+            updated[model_column] = updated[temp_f_column]
+        else:
+            updated[model_column] = cleaned
+        updated[outlier_flag_column] = out_of_range.astype("boolean")
         nonnull_n = int(numeric.notna().sum())
         outlier_n = int(out_of_range.sum())
+        examples = (
+            numeric.loc[out_of_range]
+            .round(4)
+            .value_counts()
+            .head(5)
+            .index.astype(str)
+            .tolist()
+        )
         audit_rows.append(
             {
+                "domain": "vitals",
                 "raw_column": raw_column,
                 "model_column": model_column,
+                "outlier_flag_column": outlier_flag_column,
                 "lower_bound": float(lower_bound),
                 "upper_bound": float(upper_bound),
                 "nonnull_n": nonnull_n,
                 "out_of_range_n": outlier_n,
                 "out_of_range_pct": float(outlier_n / nonnull_n) if nonnull_n else 0.0,
+                "example_outlier_values": "; ".join(examples),
             }
         )
 

@@ -5,6 +5,7 @@ import pytest
 
 from hypercap_cc_nlp.analysis_core import (
     binary_crosstab_yes_no,
+    classify_gas_source_overlap,
     classify_icd_category_vectorized,
     classify_inclusion_type_vectorized,
     ensure_required_columns,
@@ -98,3 +99,18 @@ def test_symptom_distribution_by_overlap_percent_sums() -> None:
     summed = counts.groupby("overlap")["Percent"].sum().round(1)
     assert summed.to_dict() == {"ABG-only": 100.0, "VBG-only": 100.0}
     assert set(pivot.columns.tolist()) == {"ABG-only", "VBG-only"}
+
+
+def test_classify_gas_source_overlap_includes_other_strata() -> None:
+    labels = classify_gas_source_overlap(
+        pd.Series([1, 1, 0, 0, 0]),
+        pd.Series([0, 1, 1, 0, 0]),
+        pd.Series([0, 1, 1, 1, 0]),
+    )
+    assert labels.tolist() == [
+        "ABG-only",
+        "ABG+VBG+OTHER",
+        "VBG+OTHER",
+        "OTHER-only",
+        "No-gas",
+    ]

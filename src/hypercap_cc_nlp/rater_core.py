@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from typing import Any
 
 import pandas as pd
@@ -105,3 +106,25 @@ def build_r3_nlp_join_audit(
         audit["severity"] = "warning"
 
     return matched, unmatched_adjudicated, unmatched_nlp, audit
+
+
+def hash_join_keys(
+    df: pd.DataFrame,
+    *,
+    key_cols: list[str],
+    hash_col: str = "key_hash",
+) -> pd.DataFrame:
+    """Return deterministic SHA256 hashes for normalized join keys only."""
+    normalized = normalize_join_keys(df, key_cols)
+    _validate_unique_keys(normalized, key_cols, context="join-key hash input")
+
+    key_frame = normalized[key_cols].drop_duplicates().copy()
+
+    def _hash_row(row: pd.Series) -> str:
+        material = "|".join(
+            "" if pd.isna(row[column]) else str(int(row[column])) for column in key_cols
+        )
+        return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+    key_frame[hash_col] = key_frame.apply(_hash_row, axis=1)
+    return key_frame[[hash_col]].sort_values(hash_col).reset_index(drop=True)

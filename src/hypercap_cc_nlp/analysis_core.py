@@ -165,3 +165,37 @@ def symptom_distribution_by_overlap(
     ).round(1)
 
     return counts, pivot
+
+
+def classify_gas_source_overlap(
+    abg_series: pd.Series,
+    vbg_series: pd.Series,
+    other_series: pd.Series,
+) -> pd.Series:
+    """Classify ABG/VBG/OTHER gas-source overlap with explicit OTHER strata."""
+    abg = to_binary_flag(abg_series)
+    vbg = to_binary_flag(vbg_series)
+    other = to_binary_flag(other_series)
+
+    labels = np.select(
+        [
+            abg.eq(1) & vbg.eq(1) & other.eq(1),
+            abg.eq(1) & vbg.eq(1) & other.eq(0),
+            abg.eq(1) & vbg.eq(0) & other.eq(1),
+            abg.eq(0) & vbg.eq(1) & other.eq(1),
+            abg.eq(1) & vbg.eq(0) & other.eq(0),
+            abg.eq(0) & vbg.eq(1) & other.eq(0),
+            abg.eq(0) & vbg.eq(0) & other.eq(1),
+        ],
+        [
+            "ABG+VBG+OTHER",
+            "ABG+VBG",
+            "ABG+OTHER",
+            "VBG+OTHER",
+            "ABG-only",
+            "VBG-only",
+            "OTHER-only",
+        ],
+        default="No-gas",
+    )
+    return pd.Series(labels, index=abg_series.index, name="gas_source_overlap")

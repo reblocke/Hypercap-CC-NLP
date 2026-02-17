@@ -1,0 +1,341 @@
+{
+  "ed_spine_rows": 41394,
+  "ed_rows": 41394,
+  "ed_unique": 41394,
+  "hadm_rows": 115179,
+  "hadm_cc_rows": 41322,
+  "icu_link_rate": 0.770908827366285,
+  "pct_any_gas_0_6h": 0.37821906556505774,
+  "pct_any_gas_0_24h": 0.9468280427115041,
+  "gas_source_other_rate": 0.7711144274014472,
+  "source_unknown_rate": 0.0,
+  "gas_source_audit": {
+    "panel_rows": 194997,
+    "source_present": true,
+    "source_counts": {
+      "other": 150365,
+      "venous": 23167,
+      "arterial": 21465
+    },
+    "source_rates": {
+      "other": 0.7711144274014472,
+      "venous": 0.11880695600445135,
+      "arterial": 0.11007861659410145
+    },
+    "all_other_or_unknown": false
+  },
+  "omr_diagnostics": {
+    "window_days": 365,
+    "source_rows_prepared": 46494,
+    "parsed_value_rows": 46489,
+    "ed_rows": 41394,
+    "ed_rows_eligible_for_join": 41394,
+    "subject_overlap_count": 2102,
+    "candidate_rows_after_subject_join": 7906,
+    "days_before_min": -4055,
+    "days_before_max": -262,
+    "nonnegative_candidate_rows": 0,
+    "pre_window_candidate_rows": 0,
+    "post_window_candidate_rows": 112,
+    "closest_absolute_candidate_rows": 112,
+    "within_window_candidate_rows": 0,
+    "eligible_ed_stays_with_candidates": 86,
+    "attached_non_null_counts": {
+      "bmi_closest_pre_ed": 49,
+      "height_closest_pre_ed": 6,
+      "weight_closest_pre_ed": 44
+    },
+    "attached_any_non_null_rows": 86,
+    "selected_tier_counts": {
+      "pre_ed_365": 0,
+      "post_ed_365": 86,
+      "missing": 41308
+    },
+    "selected_tier_rates": {
+      "pre_ed_365": 0.0,
+      "post_ed_365": 0.002077595786829009,
+      "missing": 0.997922404213171
+    },
+    "timing_uncertain_count": 86,
+    "source_rows_raw": 46494,
+    "prepared_rows": 46494
+  },
+  "omr_window_diagnostics": {
+    "subject_overlap_count": 2102,
+    "pre_window_candidate_rows": 0,
+    "post_window_candidate_rows": 112,
+    "closest_absolute_candidate_rows": 112,
+    "within_window_candidate_rows": 0,
+    "attached_total_non_null_values": 99,
+    "selected_tier_counts": {
+      "pre_ed_365": 0,
+      "post_ed_365": 86,
+      "missing": 41308
+    },
+    "selected_tier_rates": {
+      "pre_ed_365": 0.0,
+      "post_ed_365": 0.002077595786829009,
+      "missing": 0.997922404213171
+    }
+  },
+  "anthro_timing_tier_counts": {
+    "pre_ed_365": 0,
+    "post_ed_365": 86,
+    "missing": 41308
+  },
+  "anthro_timing_tier_rates": {
+    "pre_ed_365": 0.0,
+    "post_ed_365": 0.002077595786829009,
+    "missing": 0.997922404213171
+  },
+  "unexpected_full_null_fields": [],
+  "expected_structural_null_fields": [],
+  "uom_expectation_scope": {
+    "frame": "final_cc_preview",
+    "row_count": 41322
+  },
+  "uom_expectation_checks": {
+    "expected_structural_null_fields": [
+      "poc_abg_ph_uom",
+      "poc_vbg_ph_uom",
+      "poc_other_ph_uom"
+    ],
+    "structural_null_checks": {
+      "poc_abg_ph_uom": {
+        "present": true,
+        "missing_n": 41322,
+        "missing_pct": 1.0,
+        "all_null": true
+      },
+      "poc_vbg_ph_uom": {
+        "present": true,
+        "missing_n": 41322,
+        "missing_pct": 1.0,
+        "all_null": true
+      },
+      "poc_other_ph_uom": {
+        "present": true,
+        "missing_n": 41322,
+        "missing_pct": 1.0,
+        "all_null": true
+      }
+    },
+    "paco2_uom_checks": {
+      "poc_abg_paco2_uom": {
+        "present": true,
+        "paired_value_column": "poc_abg_paco2",
+        "value_rows": 13234,
+        "missing_uom_when_value_present": 0,
+        "non_mmhg_uom_when_value_present": 0,
+        "passes": true
+      },
+      "poc_vbg_paco2_uom": {
+        "present": true,
+        "paired_value_column": "poc_vbg_paco2",
+        "value_rows": 13861,
+        "missing_uom_when_value_present": 0,
+        "non_mmhg_uom_when_value_present": 0,
+        "passes": true
+      },
+      "poc_other_paco2_uom": {
+        "present": true,
+        "paired_value_column": "poc_other_paco2",
+        "value_rows": 31775,
+        "missing_uom_when_value_present": 0,
+        "non_mmhg_uom_when_value_present": 0,
+        "passes": true
+      }
+    }
+  },
+  "first_other_pco2_audit_scope": "uom_scope_df",
+  "first_other_pco2_audit": [
+    {
+      "source": "LAB",
+      "count_nonnull": 1364,
+      "mean": 43.3951612903,
+      "median": 41.0,
+      "q25": 35.0,
+      "q75": 49.0,
+      "p95": 66.0,
+      "max": 135.0,
+      "pct_ge_80": 0.0205278592,
+      "pct_ge_100": 0.004398827,
+      "pct_ge_150": 0.0,
+      "pct_eq_160": 0.0,
+      "top_values": {
+        "40.0": 66,
+        "39.0": 65,
+        "36.0": 63,
+        "34.0": 61,
+        "41.0": 54,
+        "33.0": 53,
+        "43.0": 53,
+        "38.0": 52,
+        "44.0": 49,
+        "42.0": 48
+      },
+      "status": "ok",
+      "missing_columns": ""
+    },
+    {
+      "source": "POC",
+      "count_nonnull": 28921,
+      "mean": 103.5121192213,
+      "median": 90.0,
+      "q25": 79.0,
+      "q75": 132.0,
+      "p95": 160.0,
+      "max": 200.0,
+      "pct_ge_80": 0.7450295633,
+      "pct_ge_100": 0.4232218803,
+      "pct_ge_150": 0.187752844,
+      "pct_eq_160": 0.1367172643,
+      "top_values": {
+        "90.0": 4754,
+        "160.0": 3954,
+        "140.0": 335,
+        "60.0": 307,
+        "80.0": 293,
+        "76.0": 285,
+        "82.0": 279,
+        "85.0": 278,
+        "83.0": 277,
+        "79.0": 277
+      },
+      "status": "ok",
+      "missing_columns": ""
+    }
+  ],
+  "vitals_outlier_audit": [
+    {
+      "raw_column": "ed_first_dbp",
+      "model_column": "ed_first_dbp_model",
+      "lower_bound": 20.0,
+      "upper_bound": 200.0,
+      "nonnull_n": 33943,
+      "out_of_range_n": 41,
+      "out_of_range_pct": 0.0012079074
+    },
+    {
+      "raw_column": "ed_first_hr",
+      "model_column": "ed_first_hr_model",
+      "lower_bound": 20.0,
+      "upper_bound": 250.0,
+      "nonnull_n": 34427,
+      "out_of_range_n": 4,
+      "out_of_range_pct": 0.0001161879
+    },
+    {
+      "raw_column": "ed_first_o2sat",
+      "model_column": "ed_first_o2sat_model",
+      "lower_bound": 40.0,
+      "upper_bound": 100.0,
+      "nonnull_n": 32727,
+      "out_of_range_n": 19,
+      "out_of_range_pct": 0.0005805604
+    },
+    {
+      "raw_column": "ed_first_rr",
+      "model_column": "ed_first_rr_model",
+      "lower_bound": 4.0,
+      "upper_bound": 80.0,
+      "nonnull_n": 34016,
+      "out_of_range_n": 3,
+      "out_of_range_pct": 8.81938e-05
+    },
+    {
+      "raw_column": "ed_first_sbp",
+      "model_column": "ed_first_sbp_model",
+      "lower_bound": 40.0,
+      "upper_bound": 300.0,
+      "nonnull_n": 33943,
+      "out_of_range_n": 34,
+      "out_of_range_pct": 0.0010016793
+    },
+    {
+      "raw_column": "ed_first_temp",
+      "model_column": "ed_first_temp_model",
+      "lower_bound": 90.0,
+      "upper_bound": 110.0,
+      "nonnull_n": 25279,
+      "out_of_range_n": 165,
+      "out_of_range_pct": 0.0065271569
+    },
+    {
+      "raw_column": "ed_triage_dbp",
+      "model_column": "ed_triage_dbp_model",
+      "lower_bound": 20.0,
+      "upper_bound": 200.0,
+      "nonnull_n": 32692,
+      "out_of_range_n": 55,
+      "out_of_range_pct": 0.0016823688
+    },
+    {
+      "raw_column": "ed_triage_hr",
+      "model_column": "ed_triage_hr_model",
+      "lower_bound": 20.0,
+      "upper_bound": 250.0,
+      "nonnull_n": 32882,
+      "out_of_range_n": 4,
+      "out_of_range_pct": 0.0001216471
+    },
+    {
+      "raw_column": "ed_triage_o2sat",
+      "model_column": "ed_triage_o2sat_model",
+      "lower_bound": 40.0,
+      "upper_bound": 100.0,
+      "nonnull_n": 32266,
+      "out_of_range_n": 15,
+      "out_of_range_pct": 0.0004648856
+    },
+    {
+      "raw_column": "ed_triage_rr",
+      "model_column": "ed_triage_rr_model",
+      "lower_bound": 4.0,
+      "upper_bound": 80.0,
+      "nonnull_n": 32275,
+      "out_of_range_n": 9,
+      "out_of_range_pct": 0.0002788536
+    },
+    {
+      "raw_column": "ed_triage_sbp",
+      "model_column": "ed_triage_sbp_model",
+      "lower_bound": 40.0,
+      "upper_bound": 300.0,
+      "nonnull_n": 32824,
+      "out_of_range_n": 21,
+      "out_of_range_pct": 0.0006397758
+    },
+    {
+      "raw_column": "ed_triage_temp",
+      "model_column": "ed_triage_temp_model",
+      "lower_bound": 90.0,
+      "upper_bound": 110.0,
+      "nonnull_n": 31350,
+      "out_of_range_n": 107,
+      "out_of_range_pct": 0.0034130781
+    }
+  ],
+  "qa_status": "pass",
+  "qa_warnings": [],
+  "qa_infos": [
+    "omr_pre_window_empty_post_window_fallback_used",
+    "gas_source_other_rate_high"
+  ],
+  "run_metadata": {
+    "run_utc": "2026-02-15T22:31:14.266602+00:00",
+    "work_project": "mimic-hypercapnia",
+    "physionet_project": "physionet-data",
+    "datasets": {
+      "hosp": "mimiciv_3_1_hosp",
+      "icu": "mimiciv_3_1_icu",
+      "ed": "mimiciv_ed"
+    },
+    "dataset_probes": {
+      "hosp": "physionet-data.mimiciv_3_1_hosp.admissions",
+      "icu": "physionet-data.mimiciv_3_1_icu.icustays",
+      "ed": "physionet-data.mimiciv_ed.edstays"
+    },
+    "notebook": "MIMICIV_hypercap_EXT_cohort.ipynb"
+  }
+}

@@ -27,11 +27,23 @@ PIPELINE_STAGE_COMMANDS: tuple[tuple[str, str], ...] = (
     ("04_analysis", "make notebook-analysis"),
 )
 
+QUARTO_STAGE_COMMANDS: tuple[tuple[str, str], ...] = (
+    ("01_cohort", "make quarto-cohort"),
+    ("02_classifier", "make quarto-classifier"),
+    ("03_rater", "make quarto-rater"),
+    ("04_analysis", "make quarto-analysis"),
+)
+
 ANALYSIS_EXPORT_FILENAMES: tuple[str, ...] = (
     "Symptom_Composition_by_Hypercapnia_Definition.xlsx",
     "Symptom_Composition_Pivot_ChartReady.xlsx",
     "Symptom_Composition_by_ABG_VBG_Overlap.xlsx",
+    "Symptom_Composition_by_Gas_Source_Overlap.xlsx",
     "Symptom_Composition_by_ICD_Gas_Overlap.xlsx",
+    "ICD_Positive_Subset_Breakdown.xlsx",
+    "ICD_vs_Gas_Performance.xlsx",
+    "Ascertainment_Overlap_Intersections.xlsx",
+    "Ascertainment_Overlap_UpSet.png",
 )
 
 KEY_QA_METRICS: tuple[str, ...] = (
@@ -59,8 +71,13 @@ ENV_KNOBS: tuple[str, ...] = (
     "BQ_QUERY_TIMEOUT_SECS",
     "WRITE_ARCHIVE_XLSX_EXPORTS",
     "COHORT_FAIL_ON_ALL_OTHER_SOURCE",
+    "COHORT_WARN_OTHER_RATE",
+    "COHORT_FAIL_OTHER_RATE",
+    "COHORT_GAS_SOURCE_INFERENCE_MODE",
     "COHORT_FAIL_ON_OMR_ATTACH_INCONSISTENCY",
     "COHORT_ALLOW_EMPTY_OMR",
+    "COHORT_ANTHRO_MIN_BMI_COVERAGE",
+    "RUN_MANIFEST_STAGE_SCOPE",
     "GOOGLE_APPLICATION_CREDENTIALS",
     "HF_TOKEN",
 )
@@ -98,6 +115,18 @@ DRIFT_RULES: dict[str, DriftRule] = {
     "gas_source_other_rate": DriftRule(compare="absolute", warn=0.04, fail=0.08),
     "first_other_pco2_pct_eq_160_poc": DriftRule(compare="absolute", warn=0.05, fail=0.10),
 }
+
+
+def resolve_stage_commands(
+    pipeline_mode: str,
+) -> tuple[tuple[str, str], ...]:
+    """Resolve stage commands for notebook or Quarto pipeline mode."""
+    mode = pipeline_mode.strip().lower()
+    if mode == "notebook":
+        return PIPELINE_STAGE_COMMANDS
+    if mode == "quarto":
+        return QUARTO_STAGE_COMMANDS
+    raise ValueError(f"Unsupported pipeline_mode: {pipeline_mode}")
 
 
 def _utc_now_iso() -> str:
@@ -306,6 +335,7 @@ def run_pipeline_with_logs(
     *,
     stage_commands: tuple[tuple[str, str], ...] = PIPELINE_STAGE_COMMANDS,
     run_consistency_check: bool = False,
+    consistency_command: str = "make notebook-pipeline",
 ) -> dict[str, Any]:
     """Execute pipeline stages in order and capture isolated logs."""
     logs_dir.mkdir(parents=True, exist_ok=True)
@@ -339,7 +369,7 @@ def run_pipeline_with_logs(
 
     if run_consistency_check and not encountered_failure:
         result = _run_stage_command(
-            "make notebook-pipeline",
+            consistency_command,
             cwd=work_dir,
             log_path=logs_dir / "05_consistency.log",
         )

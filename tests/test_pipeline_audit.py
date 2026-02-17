@@ -9,9 +9,13 @@ import pandas as pd
 
 from hypercap_cc_nlp.pipeline_audit import (
     ANALYSIS_EXPORT_FILENAMES,
+    PIPELINE_STAGE_COMMANDS,
+    QUARTO_STAGE_COMMANDS,
     build_audit_report,
+    collect_run_manifest,
     compute_metric_drift,
     load_and_validate_artifacts,
+    resolve_stage_commands,
     scan_logs_for_findings,
 )
 from hypercap_cc_nlp.workflow_contracts import (
@@ -90,7 +94,11 @@ def _write_minimal_required_artifacts(tmp_path: Path) -> None:
     )
 
     for filename in ANALYSIS_EXPORT_FILENAMES:
-        pd.DataFrame({"x": [1]}).to_excel(tmp_path / filename, index=False)
+        output_path = tmp_path / filename
+        if output_path.suffix.lower() == ".xlsx":
+            pd.DataFrame({"x": [1]}).to_excel(output_path, index=False)
+        else:
+            output_path.write_bytes(b"placeholder")
 
 
 def test_load_and_validate_artifacts_missing_artifacts_is_hard_fail(tmp_path: Path) -> None:
@@ -226,3 +234,28 @@ def test_build_audit_report_clean_warning_and_fail_statuses() -> None:
         baseline_info={"baseline_mode": "latest", "metrics": {}},
     )
     assert fail_report["status"] == "fail"
+
+
+def test_resolve_stage_commands_modes() -> None:
+    assert resolve_stage_commands("notebook") == PIPELINE_STAGE_COMMANDS
+    assert resolve_stage_commands("quarto") == QUARTO_STAGE_COMMANDS
+    try:
+        resolve_stage_commands("unsupported")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("Expected ValueError for unsupported pipeline mode")
+
+
+def test_collect_run_manifest_redacts_secret_env(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("HF_TOKEN", "hf_secret_value")
+    monkeypatch.setenv("COHORT_WARN_OTHER_RATE", "0.5")
+    manifest = collect_run_manifest(
+        tmp_path,
+        run_id="manifest_test",
+        selected_env_vars=("HF_TOKEN", "COHORT_WARN_OTHER_RATE"),
+    )
+
+    assert manifest["run_id"] == "manifest_test"
+    assert manifest["env_knobs"]["HF_TOKEN"] == "<set>"
+    assert manifest["env_knobs"]["COHORT_WARN_OTHER_RATE"] == "0.5"

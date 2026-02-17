@@ -6,3 +6,11 @@
 /MIMIC tabular data
 __pycache__/
 .env
+.DS_Store
+
+/.quarto/
+**/*.quarto_ipynb
+artifacts/reports/
+debug/pipeline_audit/
+debug/pipeline_parity/
+debug/contracts/

@@ -53,6 +53,13 @@ Use this section to list hard constraints the assistant must not violate (and up
 - required reporting conventions (tables, figures, rounding, labels)
 - approved modeling approach(es) and diagnostics
 - performance or memory ceilings in production
+- Core phase logic for the 4-stage pipeline must live in the `.qmd` notebooks:
+  - `MIMICIV_hypercap_EXT_cohort.qmd`
+  - `Hypercap CC NLP Classifier.qmd`
+  - `Rater Agreement Analysis.qmd`
+  - `Hypercap CC NLP Analysis.qmd`
+- Standalone `.py` modules are allowed for QA/data-fidelity/contracts/audit/parity/scripts/tests only.
+- If a helper is required for core behavior, define it in a clearly labeled “Local helper functions” notebook section.
 
 If this section is empty or ambiguous, default to: correctness → clarity → reproducibility → measured optimization.
 
@@ -66,17 +73,17 @@ If this section is empty or ambiguous, default to: correctness → clarity → r
   - Formatting: `ruff format`
   - Linting: `ruff check` (use `--fix` when appropriate)
   - Do not introduce Black, isort, flake8, pylint, or additional formatters/linters.
-- Jupyter is allowed.
+- Quarto (`.qmd`) with Python execution is the default notebook interface for pipeline work.
+- Jupyter (`.ipynb`) is legacy/compatibility-only unless explicitly requested.
 
 ## Repository structure and design
 - Prefer a **src layout** for importable code:
   - `src/<package_name>/...`
   - `tests/...`
   - optional: `notebooks/`, `scripts/`, `docs/`, `artifacts/`
-- Keep the computational core **pure** (no I/O, no hidden state). Isolate I/O in dedicated modules (e.g., `io.py`, `data.py`).
-- Follow “functional core, imperative shell”:
-  - pure functions for transforms/statistics/models
-  - thin orchestration layer for reading/writing, CLI, notebook glue
+- In this repository, `src/` is primarily for QA/contracts/audit/parity helpers and supporting scripts.
+- Do not move primary cohort/classifier/rater/analysis phase logic from `.qmd` into `src/` unless explicitly requested.
+- Keep notebook-local helper functions deterministic and self-contained.
 
 ## Coding style (human-centered)
 - **Clarity beats cleverness.** Optimize for the next reader (often future-you).
@@ -136,19 +143,28 @@ If this section is empty or ambiguous, default to: correctness → clarity → r
 - Avoid manual, non-reproducible steps. If something changes data, it should be executable code.
 
 ## Notebooks and Quarto
-- Jupyter notebooks (`.ipynb`) are allowed for exploration and reporting.
-- Notebooks should be restartable and deterministic:
-  - “Restart & Run All” should succeed without hidden state.
-  - move heavy logic into importable modules under `src/`.
-- If Quarto (`.qmd`) is used:
+- Quarto notebooks (`.qmd`) are the source of truth for the main 4-stage pipeline:
+  - `MIMICIV_hypercap_EXT_cohort.qmd`
+  - `Hypercap CC NLP Classifier.qmd`
+  - `Rater Agreement Analysis.qmd`
+  - `Hypercap CC NLP Analysis.qmd`
+- Use Python code chunks by default unless a notebook is explicitly R-based.
+- Keep notebooks restartable and deterministic:
+  - `quarto render` should succeed from a clean environment.
+- Core data/model/analysis logic for each stage must remain embedded in the corresponding `.qmd`.
+- Jupyter notebooks (`.ipynb`) may be retained as legacy references during transition but should not be the default execution target.
+- Quarto authoring expectations:
   - label chunks clearly
-  - keep reports narrative; keep heavy lifting in modules
+  - keep reports narrative and include a “Local helper functions” section for stage logic
+  - avoid interactive-only notebook behavior in pipeline notebooks
 
 ## Notebook edit/run protocol (Codex + VS Code)
 - Treat Codex edits as equivalent to manual edits.
-- After Codex changes a notebook:
-  - save the notebook
-  - re-run modified cells (or Restart Kernel → Run All if definitions/functions changed)
+- After Codex changes a Quarto notebook:
+  - save the `.qmd`
+  - run `quarto render` for that notebook (or the stage Make target)
+- Prefer stage-level Make targets (`make quarto-*`) over ad hoc notebook execution for reproducibility.
+- If legacy `.ipynb` files are touched for compatibility, reflect equivalent logic in the canonical `.qmd` source.
 - If edits are not appearing in VS Code:
   - use “File: Revert File” or reload the window
   - ensure `files.autoReload` is enabled
@@ -230,4 +246,5 @@ Every milestone should end with:
 - Do not add interactive-only calls to pipelines (`breakpoint()`, `pdb.set_trace()`, `input()`).
 - Do not introduce hidden global state or non-determinism without clear explanation.
 - Do not restructure the project into new orchestration frameworks (Kedro/Dagster/Prefect/etc.) unless explicitly asked.
+- Do not extract core phase logic from pipeline `.qmd` notebooks into standalone `.py` modules.
 - Do not commit secrets, credentials, patient identifiers, or large raw extracts.

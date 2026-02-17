@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "notes": "Copy to Annotation/resource_manifest.json and fill sha256 values to enable strict hash verification.",
+  "resources": [
+    {
+      "path": "Annotation/nhamcs_rvc_2022_appendixII_codes.csv",
+      "sha256": ""
+    },
+    {
+      "path": "Annotation/nhamcs_rvc_2022_summary_by_top_level_17.csv",
+      "sha256": ""
+    }
+  ]
+}
+
