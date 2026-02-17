@@ -7,14 +7,14 @@ hadm_id,subject_id,exact,partial,none,jaccard,overlap,f1_set,r3_size,nlp_size,mi
 25511045,11285028,0,1,0,0.3333333333333333,0.5,0.5,2,2,Diseases (patient–stated diagnosis),Symptom – Eye/Ear
 20064596,16618489,1,0,0,1.0,1.0,1.0,2,2,,
 26094397,11347128,0,1,0,0.3333333333333333,0.5,0.5,2,2,Injuries & adverse effects,Symptom – Genitourinary
-28991856,18436267,0,1,0,0.3333333333333333,0.5,0.5,2,2,Abnormal test result,Symptom – Eye/Ear
+28991856,18436267,1,0,0,1.0,1.0,1.0,2,2,,
 25231593,18986646,0,0,1,0.0,0.0,0.0,1,1,Diseases (patient–stated diagnosis),Injuries & adverse effects
 24627091,17393423,1,0,0,1.0,1.0,1.0,4,4,,
 25459832,13965102,1,0,0,1.0,1.0,1.0,3,3,,
 27676388,12087289,1,0,0,1.0,1.0,1.0,1,1,,
 24054501,12920571,0,0,1,0.0,0.0,0.0,1,1,Symptom – Digestive,Symptom – General
 25613914,15323731,0,0,1,0.0,0.0,0.0,1,1,Injuries & adverse effects,Treatment/Medication
-25923460,14101596,0,1,0,0.3333333333333333,0.5,0.5,2,2,Abnormal test result,Symptom – Eye/Ear
+25923460,14101596,1,0,0,1.0,1.0,1.0,2,2,,
 24857595,16203068,1,0,0,1.0,1.0,1.0,1,1,,
 21496503,17936913,1,0,0,1.0,1.0,1.0,1,1,,
 25600223,19215336,1,0,0,1.0,1.0,1.0,1,1,,
@@ -30,19 +30,14 @@ hadm_id,subject_id,exact,partial,none,jaccard,overlap,f1_set,r3_size,nlp_size,mi
 22309870,16369043,1,0,0,1.0,1.0,1.0,2,2,,
 22044168,11192475,0,0,1,0.0,0.0,0.0,1,1,Abnormal test result,Diseases (patient–stated)
 28932989,13678565,0,0,1,0.0,0.0,0.0,1,1,Treatment/Medication,Symptom – Skin/Hair/Nails
-24200200,18184413,0,0,1,0.0,0.0,0.0,1,1,Diseases (patient–stated diagnosis),Symptom – Nervous
-25251948,13611316,1,0,0,1.0,1.0,1.0,1,1,,
 20108746,16238160,0,1,0,0.3333333333333333,0.5,0.5,2,2,Diseases (patient–stated diagnosis),Diseases (patient–stated)
 25176323,16419658,0,1,0,0.6666666666666666,1.0,0.8,2,3,,Diseases (patient–stated)
-27249507,11896204,0,1,0,0.3333333333333333,0.5,0.5,2,2,Symptom – Nervous,Symptom – Genitourinary
 24731505,16346753,1,0,0,1.0,1.0,1.0,1,1,,
 26710194,17926711,0,0,1,0.0,0.0,0.0,1,1,Diseases (patient–stated diagnosis),Symptom – Skin/Hair/Nails
-28966752,15962075,0,1,0,0.5,0.6666666666666666,0.6666666666666666,3,3,Diseases (patient–stated diagnosis),Symptom – Nervous
 23243341,18119847,1,0,0,1.0,1.0,1.0,1,1,,
 24904285,14506613,1,0,0,1.0,1.0,1.0,1,1,,
 22868731,11850809,1,0,0,1.0,1.0,1.0,2,2,,
 24505986,18339865,0,0,1,0.0,0.0,0.0,1,1,Symptom – Respiratory,Symptom – Eye/Ear
-23322860,15775812,1,0,0,1.0,1.0,1.0,1,1,,
 27511830,12206478,0,0,1,0.0,0.0,0.0,1,1,Diseases (patient–stated diagnosis),Diseases (patient–stated)
 27020826,19057052,1,0,0,1.0,1.0,1.0,1,1,,
 22458691,19010278,1,0,0,1.0,1.0,1.0,1,1,,
@@ -75,10 +70,9 @@ hadm_id,subject_id,exact,partial,none,jaccard,overlap,f1_set,r3_size,nlp_size,mi
 25346264,16356084,1,0,0,1.0,1.0,1.0,2,2,,
 25589180,11210636,1,0,0,1.0,1.0,1.0,1,1,,
 24579787,10787196,1,0,0,1.0,1.0,1.0,1,1,,
-21528712,19923506,0,1,0,0.3333333333333333,0.5,0.5,2,2,Abnormal test result,Symptom – Eye/Ear
+21528712,19923506,1,0,0,1.0,1.0,1.0,2,2,,
 28378848,12423400,1,0,0,1.0,1.0,1.0,1,1,,
 24869905,14853651,0,1,0,0.3333333333333333,0.5,0.5,2,2,Diseases (patient–stated diagnosis),Diseases (patient–stated)
-21101111,10018845,0,0,1,0.0,0.0,0.0,2,2,Diseases (patient–stated diagnosis); Injuries & adverse effects,Symptom – Genitourinary; Symptom – Nervous
 22870855,12829950,1,0,0,1.0,1.0,1.0,2,2,,
 27136769,11052935,1,0,0,1.0,1.0,1.0,1,1,,
 26403320,18897917,0,1,0,0.5,1.0,0.6666666666666666,2,1,Abnormal test result,
@@ -95,7 +89,7 @@ hadm_id,subject_id,exact,partial,none,jaccard,overlap,f1_set,r3_size,nlp_size,mi
 24267539,17145467,1,0,0,1.0,1.0,1.0,2,2,,
 24937126,17176334,0,0,1,0.0,0.0,0.0,1,1,Injuries & adverse effects,Uncodable/Unknown
 26409789,12530259,0,0,1,0.0,0.0,0.0,1,1,Symptom – Nervous,Symptom – General
-28937998,12877392,0,0,1,0.0,0.0,0.0,2,2,Abnormal test result; Symptom – Digestive,Symptom – Eye/Ear; Symptom – Genitourinary
+28937998,12877392,0,1,0,0.3333333333333333,0.5,0.5,2,2,Symptom – Digestive,Symptom – Genitourinary
 24196542,19707824,0,1,0,0.3333333333333333,0.5,0.5,2,2,Symptom – Nervous,Symptom – General
 21199923,14239401,1,0,0,1.0,1.0,1.0,2,2,,
 24873243,11155716,1,0,0,1.0,1.0,1.0,1,1,,
@@ -109,7 +103,6 @@ hadm_id,subject_id,exact,partial,none,jaccard,overlap,f1_set,r3_size,nlp_size,mi
 21496150,12670180,1,0,0,1.0,1.0,1.0,1,1,,
 20101264,19616286,1,0,0,1.0,1.0,1.0,1,1,,
 23027105,14196704,0,0,1,0.0,0.0,0.0,1,1,Abnormal test result,Diseases (patient–stated)
-27975892,17169964,1,0,0,1.0,1.0,1.0,1,1,,
 20525771,15738458,0,1,0,0.5,1.0,0.6666666666666666,2,4,,Symptom – Genitourinary; Treatment/Medication
 28493287,17658387,0,0,1,0.0,0.0,0.0,1,1,Diseases (patient–stated diagnosis),Diseases (patient–stated)
 21901331,16306505,0,1,0,0.5,0.6666666666666666,0.6666666666666666,3,3,Diseases (patient–stated diagnosis),Diseases (patient–stated)
@@ -127,7 +120,6 @@ hadm_id,subject_id,exact,partial,none,jaccard,overlap,f1_set,r3_size,nlp_size,mi
 29886448,15165614,1,0,0,1.0,1.0,1.0,2,2,,
 23399369,12302874,0,1,0,0.5,0.6666666666666666,0.6666666666666666,3,3,Diseases (patient–stated diagnosis),Symptom – Genitourinary
 24691818,15615327,1,0,0,1.0,1.0,1.0,2,2,,
-23882372,13855202,1,0,0,1.0,1.0,1.0,1,1,,
 28051607,11567646,1,0,0,1.0,1.0,1.0,2,2,,
 29343447,10815669,1,0,0,1.0,1.0,1.0,1,1,,
 24016375,11625397,1,0,0,1.0,1.0,1.0,1,1,,
@@ -149,13 +141,11 @@ hadm_id,subject_id,exact,partial,none,jaccard,overlap,f1_set,r3_size,nlp_size,mi
 24778646,12632853,1,0,0,1.0,1.0,1.0,2,2,,
 24940249,19306986,1,0,0,1.0,1.0,1.0,2,2,,
 28336853,16614096,1,0,0,1.0,1.0,1.0,1,1,,
-26351943,14958899,1,0,0,1.0,1.0,1.0,2,2,,
 26207228,12661994,1,0,0,1.0,1.0,1.0,1,1,,
 27119651,19997293,0,0,1,0.0,0.0,0.0,1,1,Symptom – Nervous,Uncodable/Unknown
 27328920,14347918,1,0,0,1.0,1.0,1.0,1,1,,
-25014327,19109471,0,1,0,0.5,1.0,0.6666666666666666,1,2,,Symptom – General
 27284684,16043637,0,1,0,0.3333333333333333,0.5,0.5,2,2,Abnormal test result,Symptom – Circulatory
 29839578,16096783,1,0,0,1.0,1.0,1.0,1,1,,
-22632485,17373744,0,0,1,0.0,0.0,0.0,2,2,Abnormal test result; Symptom – Skin/Hair/Nails,Symptom – Digestive; Symptom – Eye/Ear
+22632485,17373744,0,1,0,0.3333333333333333,0.5,0.5,2,2,Symptom – Skin/Hair/Nails,Symptom – Digestive
 26084305,13010423,0,1,0,0.4,0.6666666666666666,0.5714285714285714,4,3,Diseases (patient–stated diagnosis); Symptom – Digestive,Symptom – Genitourinary
 20019063,15121721,1,0,0,1.0,1.0,1.0,1,1,,

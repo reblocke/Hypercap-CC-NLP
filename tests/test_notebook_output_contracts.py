@@ -44,6 +44,23 @@ def test_cohort_notebook_has_generation_and_qa_sections() -> None:
     assert "## QA & Data Fidelity" in cohort_text
 
 
+def test_cohort_notebook_contains_ed_vitals_cleaning_helpers() -> None:
+    cohort_text = (WORK_DIR / "MIMICIV_hypercap_EXT_cohort.qmd").read_text()
+    assert "def normalize_temperature_to_f(" in cohort_text
+    assert "def clean_pain_score(" in cohort_text
+    assert "def clean_bp(" in cohort_text
+    assert "def clean_o2sat(" in cohort_text
+    assert "def build_ed_vitals_audit_artifacts(" in cohort_text
+    assert "ed_vitals_distribution_summary.csv" in cohort_text
+    assert "ed_vitals_extreme_examples.csv" in cohort_text
+    assert "ed_vitals_model_delta.csv" in cohort_text
+    assert "ed_triage_temp_f_clean" in cohort_text
+    assert "ed_first_temp_f_clean" in cohort_text
+    assert "ed_triage_o2sat_clean" in cohort_text
+    assert "ed_first_o2sat_clean" in cohort_text
+    assert "residual_celsius_like_n" in cohort_text
+
+
 def test_analysis_notebook_contains_requested_outputs() -> None:
     analysis_text = (WORK_DIR / "Hypercap CC NLP Analysis.qmd").read_text()
     assert '"other_hypercap_threshold"' in analysis_text
@@ -51,3 +68,4 @@ def test_analysis_notebook_contains_requested_outputs() -> None:
     assert "ICD_Positive_Subset_Breakdown.xlsx" in analysis_text
     assert "Ascertainment_Overlap_UpSet.png" in analysis_text
     assert "from upsetplot import UpSet, from_indicators" in analysis_text
+    assert "def select_preferred_vital_column(" in analysis_text

@@ -6,6 +6,8 @@ from pathlib import Path
 import pandas as pd
 
 from hypercap_cc_nlp.pipeline_contracts import (
+    COHORT_POC_PCO2_MEDIAN_MAX,
+    COHORT_POC_PCO2_MEDIAN_MIN,
     build_pipeline_contract_report,
     validate_cohort_contract,
     write_contract_report,
@@ -115,6 +117,68 @@ def test_validate_cohort_contract_enforces_min_bmi_coverage() -> None:
     assert "anthro_bmi_coverage_below_minimum" in codes
 
 
+def test_validate_cohort_contract_fails_when_poc_other_pco2_median_out_of_bounds() -> None:
+    df = pd.DataFrame(
+        {
+            "hadm_id": [1, 2, 3],
+            "ed_stay_id": [11, 22, 33],
+            "abg_hypercap_threshold": [0, 0, 0],
+            "vbg_hypercap_threshold": [1, 1, 1],
+            "other_hypercap_threshold": [1, 1, 1],
+            "pco2_threshold_any": [1, 1, 1],
+            "gas_source_other_rate": [0.2, 0.2, 0.2],
+            "gas_source_inference_primary_tier": [
+                "specimen_text",
+                "specimen_text",
+                "specimen_text",
+            ],
+            "gas_source_hint_conflict_rate": [0.0, 0.0, 0.0],
+            "gas_source_resolved_rate": [1.0, 1.0, 1.0],
+            "bmi_closest_pre_ed": [30.0, 32.0, 34.0],
+            "anthro_source": ["omr", "icu_charted", "omr"],
+            "first_other_src": ["POC", "POC", "LAB"],
+            "first_other_pco2": [110.0, 100.0, 40.0],
+        }
+    )
+    report = validate_cohort_contract(df)
+    codes = {finding["code"] for finding in report["findings"]}
+
+    assert report["status"] == "fail"
+    assert "poc_other_pco2_median_out_of_bounds" in codes
+    assert report["poc_other_pco2_median"] > COHORT_POC_PCO2_MEDIAN_MAX
+
+
+def test_validate_cohort_contract_accepts_poc_other_pco2_median_within_bounds() -> None:
+    midpoint = (COHORT_POC_PCO2_MEDIAN_MIN + COHORT_POC_PCO2_MEDIAN_MAX) / 2
+    df = pd.DataFrame(
+        {
+            "hadm_id": [1, 2, 3],
+            "ed_stay_id": [11, 22, 33],
+            "abg_hypercap_threshold": [1, 0, 1],
+            "vbg_hypercap_threshold": [0, 1, 0],
+            "other_hypercap_threshold": [1, 1, 0],
+            "pco2_threshold_any": [1, 1, 1],
+            "gas_source_other_rate": [0.2, 0.2, 0.2],
+            "gas_source_inference_primary_tier": [
+                "specimen_text",
+                "specimen_text",
+                "specimen_text",
+            ],
+            "gas_source_hint_conflict_rate": [0.0, 0.0, 0.0],
+            "gas_source_resolved_rate": [1.0, 1.0, 1.0],
+            "bmi_closest_pre_ed": [30.0, 32.0, 34.0],
+            "anthro_source": ["omr", "icu_charted", "omr"],
+            "first_other_src": ["POC", "POC", "LAB"],
+            "first_other_pco2": [midpoint, midpoint + 2, midpoint - 3],
+        }
+    )
+    report = validate_cohort_contract(df)
+    codes = {finding["code"] for finding in report["findings"]}
+
+    assert "poc_other_pco2_median_out_of_bounds" not in codes
+    assert report["poc_other_pco2_count"] == 2
+
+
 def test_build_pipeline_contract_report_reads_canonical_outputs(tmp_path: Path) -> None:
     data_dir = tmp_path / DATA_DIRNAME
     data_dir.mkdir(parents=True)
@@ -221,3 +285,62 @@ def test_build_pipeline_contract_report_fails_when_cc_missing_audit_absent(tmp_p
         finding["code"] for finding in report["contracts"]["classifier"]["findings"]
     }
     assert "missing_classifier_cc_missing_audit" in classifier_codes
+
+
+def test_validate_cohort_contract_requires_cleaned_vitals_when_raw_present() -> None:
+    df = pd.DataFrame(
+        {
+            "hadm_id": [1],
+            "ed_stay_id": [11],
+            "abg_hypercap_threshold": [1],
+            "vbg_hypercap_threshold": [0],
+            "other_hypercap_threshold": [0],
+            "pco2_threshold_any": [1],
+            "gas_source_other_rate": [0.1],
+            "gas_source_inference_primary_tier": ["specimen_text"],
+            "gas_source_hint_conflict_rate": [0.0],
+            "gas_source_resolved_rate": [1.0],
+            "bmi_closest_pre_ed": [30.0],
+            "anthro_source": ["omr"],
+            "ed_triage_temp": [98.6],
+        }
+    )
+
+    report = validate_cohort_contract(df)
+    codes = {finding["code"] for finding in report["findings"]}
+    assert report["status"] == "fail"
+    assert "missing_ed_vitals_clean_columns" in codes
+
+
+def test_validate_cohort_contract_flags_invalid_cleaned_vitals_ranges() -> None:
+    df = pd.DataFrame(
+        {
+            "hadm_id": [1],
+            "ed_stay_id": [11],
+            "abg_hypercap_threshold": [1],
+            "vbg_hypercap_threshold": [0],
+            "other_hypercap_threshold": [0],
+            "pco2_threshold_any": [1],
+            "gas_source_other_rate": [0.1],
+            "gas_source_inference_primary_tier": ["specimen_text"],
+            "gas_source_hint_conflict_rate": [0.0],
+            "gas_source_resolved_rate": [1.0],
+            "bmi_closest_pre_ed": [30.0],
+            "anthro_source": ["omr"],
+            "ed_triage_o2sat": [99.0],
+            "ed_triage_o2sat_clean": [101.0],
+            "ed_triage_o2sat_gt_100": [True],
+            "ed_triage_o2sat_out_of_range": [False],
+            "ed_triage_o2sat_zero": [False],
+            "ed_triage_temp": [98.6],
+            "ed_triage_temp_f_clean": [35.0],
+            "ed_triage_temp_was_celsius_like": [False],
+            "ed_triage_temp_out_of_range": [False],
+        }
+    )
+
+    report = validate_cohort_contract(df)
+    codes = {finding["code"] for finding in report["findings"]}
+    assert report["status"] == "fail"
+    assert "invalid_ed_vitals_clean_range" in codes
+    assert "ed_temp_clean_contains_celsius_band_values" in codes

@@ -56,7 +56,6 @@ quarto-parity-check:
 quarto-cohort:
 	QUARTO_PYTHON="$(QUARTO_PYTHON)" quarto render "MIMICIV_hypercap_EXT_cohort.qmd" --to pdf --output-dir "$(REPORT_DIR)"
 	@test -f "MIMIC tabular data/MIMICIV all with CC.xlsx" || (echo "Missing canonical cohort workbook after quarto cohort run." >&2; exit 1)
-	@$(MAKE) contracts-check STAGE=cohort
 	@test -f "$(REPORT_DIR)/MIMICIV_hypercap_EXT_cohort.pdf" || (echo "Missing cohort PDF output." >&2; exit 1)
 	@cp -f "$(REPORT_DIR)/MIMICIV_hypercap_EXT_cohort.pdf" "./MIMICIV_hypercap_EXT_cohort.pdf"
 	@test -f "./MIMICIV_hypercap_EXT_cohort.pdf" || (echo "Missing root cohort PDF output." >&2; exit 1)
@@ -66,7 +65,6 @@ quarto-classifier:
 	QUARTO_PYTHON="$(QUARTO_PYTHON)" quarto render "Hypercap CC NLP Classifier.qmd" --to pdf --output-dir "$(REPORT_DIR)"
 	@if [ -f "$(REPORT_DIR)/Hypercap-CC-NLP-Classifier.pdf" ]; then mv -f "$(REPORT_DIR)/Hypercap-CC-NLP-Classifier.pdf" "$(REPORT_DIR)/Hypercap CC NLP Classifier.pdf"; fi
 	@test -f "MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx" || (echo "Missing canonical NLP workbook after quarto classifier run." >&2; exit 1)
-	@$(MAKE) contracts-check STAGE=classifier
 	@test -f "$(REPORT_DIR)/Hypercap CC NLP Classifier.pdf" || (echo "Missing classifier PDF output." >&2; exit 1)
 	@cp -f "$(REPORT_DIR)/Hypercap CC NLP Classifier.pdf" "./Hypercap CC NLP Classifier.pdf"
 	@test -f "./Hypercap CC NLP Classifier.pdf" || (echo "Missing root classifier PDF output." >&2; exit 1)
@@ -75,7 +73,6 @@ quarto-rater:
 	@test -f "MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx" || (echo "Missing rater NLP input workbook. Run make quarto-classifier first." >&2; exit 1)
 	QUARTO_PYTHON="$(QUARTO_PYTHON)" quarto render "Rater Agreement Analysis.qmd" --to pdf --output-dir "$(REPORT_DIR)"
 	@if [ -f "$(REPORT_DIR)/Rater-Agreement-Analysis.pdf" ]; then mv -f "$(REPORT_DIR)/Rater-Agreement-Analysis.pdf" "$(REPORT_DIR)/Rater Agreement Analysis.pdf"; fi
-	@$(MAKE) contracts-check STAGE=all
 	@test -f "annotation_agreement_outputs_nlp/R3_vs_NLP_summary.txt" || (echo "Missing R3_vs_NLP_summary.txt after quarto rater run." >&2; exit 1)
 	@test -f "$(REPORT_DIR)/Rater Agreement Analysis.pdf" || (echo "Missing rater PDF output." >&2; exit 1)
 	@cp -f "$(REPORT_DIR)/Rater Agreement Analysis.pdf" "./Rater Agreement Analysis.pdf"
@@ -85,7 +82,6 @@ quarto-analysis:
 	@test -f "MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx" || (echo "Missing analysis input workbook. Run make quarto-classifier first." >&2; exit 1)
 	QUARTO_PYTHON="$(QUARTO_PYTHON)" quarto render "Hypercap CC NLP Analysis.qmd" --to pdf --output-dir "$(REPORT_DIR)"
 	@if [ -f "$(REPORT_DIR)/Hypercap-CC-NLP-Analysis.pdf" ]; then mv -f "$(REPORT_DIR)/Hypercap-CC-NLP-Analysis.pdf" "$(REPORT_DIR)/Hypercap CC NLP Analysis.pdf"; fi
-	@$(MAKE) contracts-check STAGE=all
 	@test -f "$(REPORT_DIR)/Hypercap CC NLP Analysis.pdf" || (echo "Missing analysis PDF output." >&2; exit 1)
 	@cp -f "$(REPORT_DIR)/Hypercap CC NLP Analysis.pdf" "./Hypercap CC NLP Analysis.pdf"
 	@test -f "./Hypercap CC NLP Analysis.pdf" || (echo "Missing root analysis PDF output." >&2; exit 1)

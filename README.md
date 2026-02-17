@@ -142,6 +142,12 @@ PIPELINE_CONTRACT_MODE=fail  # fail|warn contract enforcement mode
 RUN_MANIFEST_STAGE_SCOPE=all  # per-stage run manifests are written for cohort/classifier/rater/analysis
 ```
 
+Hard-coded QA-only POC sanity contract (not a runtime notebook env setting):
+- `COHORT_POC_PCO2_MEDIAN_MIN = 45`
+- `COHORT_POC_PCO2_MEDIAN_MAX = 80`
+- `COHORT_POC_PCO2_FAIL_ENABLED = 1`
+- Enforced by `make contracts-check` / pipeline audit checks against exported cohort artifacts.
+
 `GOOGLE_APPLICATION_CREDENTIALS` is also supported (optional) when you prefer service-account auth over ADC login.
 
 ### 3) Run the notebooks in order (interactive)
@@ -192,8 +198,20 @@ Preflight and reproducibility checks:
 
 ```bash
 make check-resources
-make contracts-check
 ```
+
+Post-run QA checks (explicitly separate from `make quarto-pipeline`):
+
+```bash
+make contracts-check STAGE=all
+make quarto-parity-check BASELINE=latest
+make quarto-pipeline-audit BASELINE=latest
+```
+
+Execution policy:
+- `make quarto-pipeline` is the primary render/data-generation workflow.
+- QA contracts/parity/audit are run explicitly with the commands above.
+- This separation keeps generation and QA stages reproducible but independently invokable.
 
 PDF outputs from Quarto targets are written to:
 - `artifacts/reports/<run_id>/MIMICIV_hypercap_EXT_cohort.pdf`
@@ -224,7 +242,7 @@ Capture baseline + parity check + Quarto audit:
 ```bash
 make baseline-capture-jupyter
 make quarto-parity-check BASELINE=latest
-make quarto-pipeline-audit
+make quarto-pipeline-audit BASELINE=latest
 ```
 
 Note on `quarto-pipeline-audit` report directories:
@@ -306,6 +324,12 @@ Annotation workbook curation remains an independent manual workflow.
 - Quantify agreement with set‑based metrics and chance‑corrected scores (e.g., Gwet’s AC1).
 - Train an NLP classifier to predict RVC groups and evaluate against adjudicated labels.
 
+ED vitals cleaning policy (cohort stage):
+- Temperatures in the 20–50 range are treated as Celsius-like and converted to Fahrenheit, then range-validated (50–120 °F).
+- Pain score `13` is treated as sentinel/unknown and set missing; valid pain range is 0–10.
+- SBP/DBP are range-validated to 20–300 / 10–200; SpO2 values `>100` or `<0` are dropped while `0` is retained and flagged.
+- Per-run ED vitals audits are written to `MIMIC tabular data/prior runs/YYYY-MM-DD ed_vitals_*.csv`.
+
 ## Results mapping
 | Artifact | Notebook | Output path |
 |---|---|---|
@@ -324,6 +348,9 @@ Annotation workbook curation remains an independent manual workflow.
 | Gas source audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD gas_source_audit.json` |
 | Gas source overlap summary | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD gas_source_overlap_summary.csv` |
 | First other-pCO2 audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD first_other_pco2_audit.csv` |
+| ED vitals distribution audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD ed_vitals_distribution_summary.csv` |
+| ED vitals extremes audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD ed_vitals_extreme_examples.csv` |
+| ED vitals raw→clean delta audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD ed_vitals_model_delta.csv` |
 | Vitals outlier audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD vitals_outlier_audit.csv` |
 | Combined outlier audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD outliers_audit.csv` |
 | Lab item map | `MIMICIV_hypercap_EXT_cohort.qmd` | `lab_item_map.json` |
@@ -335,14 +362,17 @@ Annotation workbook curation remains an independent manual workflow.
 | Labs (long) parquet snapshot | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/labs_long_<timestamp>.parquet` |
 | Gas panels (HOSP) parquet snapshot | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/gas_panels_<timestamp>.parquet` |
 | Gas panels (ICU POC) parquet snapshot | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/gas_panels_poc_<timestamp>.parquet` |
+| ICU POC matched itemid map | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD icu_poc_itemid_map.csv` |
+| ICU POC matched itemid usage | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD icu_poc_itemid_usage.csv` |
 | Manual agreement metrics | `Rater Agreement Analysis.qmd` | `Annotation/Full Annotations/Agreement Metrics/` (pairwise set metrics, binary stats, AC1 summary) |
 | NLP vs R3 agreement outputs | `Rater Agreement Analysis.qmd` | `annotation_agreement_outputs_nlp/R3_vs_NLP_set_metrics_by_visit.csv`, `annotation_agreement_outputs_nlp/R3_vs_NLP_binary_stats_by_category.csv`, `annotation_agreement_outputs_nlp/R3_vs_NLP_summary.txt` |
 | R3/NLP join audit | `Rater Agreement Analysis.qmd` | `annotation_agreement_outputs_nlp/R3_vs_NLP_join_audit.json`, `annotation_agreement_outputs_nlp/R3_vs_NLP_unmatched_adjudicated_keys.csv`, `annotation_agreement_outputs_nlp/R3_vs_NLP_unmatched_nlp_keys.csv` |
-| NLP‑augmented workbook | `Hypercap CC NLP Classifier.qmd` | Canonical: `MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx`; archive: `MIMIC tabular data/prior runs/YYYY-MM-DD MIMICIV all with CC_with_NLP.xlsx` |
+| NLP‑augmented workbook | `Hypercap CC NLP Classifier.qmd` | Canonical: `MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx`; optional archive (`WRITE_ARCHIVE_XLSX_EXPORTS=1`): `MIMIC tabular data/prior runs/YYYY-MM-DD MIMICIV all with CC_with_NLP.xlsx` |
 | Classifier CC missingness audit | `Hypercap CC NLP Classifier.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD classifier_cc_missing_audit.csv` |
+| Classifier phrase regression audit | `Hypercap CC NLP Classifier.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD classifier_phrase_audit.csv` |
 | Classifier contract report | `Hypercap CC NLP Classifier.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD classifier_contract_report.json` |
 | Classifier run manifest | `Hypercap CC NLP Classifier.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD classifier_run_manifest.json` |
-| Pipeline contract report | `make contracts-check` / stage notebook runs | `debug/contracts/<run_id>/contract_report.json` (+ `FAILED_CONTRACT.json` on failure) |
+| Pipeline contract report | `make contracts-check` | `debug/contracts/<run_id>/contract_report.json` (+ `FAILED_CONTRACT.json` on failure) |
 | Analysis exports | `Hypercap CC NLP Analysis.qmd` | `Symptom_Composition_by_Hypercapnia_Definition.xlsx`, `Symptom_Composition_Pivot_ChartReady.xlsx`, `Symptom_Composition_by_ABG_VBG_Overlap.xlsx`, `Symptom_Composition_by_ICD_Gas_Overlap.xlsx` |
 | Analysis gas-source overlap export | `Hypercap CC NLP Analysis.qmd` | `Symptom_Composition_by_Gas_Source_Overlap.xlsx` |
 | ICD diagnostic performance export | `Hypercap CC NLP Analysis.qmd` | `ICD_vs_Gas_Performance.xlsx` |

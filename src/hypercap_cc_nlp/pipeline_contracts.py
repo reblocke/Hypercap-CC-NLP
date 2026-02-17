@@ -18,6 +18,62 @@ from .workflow_contracts import (
     PRIOR_RUNS_DIRNAME,
 )
 
+COHORT_POC_PCO2_MEDIAN_MIN = 45.0
+COHORT_POC_PCO2_MEDIAN_MAX = 80.0
+COHORT_POC_PCO2_FAIL_ENABLED = True
+
+COHORT_REQUIRED_ED_VITALS_CLEAN_COLUMNS: dict[str, tuple[str, ...]] = {
+    "ed_triage_temp": (
+        "ed_triage_temp_f_clean",
+        "ed_triage_temp_was_celsius_like",
+        "ed_triage_temp_out_of_range",
+    ),
+    "ed_first_temp": (
+        "ed_first_temp_f_clean",
+        "ed_first_temp_was_celsius_like",
+        "ed_first_temp_out_of_range",
+    ),
+    "ed_triage_pain": (
+        "ed_triage_pain_clean",
+        "ed_triage_pain_is_sentinel_13",
+        "ed_triage_pain_out_of_range",
+    ),
+    "ed_first_pain": (
+        "ed_first_pain_clean",
+        "ed_first_pain_is_sentinel_13",
+        "ed_first_pain_out_of_range",
+    ),
+    "ed_triage_sbp": ("ed_triage_sbp_clean", "ed_triage_sbp_out_of_range"),
+    "ed_triage_dbp": ("ed_triage_dbp_clean", "ed_triage_dbp_out_of_range"),
+    "ed_first_sbp": ("ed_first_sbp_clean", "ed_first_sbp_out_of_range"),
+    "ed_first_dbp": ("ed_first_dbp_clean", "ed_first_dbp_out_of_range"),
+    "ed_triage_o2sat": (
+        "ed_triage_o2sat_clean",
+        "ed_triage_o2sat_gt_100",
+        "ed_triage_o2sat_out_of_range",
+        "ed_triage_o2sat_zero",
+    ),
+    "ed_first_o2sat": (
+        "ed_first_o2sat_clean",
+        "ed_first_o2sat_gt_100",
+        "ed_first_o2sat_out_of_range",
+        "ed_first_o2sat_zero",
+    ),
+}
+
+COHORT_ED_VITALS_CLEAN_BOUNDS: dict[str, tuple[float, float]] = {
+    "ed_triage_temp_f_clean": (50.0, 120.0),
+    "ed_first_temp_f_clean": (50.0, 120.0),
+    "ed_triage_pain_clean": (0.0, 10.0),
+    "ed_first_pain_clean": (0.0, 10.0),
+    "ed_triage_sbp_clean": (20.0, 300.0),
+    "ed_first_sbp_clean": (20.0, 300.0),
+    "ed_triage_dbp_clean": (10.0, 200.0),
+    "ed_first_dbp_clean": (10.0, 200.0),
+    "ed_triage_o2sat_clean": (0.0, 100.0),
+    "ed_first_o2sat_clean": (0.0, 100.0),
+}
+
 
 def _utc_timestamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -107,6 +163,53 @@ def validate_cohort_contract(
             }
         )
 
+    for raw_column, required_clean_columns in COHORT_REQUIRED_ED_VITALS_CLEAN_COLUMNS.items():
+        if raw_column not in df.columns:
+            continue
+        missing_clean_columns = [
+            clean_column for clean_column in required_clean_columns if clean_column not in df.columns
+        ]
+        if missing_clean_columns:
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": "missing_ed_vitals_clean_columns",
+                    "message": (
+                        f"Raw ED vitals column '{raw_column}' is present but required cleaned columns are missing: "
+                        f"{missing_clean_columns}"
+                    ),
+                }
+            )
+
+    for clean_column, (lower_bound, upper_bound) in COHORT_ED_VITALS_CLEAN_BOUNDS.items():
+        if clean_column not in df.columns:
+            continue
+        numeric = pd.to_numeric(df[clean_column], errors="coerce")
+        invalid_n = int((numeric.notna() & ((numeric < lower_bound) | (numeric > upper_bound))).sum())
+        if invalid_n:
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": "invalid_ed_vitals_clean_range",
+                    "message": (
+                        f"{clean_column} has {invalid_n} non-null values outside "
+                        f"[{lower_bound}, {upper_bound}]."
+                    ),
+                }
+            )
+        if clean_column.endswith("_temp_f_clean"):
+            celsius_band_n = int((numeric.notna() & numeric.between(20.0, 50.0)).sum())
+            if celsius_band_n:
+                findings.append(
+                    {
+                        "severity": "error",
+                        "code": "ed_temp_clean_contains_celsius_band_values",
+                        "message": (
+                            f"{clean_column} has {celsius_band_n} non-null values in the 20-50 band after cleaning."
+                        ),
+                    }
+                )
+
     gas_source_other_rate = None
     if "gas_source_other_rate" in df.columns:
         gas_source_other_rate = float(
@@ -137,6 +240,34 @@ def validate_cohort_contract(
                     ),
                 }
             )
+
+    poc_other_pco2_median = None
+    poc_other_pco2_count = 0
+    if {"first_other_src", "first_other_pco2"}.issubset(df.columns):
+        source = df["first_other_src"].astype("string").str.strip().str.upper()
+        values = pd.to_numeric(df["first_other_pco2"], errors="coerce")
+        poc_values = values.loc[source.eq("POC") & values.notna()]
+        poc_other_pco2_count = int(poc_values.shape[0])
+        if poc_other_pco2_count > 0:
+            poc_other_pco2_median = float(poc_values.median())
+            if (
+                COHORT_POC_PCO2_FAIL_ENABLED
+                and (
+                    poc_other_pco2_median < COHORT_POC_PCO2_MEDIAN_MIN
+                    or poc_other_pco2_median > COHORT_POC_PCO2_MEDIAN_MAX
+                )
+            ):
+                findings.append(
+                    {
+                        "severity": "error",
+                        "code": "poc_other_pco2_median_out_of_bounds",
+                        "message": (
+                            "POC first_other_pco2 median outside hard-coded QA bounds "
+                            f"[{COHORT_POC_PCO2_MEDIAN_MIN:.1f}, {COHORT_POC_PCO2_MEDIAN_MAX:.1f}] "
+                            f"with median={poc_other_pco2_median:.1f} (n={poc_other_pco2_count})."
+                        ),
+                    }
+                )
 
     anthro_source_counts: dict[str, int] = {}
     if "anthro_source" in df.columns:
@@ -182,6 +313,8 @@ def validate_cohort_contract(
         "row_count": int(len(df)),
         "column_count": int(df.shape[1]),
         "gas_source_other_rate_mean": gas_source_other_rate,
+        "poc_other_pco2_median": poc_other_pco2_median,
+        "poc_other_pco2_count": poc_other_pco2_count,
         "anthro_bmi_coverage_rate": bmi_coverage_rate,
         "anthro_source_counts": anthro_source_counts,
         "findings": findings,

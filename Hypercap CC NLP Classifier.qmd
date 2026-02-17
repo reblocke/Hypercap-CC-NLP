@@ -232,7 +232,8 @@ CC_CANDIDATES: tuple[str, ...] = (
     "cc",
 )
 
-PROTECT = ("n/v", "n/v/d", "s/p", "w/", "w/o", "h/o", "c/o", "h/a", "f/c", "c/p")
+PROTECT = ("n/v", "n/v/d", "s/p", "w/", "w/o", "h/o", "c/o", "h/a", "f/c", "c/p", "lab", "labs")
+SPELL_PROTECT_TOKENS = {"lab", "labs", "abnl", "abnormal"}
 MISSING_RE = re.compile(
     r"^(?:n/?a|na|none|unknown|unk|no chief complaint|no complaint|not applicable|not available)$",
     re.I,
@@ -726,6 +727,9 @@ def _clean_tok(token: str) -> str:
 
 
 def _spell(token: str) -> str:
+    normalized = token.strip().lower()
+    if normalized in SPELL_PROTECT_TOKENS:
+        return token
     if len(token) <= 3 and token not in SAFE_SHORT_TOKENS:
         return token
     if not token.isalpha():
@@ -907,6 +911,8 @@ def canonize_cc_segments(segments: list[str]) -> list[str]:
 def rule_gate(segment: str) -> tuple[str | None, list[str]]:
     """Apply deterministic rule overrides for high-confidence pattern matches."""
     text = f" {segment.lower()} "
+    if re.search(r"\babnormal\s+labs?\b", text):
+        return "RVC-TEST", ["abnormal labs"]
     if "weakness" in text and RX_FOCAL_WEAK.search(text):
         return "RVC-SYM-NERV", ["focal weakness"]
 
@@ -2098,6 +2104,82 @@ def build_cc_missing_audit(
     return pd.DataFrame(rows).sort_values("cc_missing_reason").reset_index(drop=True)
 
 
+def build_phrase_regression_audit(
+    df: pd.DataFrame,
+    *,
+    cc_column: str,
+    segment_preds_column: str = "segment_preds",
+    rfv_column: str = "RFV1_name",
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Audit phrase-level normalization regressions for abnormal-lab complaints."""
+    if cc_column not in df.columns:
+        raise KeyError(f"Chief complaint column not found: {cc_column}")
+    if segment_preds_column not in df.columns:
+        raise KeyError(f"segment prediction column not found: {segment_preds_column}")
+    if rfv_column not in df.columns:
+        raise KeyError(f"RFV column not found: {rfv_column}")
+
+    raw_cc = df[cc_column].fillna("").astype(str)
+    abnormal_lab_mask = raw_cc.str.contains(r"\babnormal\s+labs?\b", case=False, regex=True)
+    subset = df.loc[abnormal_lab_mask, [cc_column, segment_preds_column, rfv_column]].copy()
+
+    abnormal_loss_rows = 0
+    for payload_text in subset[segment_preds_column].fillna("[]"):
+        try:
+            payload = json.loads(payload_text) if isinstance(payload_text, str) else []
+        except json.JSONDecodeError:
+            payload = []
+        row_segments: list[str] = []
+        for record in payload if isinstance(payload, list) else []:
+            if not isinstance(record, dict):
+                continue
+            segment_text = str(record.get("segment", "")).strip().lower()
+            if not segment_text:
+                continue
+            row_segments.append(segment_text)
+        if any("abnormal loss" in segment for segment in row_segments):
+            abnormal_loss_rows += 1
+
+    rfv_counts = (
+        subset[rfv_column]
+        .fillna("NA")
+        .astype(str)
+        .value_counts(dropna=False)
+        .rename_axis("rfv1_name")
+        .reset_index(name="row_count")
+    )
+    if not rfv_counts.empty:
+        rfv_counts["row_rate"] = rfv_counts["row_count"] / max(len(subset), 1)
+
+    summary = pd.DataFrame(
+        [
+            {"metric": "abnormal_lab_rows", "value": int(len(subset))},
+            {"metric": "abnormal_loss_rows", "value": int(abnormal_loss_rows)},
+            {
+                "metric": "abnormal_test_result_rows",
+                "value": int(
+                    subset[rfv_column]
+                    .fillna("")
+                    .astype(str)
+                    .str.contains(r"Abnormal test result", case=False, regex=True)
+                    .sum()
+                ),
+            },
+            {
+                "metric": "eye_ear_rows",
+                "value": int(
+                    subset[rfv_column]
+                    .fillna("")
+                    .astype(str)
+                    .str.contains(r"Eye/Ear", case=False, regex=True)
+                    .sum()
+                ),
+            },
+        ]
+    )
+    return summary, rfv_counts
+
+
 def classifier_resource_paths(
     work_dir: Path,
     *,
@@ -2658,6 +2740,26 @@ print(f"Rows total: {override_summary['rows_total']:,}")
 print(f"Rows with >=1 override: {override_summary['rows_with_override']:,}")
 print(f"Row override rate: {override_summary['row_override_rate']:.4f}")
 
+phrase_audit_summary, phrase_audit_rfv = build_phrase_regression_audit(
+    df_out,
+    cc_column=cc_column,
+)
+print("\nAbnormal-labs phrase audit:")
+print(phrase_audit_summary.to_string(index=False))
+if not phrase_audit_rfv.empty:
+    print(phrase_audit_rfv.head(10).to_string(index=False))
+
+abnormal_loss_rows = int(
+    phrase_audit_summary.loc[
+        phrase_audit_summary["metric"].eq("abnormal_loss_rows"), "value"
+    ].iloc[0]
+)
+if abnormal_loss_rows > 0:
+    raise AssertionError(
+        "Detected abnormal-labs normalization regression: "
+        f"{abnormal_loss_rows} rows still contain 'abnormal loss' segments."
+    )
+
 parsed_segment_preds = df_out["segment_preds"].fillna("[]").map(
     lambda value: json.loads(value) if isinstance(value, str) else []
 )
@@ -2726,13 +2828,25 @@ print(
 
 canonical_output_path, archive_output_path = resolve_classifier_output_paths(WORK_DIR)
 archive_output_path.parent.mkdir(parents=True, exist_ok=True)
+write_archive_xlsx = os.getenv("WRITE_ARCHIVE_XLSX_EXPORTS", "0").strip() == "1"
 
 df_out.to_excel(canonical_output_path, index=False, sheet_name=cfg.output_sheet_name)
-df_out.to_excel(archive_output_path, index=False, sheet_name=cfg.output_sheet_name)
+if write_archive_xlsx:
+    df_out.to_excel(archive_output_path, index=False, sheet_name=cfg.output_sheet_name)
 
 run_date = pd.Timestamp.now().strftime("%Y-%m-%d")
 cc_missing_audit_path = archive_output_path.parent / f"{run_date} classifier_cc_missing_audit.csv"
 cc_missing_audit.to_csv(cc_missing_audit_path, index=False)
+phrase_audit_path = archive_output_path.parent / f"{run_date} classifier_phrase_audit.csv"
+phrase_audit = phrase_audit_summary.copy()
+phrase_audit["audit_type"] = "summary"
+if not phrase_audit_rfv.empty:
+    phrase_detail = phrase_audit_rfv.copy()
+    phrase_detail["metric"] = "rfv_distribution"
+    phrase_detail["value"] = phrase_detail["row_count"]
+    phrase_detail["audit_type"] = "rfv_distribution"
+    phrase_audit = pd.concat([phrase_audit, phrase_detail], ignore_index=True, sort=False)
+phrase_audit.to_csv(phrase_audit_path, index=False)
 
 classifier_contract = validate_classifier_contract(df_out, max_rfv=cfg.max_rfv)
 classifier_contract["resource_report"] = resource_report
@@ -2761,8 +2875,9 @@ stage_manifest["model_metadata"] = {
 stage_manifest["resource_verification"] = resource_report
 stage_manifest["outputs"] = {
     "canonical_output_path": str(canonical_output_path),
-    "archive_output_path": str(archive_output_path),
+    "archive_output_path": str(archive_output_path) if write_archive_xlsx else None,
     "cc_missing_audit_path": str(cc_missing_audit_path),
+    "phrase_audit_path": str(phrase_audit_path),
     "classifier_contract_report_path": str(contract_report_path),
 }
 stage_manifest_path = archive_output_path.parent / f"{run_date} classifier_run_manifest.json"
@@ -2778,8 +2893,12 @@ if classifier_contract["status"] == "fail" and contract_mode == "fail":
     )
 
 print(f"Wrote canonical output: {canonical_output_path}")
-print(f"Wrote archive output: {archive_output_path}")
+if write_archive_xlsx:
+    print(f"Wrote archive output: {archive_output_path}")
+else:
+    print("Skipped archive workbook export (WRITE_ARCHIVE_XLSX_EXPORTS!=1).")
 print(f"Wrote CC missingness audit: {cc_missing_audit_path}")
+print(f"Wrote phrase regression audit: {phrase_audit_path}")
 print(f"Wrote classifier contract report: {contract_report_path}")
 print(f"Wrote classifier run manifest: {stage_manifest_path}")
 print(f"Wrote pipeline contract artifact: {contract_artifact_paths['contract_report_path']}")

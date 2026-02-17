@@ -212,6 +212,20 @@ def classify_gas_source_overlap(
     return pd.Series(labels, index=abg_series.index, name="gas_source_overlap")
 
 
+def select_preferred_vital_column(
+    df: pd.DataFrame,
+    *,
+    clean_column: str,
+    fallback_model_column: str,
+) -> str | None:
+    """Select cleaned vital column when available, otherwise fall back to model alias."""
+    if clean_column in df.columns:
+        return clean_column
+    if fallback_model_column in df.columns:
+        return fallback_model_column
+    return None
+
+
 def render_latex_longtable(
     table_df: pd.DataFrame,
     *,
@@ -324,6 +338,65 @@ hypercap_prevalence = (
 display(gender_summary)
 display(age_summary.to_frame())
 display(hypercap_prevalence)
+```
+
+## ED Vitals Data Quality (cleaned-column preference)
+
+Use cleaned ED-vitals columns when available (`*_clean`), falling back to `*_model` aliases only when needed.
+
+```{python}
+#| label: hypercap-cc-nlp-analysis-cell-003b
+vital_preference_specs = {
+    "triage_temp_f": ("ed_triage_temp_f_clean", "ed_triage_temp_model"),
+    "first_temp_f": ("ed_first_temp_f_clean", "ed_first_temp_model"),
+    "triage_pain": ("ed_triage_pain_clean", "ed_triage_pain_model"),
+    "first_pain": ("ed_first_pain_clean", "ed_first_pain_model"),
+    "triage_sbp": ("ed_triage_sbp_clean", "ed_triage_sbp_model"),
+    "first_sbp": ("ed_first_sbp_clean", "ed_first_sbp_model"),
+    "triage_dbp": ("ed_triage_dbp_clean", "ed_triage_dbp_model"),
+    "first_dbp": ("ed_first_dbp_clean", "ed_first_dbp_model"),
+    "triage_o2sat": ("ed_triage_o2sat_clean", "ed_triage_o2sat_model"),
+    "first_o2sat": ("ed_first_o2sat_clean", "ed_first_o2sat_model"),
+}
+
+selected_vital_columns: dict[str, str | None] = {}
+vitals_quality_rows: list[dict[str, object]] = []
+for vital_name, (clean_col, fallback_col) in vital_preference_specs.items():
+    selected_column = select_preferred_vital_column(
+        df,
+        clean_column=clean_col,
+        fallback_model_column=fallback_col,
+    )
+    selected_vital_columns[vital_name] = selected_column
+    if selected_column is None:
+        vitals_quality_rows.append(
+            {
+                "vital_name": vital_name,
+                "selected_column": None,
+                "n_non_missing": 0,
+                "median": np.nan,
+                "mean": np.nan,
+            }
+        )
+        continue
+    numeric = pd.to_numeric(df[selected_column], errors="coerce")
+    vitals_quality_rows.append(
+        {
+            "vital_name": vital_name,
+            "selected_column": selected_column,
+            "n_non_missing": int(numeric.notna().sum()),
+            "median": float(numeric.median()) if numeric.notna().any() else np.nan,
+            "mean": float(numeric.mean()) if numeric.notna().any() else np.nan,
+        }
+    )
+
+vitals_quality_summary = pd.DataFrame(vitals_quality_rows).sort_values("vital_name")
+display(vitals_quality_summary)
+
+print(
+    "Cohort-run ED vitals audits are written under "
+    "'MIMIC tabular data/prior runs/YYYY-MM-DD ed_vitals_*.csv'."
+)
 ```
 
 ## ICD And Inclusion Categories
