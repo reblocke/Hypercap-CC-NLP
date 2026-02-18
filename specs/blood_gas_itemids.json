@@ -1,0 +1,39 @@
+{
+  "version": "2026-02-17",
+  "lab": {
+    "pco2_itemids": [
+      50818
+    ],
+    "ph_itemids": [
+      50820
+    ],
+    "specimen_type_itemids": [
+      52033
+    ],
+    "blood_fluid_terms": [
+      "blood"
+    ]
+  },
+  "icu": {
+    "pco2_itemids": [],
+    "ph_itemids": [],
+    "specimen_type_itemids": [],
+    "allow_pattern_fallback": true
+  },
+  "denylist": {
+    "label_tokens": [
+      "po2",
+      "pao2",
+      "oxygen",
+      "spo2",
+      "sao2",
+      "fio2",
+      "end tidal",
+      "etco2",
+      "total co2",
+      "hco3",
+      "bicar",
+      "vco2"
+    ]
+  }
+}

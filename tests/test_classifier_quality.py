@@ -173,6 +173,7 @@ def test_validate_classifier_contract_detects_authoritative_disagreement() -> No
     report = validate_classifier_contract(df)
     codes = {item["code"] for item in report["findings"]}
     assert "abg_authoritative_disagreement" in codes
+    assert "abg_all_zero_with_authoritative_positive" in codes
 
 
 def test_verify_classifier_resources_checks_required_and_optional_hash(tmp_path: Path) -> None:

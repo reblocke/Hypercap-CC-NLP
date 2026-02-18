@@ -148,6 +148,11 @@ Hard-coded QA-only POC sanity contract (not a runtime notebook env setting):
 - `COHORT_POC_PCO2_FAIL_ENABLED = 1`
 - Enforced by `make contracts-check` / pipeline audit checks against exported cohort artifacts.
 
+Blood-gas item selection is versioned in `specs/blood_gas_itemids.json`:
+- LAB pCO2/pH/specimen-type extraction uses manifest allowlists (blood-only fluid guard).
+- POC OTHER is quarantined from enrollment thresholds in this release.
+- Update this manifest (not ad-hoc notebook regex) when itemids need to change.
+
 `GOOGLE_APPLICATION_CREDENTIALS` is also supported (optional) when you prefer service-account auth over ADC login.
 
 ### 3) Run the notebooks in order (interactive)
@@ -347,6 +352,10 @@ ED vitals cleaning policy (cohort stage):
 | Anthropometric coverage audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD anthropometrics_coverage_audit.json` |
 | Gas source audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD gas_source_audit.json` |
 | Gas source overlap summary | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD gas_source_overlap_summary.csv` |
+| Blood-gas manifest itemid audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD blood_gas_itemid_manifest_audit.csv` |
+| pCO2 source distribution audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD pco2_source_distribution_audit.csv` |
+| OTHER-route quarantine audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD other_route_quarantine_audit.csv` |
+| First-gas anchor audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD first_gas_anchor_audit.csv` |
 | First other-pCO2 audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD first_other_pco2_audit.csv` |
 | ED vitals distribution audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD ed_vitals_distribution_summary.csv` |
 | ED vitals extremes audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD ed_vitals_extreme_examples.csv` |
@@ -370,6 +379,7 @@ ED vitals cleaning policy (cohort stage):
 | NLP‑augmented workbook | `Hypercap CC NLP Classifier.qmd` | Canonical: `MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx`; optional archive (`WRITE_ARCHIVE_XLSX_EXPORTS=1`): `MIMIC tabular data/prior runs/YYYY-MM-DD MIMICIV all with CC_with_NLP.xlsx` |
 | Classifier CC missingness audit | `Hypercap CC NLP Classifier.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD classifier_cc_missing_audit.csv` |
 | Classifier phrase regression audit | `Hypercap CC NLP Classifier.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD classifier_phrase_audit.csv` |
+| Classifier hypercap flags audit | `Hypercap CC NLP Classifier.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD classifier_hypercap_flags_audit.csv` |
 | Classifier contract report | `Hypercap CC NLP Classifier.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD classifier_contract_report.json` |
 | Classifier run manifest | `Hypercap CC NLP Classifier.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD classifier_run_manifest.json` |
 | Pipeline contract report | `make contracts-check` | `debug/contracts/<run_id>/contract_report.json` (+ `FAILED_CONTRACT.json` on failure) |

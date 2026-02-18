@@ -59,6 +59,14 @@ def test_cohort_notebook_contains_ed_vitals_cleaning_helpers() -> None:
     assert "ed_triage_o2sat_clean" in cohort_text
     assert "ed_first_o2sat_clean" in cohort_text
     assert "residual_celsius_like_n" in cohort_text
+    assert "load_blood_gas_itemid_manifest(" in cohort_text
+    assert "specs/blood_gas_itemids.json" in cohort_text
+    assert "blood_gas_itemid_manifest_audit.csv" in cohort_text
+    assert "pco2_source_distribution_audit.csv" in cohort_text
+    assert "other_route_quarantine_audit.csv" in cohort_text
+    assert "first_gas_anchor_audit.csv" in cohort_text
+    assert "first_other_src_detail" in cohort_text
+    assert "first_gas_anchor_has_pco2" in cohort_text
 
 
 def test_analysis_notebook_contains_requested_outputs() -> None:

@@ -399,6 +399,69 @@ print(
 )
 ```
 
+## Cohort Blood-Gas QC Snapshot
+
+Summarize gas-source quarantine and anchor diagnostics emitted by cohort generation.
+
+```{python}
+#| label: hypercap-cc-nlp-analysis-cell-003c
+qa_summary_path = WORK_DIR / "qa_summary.json"
+if qa_summary_path.exists():
+    qa_summary_payload = json.loads(qa_summary_path.read_text())
+    blood_gas_audit_paths = qa_summary_payload.get("blood_gas_audit_paths", {})
+    qc_rows = [
+        {
+            "metric": "OTHER semantics",
+            "value": "LAB blood-gas unknown specimen only (POC OTHER quarantined).",
+        },
+        {
+            "metric": "gas_source_other_rate",
+            "value": qa_summary_payload.get("gas_source_other_rate"),
+        },
+        {
+            "metric": "POC OTHER quarantined hadm count",
+            "value": (
+                qa_summary_payload.get("other_route_quarantine_audit", [{}])[0].get(
+                    "poc_other_quarantined_hadm_n"
+                )
+                if qa_summary_payload.get("other_route_quarantine_audit")
+                else None
+            ),
+        },
+        {
+            "metric": "POC OTHER leakage into threshold",
+            "value": (
+                qa_summary_payload.get("other_route_quarantine_audit", [{}])[0].get(
+                    "poc_other_leak_into_other_threshold_n"
+                )
+                if qa_summary_payload.get("other_route_quarantine_audit")
+                else None
+            ),
+        },
+        {
+            "metric": "first_gas_without_pco2_anchor_n",
+            "value": (
+                qa_summary_payload.get("first_gas_anchor_audit", [{}])[0].get(
+                    "first_gas_without_pco2_anchor_n"
+                )
+                if qa_summary_payload.get("first_gas_anchor_audit")
+                else None
+            ),
+        },
+        {
+            "metric": "pco2_source_distribution_audit_path",
+            "value": blood_gas_audit_paths.get("pco2_source_distribution"),
+        },
+    ]
+    cohort_qc_summary = pd.DataFrame(qc_rows)
+else:
+    cohort_qc_summary = pd.DataFrame(
+        [{"metric": "qa_summary", "value": f"Missing: {qa_summary_path}"}]
+    )
+
+display(cohort_qc_summary)
+```
+
 ## ICD And Inclusion Categories
 
 Use vectorized helper functions to avoid row-wise `apply(axis=1)`.

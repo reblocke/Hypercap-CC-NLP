@@ -2354,14 +2354,35 @@ def validate_classifier_contract(
                     "message": f"hypercap_by_bg mismatch in {mismatch} rows.",
                 }
             )
-        if int(abg.sum()) == 0:
-            findings.append(
-                {
-                    "severity": "warning",
-                    "code": "abg_all_zero",
-                    "message": "hypercap_by_abg has zero positives.",
-                }
+        abg_sum = int(abg.sum())
+        abg_authoritative_positive = 0
+        if "flag_abg_hypercapnia" in df.columns:
+            abg_authoritative_numeric = pd.to_numeric(
+                df["flag_abg_hypercapnia"], errors="coerce"
             )
+            abg_authoritative_positive = int(
+                (abg_authoritative_numeric.fillna(0).astype(int) > 0).sum()
+            )
+        if abg_sum == 0:
+            if abg_authoritative_positive > 0:
+                findings.append(
+                    {
+                        "severity": "error",
+                        "code": "abg_all_zero_with_authoritative_positive",
+                        "message": (
+                            "hypercap_by_abg has zero positives despite non-zero "
+                            f"flag_abg_hypercapnia positives ({abg_authoritative_positive})."
+                        ),
+                    }
+                )
+            else:
+                findings.append(
+                    {
+                        "severity": "warning",
+                        "code": "abg_all_zero",
+                        "message": "hypercap_by_abg has zero positives.",
+                    }
+                )
         if "flag_abg_hypercapnia" in df.columns:
             abg_authoritative = pd.to_numeric(
                 df["flag_abg_hypercapnia"], errors="coerce"
@@ -2570,6 +2591,18 @@ print(f"Detected chief complaint column: {cc_column}")
 # Why this matters: high-quality text normalization is foundational for both rule matching and embedding similarity.
 
 df = add_hypercapnia_flags(df)
+if {"flag_abg_hypercapnia", "hypercap_by_abg"}.issubset(df.columns):
+    authoritative_abg_positive = int(
+        (pd.to_numeric(df["flag_abg_hypercapnia"], errors="coerce").fillna(0).astype(int) > 0).sum()
+    )
+    derived_abg_positive = int(
+        pd.to_numeric(df["hypercap_by_abg"], errors="coerce").fillna(0).astype(int).sum()
+    )
+    if authoritative_abg_positive > 0 and derived_abg_positive == 0:
+        raise ValueError(
+            "ABG hypercapnia derivation failure: flag_abg_hypercapnia has positives "
+            f"({authoritative_abg_positive}) but hypercap_by_abg is all zero."
+        )
 df = annotate_cc_missingness(df, cc_column=cc_column)
 df["cc_cleaned"] = df["cc_text_for_nlp"].apply(normalize_cc)
 df["cc_cleaned_str"] = df["cc_cleaned"].str.join("; ")
@@ -2848,6 +2881,40 @@ if not phrase_audit_rfv.empty:
     phrase_audit = pd.concat([phrase_audit, phrase_detail], ignore_index=True, sort=False)
 phrase_audit.to_csv(phrase_audit_path, index=False)
 
+hypercap_flags_audit = pd.DataFrame(
+    [
+        {
+            "row_count": int(len(df_out)),
+            "flag_abg_hypercapnia_positive": int(
+                (pd.to_numeric(df_out.get("flag_abg_hypercapnia", 0), errors="coerce").fillna(0).astype(int) > 0).sum()
+            ),
+            "flag_vbg_hypercapnia_positive": int(
+                (pd.to_numeric(df_out.get("flag_vbg_hypercapnia", 0), errors="coerce").fillna(0).astype(int) > 0).sum()
+            ),
+            "hypercap_by_abg_positive": int(
+                pd.to_numeric(df_out.get("hypercap_by_abg", 0), errors="coerce").fillna(0).astype(int).sum()
+            ),
+            "hypercap_by_vbg_positive": int(
+                pd.to_numeric(df_out.get("hypercap_by_vbg", 0), errors="coerce").fillna(0).astype(int).sum()
+            ),
+            "hypercap_by_bg_positive": int(
+                pd.to_numeric(df_out.get("hypercap_by_bg", 0), errors="coerce").fillna(0).astype(int).sum()
+            ),
+            "bg_union_mismatch_n": int(
+                (
+                    (
+                        pd.to_numeric(df_out.get("hypercap_by_abg", 0), errors="coerce").fillna(0).astype(int)
+                        | pd.to_numeric(df_out.get("hypercap_by_vbg", 0), errors="coerce").fillna(0).astype(int)
+                    )
+                    != pd.to_numeric(df_out.get("hypercap_by_bg", 0), errors="coerce").fillna(0).astype(int)
+                ).sum()
+            ),
+        }
+    ]
+)
+hypercap_flags_audit_path = archive_output_path.parent / f"{run_date} classifier_hypercap_flags_audit.csv"
+hypercap_flags_audit.to_csv(hypercap_flags_audit_path, index=False)
+
 classifier_contract = validate_classifier_contract(df_out, max_rfv=cfg.max_rfv)
 classifier_contract["resource_report"] = resource_report
 contract_report_path = archive_output_path.parent / f"{run_date} classifier_contract_report.json"
@@ -2878,6 +2945,7 @@ stage_manifest["outputs"] = {
     "archive_output_path": str(archive_output_path) if write_archive_xlsx else None,
     "cc_missing_audit_path": str(cc_missing_audit_path),
     "phrase_audit_path": str(phrase_audit_path),
+    "hypercap_flags_audit_path": str(hypercap_flags_audit_path),
     "classifier_contract_report_path": str(contract_report_path),
 }
 stage_manifest_path = archive_output_path.parent / f"{run_date} classifier_run_manifest.json"
@@ -2899,6 +2967,7 @@ else:
     print("Skipped archive workbook export (WRITE_ARCHIVE_XLSX_EXPORTS!=1).")
 print(f"Wrote CC missingness audit: {cc_missing_audit_path}")
 print(f"Wrote phrase regression audit: {phrase_audit_path}")
+print(f"Wrote hypercapnia flags audit: {hypercap_flags_audit_path}")
 print(f"Wrote classifier contract report: {contract_report_path}")
 print(f"Wrote classifier run manifest: {stage_manifest_path}")
 print(f"Wrote pipeline contract artifact: {contract_artifact_paths['contract_report_path']}")

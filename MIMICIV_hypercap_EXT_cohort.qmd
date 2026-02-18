@@ -197,6 +197,127 @@ _VENOUS_HINT_PATTERN = re.compile(
     r"(venous|vbg|cvbg|mixed venous|central venous|\bven\b)",
     re.I,
 )
+_PO2_LABEL_DENY_PATTERN_DEFAULT = re.compile(
+    r"(?:^|[^a-z])p(?:a)?\s*o\s*2(?:[^a-z]|$)|\bpo2\b|\bpao2\b|oxygen|o2\s*(?:sat|saturation)|sao2|spo2|fio2|et\s*co2|end[- ]?tidal|t\s*co2|tco2|total\s*co2|hco3|bicar|v\s*co2|vco2|co2\s*(?:prod|production|elimin|elimination)",
+    re.I,
+)
+
+BLOOD_GAS_SPEC_PATH = WORK_DIR / "specs" / "blood_gas_itemids.json"
+
+
+def _coerce_itemid_list(values: Sequence[Any], *, key_name: str) -> list[int]:
+    cleaned: list[int] = []
+    for raw in values:
+        try:
+            cleaned.append(int(raw))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid itemid in {key_name}: {raw!r}") from exc
+    return sorted(set(cleaned))
+
+
+def _sql_int_array(values: Sequence[int], *, empty_sentinel: int = -999999999) -> str:
+    """Return a BigQuery INT64 array literal from Python integers."""
+    resolved = [int(v) for v in values]
+    if not resolved:
+        resolved = [int(empty_sentinel)]
+    return "[" + ", ".join(str(v) for v in resolved) + "]"
+
+
+def load_blood_gas_itemid_manifest(path: Path) -> dict[str, Any]:
+    """Load and validate versioned blood-gas itemid manifest."""
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Blood-gas manifest missing at {path}. Add specs/blood_gas_itemids.json."
+        )
+    payload = json.loads(path.read_text())
+    if not isinstance(payload, dict):
+        raise ValueError("Blood-gas manifest must be a JSON object.")
+
+    for section in ("lab", "icu", "denylist"):
+        if section not in payload or not isinstance(payload[section], dict):
+            raise ValueError(f"Blood-gas manifest missing required section '{section}'.")
+
+    lab = payload["lab"]
+    icu = payload["icu"]
+    denylist = payload["denylist"]
+
+    lab_pco2 = _coerce_itemid_list(lab.get("pco2_itemids", []), key_name="lab.pco2_itemids")
+    lab_ph = _coerce_itemid_list(lab.get("ph_itemids", []), key_name="lab.ph_itemids")
+    lab_spec = _coerce_itemid_list(
+        lab.get("specimen_type_itemids", []),
+        key_name="lab.specimen_type_itemids",
+    )
+    if not lab_pco2:
+        raise ValueError("Blood-gas manifest requires at least one lab.pco2_itemids value.")
+    if not lab_ph:
+        raise ValueError("Blood-gas manifest requires at least one lab.ph_itemids value.")
+    if not lab_spec:
+        raise ValueError(
+            "Blood-gas manifest requires at least one lab.specimen_type_itemids value."
+        )
+
+    blood_fluid_terms = [str(term).strip().lower() for term in lab.get("blood_fluid_terms", ["blood"])]
+    blood_fluid_terms = sorted(set(term for term in blood_fluid_terms if term))
+    if not blood_fluid_terms:
+        blood_fluid_terms = ["blood"]
+
+    icu_pco2 = _coerce_itemid_list(icu.get("pco2_itemids", []), key_name="icu.pco2_itemids")
+    icu_ph = _coerce_itemid_list(icu.get("ph_itemids", []), key_name="icu.ph_itemids")
+    icu_spec = _coerce_itemid_list(
+        icu.get("specimen_type_itemids", []),
+        key_name="icu.specimen_type_itemids",
+    )
+
+    deny_tokens = [
+        str(token).strip().lower()
+        for token in denylist.get("label_tokens", [])
+        if str(token).strip()
+    ]
+    allow_pattern_fallback = bool(icu.get("allow_pattern_fallback", True))
+
+    manifest = {
+        "version": str(payload.get("version", "UNSPECIFIED")),
+        "lab": {
+            "pco2_itemids": lab_pco2,
+            "ph_itemids": lab_ph,
+            "specimen_type_itemids": lab_spec,
+            "blood_fluid_terms": blood_fluid_terms,
+        },
+        "icu": {
+            "pco2_itemids": icu_pco2,
+            "ph_itemids": icu_ph,
+            "specimen_type_itemids": icu_spec,
+            "allow_pattern_fallback": allow_pattern_fallback,
+        },
+        "denylist": {"label_tokens": deny_tokens},
+        "path": str(path),
+    }
+    return manifest
+
+
+BLOOD_GAS_MANIFEST = load_blood_gas_itemid_manifest(BLOOD_GAS_SPEC_PATH)
+LAB_PCO2_ITEMIDS = BLOOD_GAS_MANIFEST["lab"]["pco2_itemids"]
+LAB_PH_ITEMIDS = BLOOD_GAS_MANIFEST["lab"]["ph_itemids"]
+LAB_SPECIMEN_TYPE_ITEMIDS = BLOOD_GAS_MANIFEST["lab"]["specimen_type_itemids"]
+LAB_BLOOD_FLUID_TERMS = BLOOD_GAS_MANIFEST["lab"]["blood_fluid_terms"]
+ICU_PCO2_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["pco2_itemids"]
+ICU_PH_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["ph_itemids"]
+ICU_SPECIMEN_TYPE_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["specimen_type_itemids"]
+ICU_ALLOW_PATTERN_FALLBACK = bool(BLOOD_GAS_MANIFEST["icu"]["allow_pattern_fallback"])
+ICU_LABEL_DENY_TOKENS = BLOOD_GAS_MANIFEST["denylist"]["label_tokens"]
+
+LAB_PCO2_SQL_ARRAY = _sql_int_array(LAB_PCO2_ITEMIDS)
+LAB_PH_SQL_ARRAY = _sql_int_array(LAB_PH_ITEMIDS)
+LAB_SPECIMEN_SQL_ARRAY = _sql_int_array(LAB_SPECIMEN_TYPE_ITEMIDS)
+ICU_PCO2_SQL_ARRAY = _sql_int_array(ICU_PCO2_ITEMIDS)
+ICU_PH_SQL_ARRAY = _sql_int_array(ICU_PH_ITEMIDS)
+ICU_SPECIMEN_SQL_ARRAY = _sql_int_array(ICU_SPECIMEN_TYPE_ITEMIDS)
+LAB_BLOOD_FLUID_SQL_LIST = ", ".join(f"'{term}'" for term in LAB_BLOOD_FLUID_TERMS)
+ICU_LABEL_DENY_REGEX = (
+    "|".join(re.escape(token) for token in ICU_LABEL_DENY_TOKENS)
+    if ICU_LABEL_DENY_TOKENS
+    else _PO2_LABEL_DENY_PATTERN_DEFAULT.pattern
+)
 
 
 def _to_int64(series: pd.Series) -> pd.Series:
@@ -2079,6 +2200,8 @@ RUN_METADATA = {
     "datasets": {"hosp": HOSP, "icu": ICU, "ed": ED},
     "dataset_probes": {"hosp": HOSP_PROBE, "icu": ICU_PROBE, "ed": ED_PROBE},
     "notebook": "MIMICIV_hypercap_EXT_cohort.ipynb",
+    "blood_gas_manifest_path": BLOOD_GAS_MANIFEST["path"],
+    "blood_gas_manifest_version": BLOOD_GAS_MANIFEST["version"],
 }
 
 print("Resolved datasets:", RUN_METADATA["datasets"])
@@ -2292,122 +2415,142 @@ cohort_icd.head(3)
 #| label: mimiciv-hypercap-ext-cohort-cell-006
 # Purpose: Define a reusable BigQuery execution helper so SQL calls are consistent across notebook stages.
 
+icu_pco2_fallback_clause = ""
+if ICU_ALLOW_PATTERN_FALLBACK:
+    icu_pco2_fallback_clause = f"""
+      OR (
+        REGEXP_CONTAINS(LOWER(label), r'(^|[^a-z])p(?:a)?\\s*co\\s*(?:2|₂)([^a-z]|$)')
+        AND NOT REGEXP_CONTAINS(LOWER(label), r'({ICU_LABEL_DENY_REGEX})')
+      )
+    """
+
 SQL["co2_thresholds_sql"] = f"""
-/* ---- LAB (HOSP) pCO2 across entire dataset ---- */
-WITH hosp_cand AS (
+WITH hosp_raw AS (
   SELECT
-    le.hadm_id, le.charttime, le.specimen_id,
+    le.hadm_id,
+    le.charttime,
+    le.specimen_id,
     COALESCE(
       CAST(le.valuenum AS FLOAT64),
       SAFE_CAST(REGEXP_EXTRACT(LOWER(le.value), r'(-?\d+(?:\.\d+)?)') AS FLOAT64)
     ) AS val,
-    LOWER(REPLACE(COALESCE(le.valueuom,''),' ','')) AS uom_nospace,
-    LOWER(di.label) AS lbl,
-    LOWER(COALESCE(di.fluid,'')) AS fl
+    LOWER(REPLACE(COALESCE(le.valueuom, ''), ' ', '')) AS uom_nospace,
+    LOWER(COALESCE(di.label, '')) AS lbl,
+    LOWER(COALESCE(di.fluid, '')) AS fluid_text
   FROM `{PHYS}.{HOSP}.labevents` le
-  JOIN `{PHYS}.{HOSP}.d_labitems` di ON di.itemid = le.itemid
-  WHERE (le.valuenum IS NOT NULL OR le.value IS NOT NULL)
-    AND (
-      LOWER(COALESCE(di.category,'')) LIKE '%blood gas%' OR
-      LOWER(di.label) LIKE '%pco2%' OR
-      REGEXP_CONTAINS(LOWER(di.label), r'\bpa?\s*co(?:2|₂)\b')
-    )
-    AND NOT REGEXP_CONTAINS(LOWER(di.label),
-        r'(et\s*co2|end[- ]?tidal|t\s*co2|tco2|total\s*co2|hco3|bicar)')
+  JOIN `{PHYS}.{HOSP}.d_labitems` di
+    ON di.itemid = le.itemid
+  WHERE le.itemid IN UNNEST({LAB_PCO2_SQL_ARRAY})
+    AND (le.valuenum IS NOT NULL OR le.value IS NOT NULL)
+    AND LOWER(COALESCE(di.fluid, '')) IN ({LAB_BLOOD_FLUID_SQL_LIST})
 ),
-hosp_spec AS (
-  SELECT le.specimen_id, LOWER(COALESCE(le.value,'')) AS spec_val
-  FROM `{PHYS}.{HOSP}.labevents` le
-  JOIN `{PHYS}.{HOSP}.d_labitems` di ON di.itemid = le.itemid
-  WHERE le.specimen_id IS NOT NULL
-    AND REGEXP_CONTAINS(LOWER(di.label), r'(specimen|sample)')
-),
-hosp_pco2 AS (
+hosp_specimen AS (
   SELECT
-    c.hadm_id, c.charttime,
+    le.specimen_id,
+    LOWER(COALESCE(le.value, '')) AS specimen_type_text
+  FROM `{PHYS}.{HOSP}.labevents` le
+  WHERE le.itemid IN UNNEST({LAB_SPECIMEN_SQL_ARRAY})
+    AND le.specimen_id IS NOT NULL
+    AND le.value IS NOT NULL
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY le.specimen_id
+    ORDER BY le.charttime DESC
+  ) = 1
+),
+hosp_pco2_clean AS (
+  SELECT
+    r.hadm_id,
     CASE
-      WHEN REGEXP_CONTAINS(s.spec_val, r'arter') OR REGEXP_CONTAINS(s.spec_val, r'\bart\b') THEN 'arterial'
-      WHEN REGEXP_CONTAINS(s.spec_val, r'ven|mixed|central') THEN 'venous'
-      WHEN REGEXP_CONTAINS(c.fl, r'arter') THEN 'arterial'
-      WHEN REGEXP_CONTAINS(c.fl, r'ven') THEN 'venous'
-      WHEN c.fl LIKE '%arterial%' OR REGEXP_CONTAINS(c.lbl, r'\b(abg|art|arterial|a[- ]?line)\b') THEN 'arterial'
-      WHEN c.fl LIKE '%ven%'      OR REGEXP_CONTAINS(c.lbl, r'\b(vbg|ven|venous|mixed|central)\b') THEN 'venous'
+      WHEN REGEXP_CONTAINS(COALESCE(s.specimen_type_text, ''), r'arter|\\bart\\b') THEN 'arterial'
+      WHEN REGEXP_CONTAINS(COALESCE(s.specimen_type_text, ''), r'ven|central|mixed') THEN 'venous'
+      WHEN REGEXP_CONTAINS(r.lbl, r'\\b(abg|art|arterial|a[- ]?line)\\b') THEN 'arterial'
+      WHEN REGEXP_CONTAINS(r.lbl, r'\\b(vbg|ven|venous|mixed|central)\\b') THEN 'venous'
       ELSE 'other'
     END AS site,
-    CASE WHEN c.uom_nospace='kpa' THEN c.val*7.50062 ELSE c.val END AS pco2_mmHg
-  FROM hosp_cand c
-  LEFT JOIN hosp_spec s USING (specimen_id)
-  WHERE c.val IS NOT NULL
+    r.charttime,
+    CASE WHEN r.uom_nospace = 'kpa' THEN r.val * 7.50062 ELSE r.val END AS pco2_mmhg,
+    'LAB' AS source_branch
+  FROM hosp_raw r
+  LEFT JOIN hosp_specimen s USING (specimen_id)
+  WHERE r.val IS NOT NULL
+    AND (CASE WHEN r.uom_nospace = 'kpa' THEN r.val * 7.50062 ELSE r.val END) BETWEEN 5 AND 200
 ),
-hosp_pco2_std AS (
-  SELECT hadm_id, site, charttime, pco2_mmHg
-  FROM hosp_pco2
-  WHERE site IN ('arterial','venous','other') AND pco2_mmHg BETWEEN 5 AND 200
-),
-
-/* ---- ICU (POC) pCO2 across entire dataset ---- */
-icu_pco2_items AS (
-  SELECT
-    itemid,
-    LOWER(label) AS lbl
+icu_pco2_itemids AS (
+  SELECT itemid, LOWER(label) AS lbl
   FROM `{PHYS}.{ICU}.d_items`
-  WHERE REGEXP_CONTAINS(LOWER(label), r'(^|[^a-z])p(?:a)?\s*co\s*(?:2|₂)([^a-z]|$)')
-    AND NOT REGEXP_CONTAINS(
-      LOWER(label),
-      r'((^|[^a-z])p(?:a)?\s*o\s*2([^a-z]|$)|\bpo2\b|\bpao2\b|oxygen|o2\s*(sat|saturation)|sao2|spo2|fio2|et\s*co2|end[- ]?tidal|t\s*co2|tco2|total\s*co2|hco3|bicar|v\s*co2|vco2|co2\s*(prod|elimin|production|elimination))'
-    )
+  WHERE itemid IN UNNEST({ICU_PCO2_SQL_ARRAY})
+    {icu_pco2_fallback_clause}
 ),
-icu_raw AS (
+icu_pco2_raw AS (
   SELECT
     ie.hadm_id,
     ce.stay_id,
     ce.charttime,
     di.lbl,
-    LOWER(REPLACE(COALESCE(ce.valueuom,''),' ','')) AS uom_nospace,
+    LOWER(REPLACE(COALESCE(ce.valueuom, ''), ' ', '')) AS uom_nospace,
     COALESCE(
       CAST(ce.valuenum AS FLOAT64),
       SAFE_CAST(REGEXP_EXTRACT(LOWER(ce.value), r'(-?\d+(?:\.\d+)?)') AS FLOAT64)
     ) AS val
   FROM `{PHYS}.{ICU}.chartevents` ce
-  JOIN icu_pco2_items di ON di.itemid = ce.itemid
-  JOIN `{PHYS}.{ICU}.icustays` ie ON ie.stay_id = ce.stay_id
+  JOIN icu_pco2_itemids di
+    ON di.itemid = ce.itemid
+  JOIN `{PHYS}.{ICU}.icustays` ie
+    ON ie.stay_id = ce.stay_id
+  WHERE ce.valuenum IS NOT NULL OR ce.value IS NOT NULL
 ),
-icu_cand AS (
+icu_specimen AS (
   SELECT
-    hadm_id, stay_id, charttime, lbl, uom_nospace, val,
-    'pco2' AS analyte,
-    CASE
-      WHEN REGEXP_CONTAINS(lbl, r'\b(abg|art|arterial|a[- ]?line)\b') THEN 'arterial'
-      WHEN REGEXP_CONTAINS(lbl, r'\b(vbg|ven|venous|mixed|central)\b') THEN 'venous'
-      ELSE 'other'
-    END AS site
-  FROM icu_raw
-  WHERE val IS NOT NULL
+    ce.stay_id,
+    ce.charttime,
+    LOWER(COALESCE(ce.value, '')) AS specimen_type_text
+  FROM `{PHYS}.{ICU}.chartevents` ce
+  WHERE ce.itemid IN UNNEST({ICU_SPECIMEN_SQL_ARRAY})
+    AND ce.value IS NOT NULL
 ),
-icu_co2_std AS (
+icu_pco2_ranked AS (
+  SELECT
+    r.*,
+    s.specimen_type_text,
+    ROW_NUMBER() OVER (
+      PARTITION BY r.hadm_id, r.stay_id, r.charttime
+      ORDER BY ABS(TIMESTAMP_DIFF(r.charttime, s.charttime, SECOND))
+    ) AS specimen_rank
+  FROM icu_pco2_raw r
+  LEFT JOIN icu_specimen s
+    ON s.stay_id = r.stay_id
+   AND ABS(TIMESTAMP_DIFF(r.charttime, s.charttime, MINUTE)) <= 120
+),
+icu_pco2_clean AS (
   SELECT
     hadm_id,
-    site,
+    CASE
+      WHEN REGEXP_CONTAINS(COALESCE(specimen_type_text, ''), r'arter|\\bart\\b') THEN 'arterial'
+      WHEN REGEXP_CONTAINS(COALESCE(specimen_type_text, ''), r'ven|central|mixed') THEN 'venous'
+      WHEN REGEXP_CONTAINS(lbl, r'\\b(abg|art|arterial|a[- ]?line)\\b') THEN 'arterial'
+      WHEN REGEXP_CONTAINS(lbl, r'\\b(vbg|ven|venous|mixed|central)\\b') THEN 'venous'
+      ELSE 'other'
+    END AS site,
     charttime,
-    CASE WHEN uom_nospace='kpa' THEN val*7.50062 ELSE val END AS pco2_mmHg
-  FROM icu_cand
-  WHERE analyte='pco2'
-    AND site IN ('arterial','venous','other')
-    AND (CASE WHEN uom_nospace='kpa' THEN val*7.50062 ELSE val END) BETWEEN 5 AND 200
+    CASE WHEN uom_nospace = 'kpa' THEN val * 7.50062 ELSE val END AS pco2_mmhg,
+    'POC' AS source_branch
+  FROM icu_pco2_ranked
+  WHERE val IS NOT NULL
+    AND (specimen_rank = 1 OR specimen_type_text IS NULL)
+    AND (CASE WHEN uom_nospace = 'kpa' THEN val * 7.50062 ELSE val END) BETWEEN 5 AND 200
 ),
-
-/* ---- Combine and threshold per admission ---- */
 all_pco2 AS (
-  SELECT * FROM hosp_pco2_std
+  SELECT * FROM hosp_pco2_clean
   UNION ALL
-  SELECT * FROM icu_co2_std
+  SELECT * FROM icu_pco2_clean
 ),
 thresh AS (
   SELECT
     hadm_id,
-    MAX(IF(site='arterial' AND pco2_mmHg >= 45.0, 1, 0)) AS abg_hypercap_threshold,
-    MAX(IF(site='venous'   AND pco2_mmHg >= 50.0, 1, 0)) AS vbg_hypercap_threshold,
-    MAX(IF(site='other'    AND pco2_mmHg >= 50.0, 1, 0)) AS other_hypercap_threshold
+    MAX(IF(site = 'arterial' AND pco2_mmhg >= 45.0, 1, 0)) AS abg_hypercap_threshold,
+    MAX(IF(site = 'venous'   AND pco2_mmhg >= 50.0, 1, 0)) AS vbg_hypercap_threshold,
+    MAX(IF(site = 'other'    AND source_branch = 'LAB' AND pco2_mmhg >= 50.0, 1, 0)) AS other_hypercap_threshold,
+    MAX(IF(site = 'other'    AND source_branch = 'POC' AND pco2_mmhg >= 50.0, 1, 0)) AS poc_other_quarantined_hypercap_threshold
   FROM all_pco2
   GROUP BY hadm_id
 )
@@ -2436,7 +2579,12 @@ for c in icd_cols:
     if c in cohort_any.columns:
         cohort_any[c] = cohort_any[c].fillna(0).astype(int)
 
-for c in ["abg_hypercap_threshold","vbg_hypercap_threshold","other_hypercap_threshold"]:
+for c in [
+    "abg_hypercap_threshold",
+    "vbg_hypercap_threshold",
+    "other_hypercap_threshold",
+    "poc_other_quarantined_hypercap_threshold",
+]:
     if c in cohort_any.columns:
         cohort_any[c] = cohort_any[c].fillna(0).astype(int)
 
@@ -2448,6 +2596,11 @@ print("ICD-only admissions        :", int((cohort_any["any_hypercap_icd"]==1).su
 print("Threshold-only admissions  :", int(((cohort_any["pco2_threshold_any"]==1) & (cohort_any["any_hypercap_icd"]==0)).sum()))
 print("Both ICD and threshold     :", int(((cohort_any["pco2_threshold_any"]==1) & (cohort_any["any_hypercap_icd"]==1)).sum()))
 print("Total enrolled (union)     :", int((cohort_any["enrolled_any"]==1).sum()))
+if "poc_other_quarantined_hypercap_threshold" in cohort_any.columns:
+    print(
+        "POC OTHER quarantined hadm count:",
+        int(cohort_any["poc_other_quarantined_hypercap_threshold"].sum()),
+    )
 
 # New hadm list used for the rest of the notebook
 hadm_list = cohort_any.loc[cohort_any["enrolled_any"]==1, "hadm_id"].dropna().astype("int64").tolist()
@@ -2464,13 +2617,26 @@ len(hadm_list)
 
 params = {"hadms": hadm_list}
 
+icu_pco2_pairs_fallback_clause = ""
+icu_ph_pairs_fallback_clause = ""
+if ICU_ALLOW_PATTERN_FALLBACK:
+    icu_pco2_pairs_fallback_clause = f"""
+      OR (
+        REGEXP_CONTAINS(LOWER(label), r'(^|[^a-z])p(?:a)?\\s*co\\s*(?:2|₂)([^a-z]|$)')
+        AND NOT REGEXP_CONTAINS(LOWER(label), r'({ICU_LABEL_DENY_REGEX})')
+      )
+    """
+    icu_ph_pairs_fallback_clause = """
+      OR REGEXP_CONTAINS(LOWER(label), r'(^|[^a-z])ph([^a-z]|$)')
+    """
+
 bg_pairs_sql = rf"""
 WITH hadms AS (SELECT hadm_id FROM UNNEST(@hadms) AS hadm_id),
 
 /* ---------------- LAB (HOSP) ---------------- */
 hosp_cand AS (
   SELECT
-    le.subject_id, le.hadm_id, le.charttime, le.specimen_id,
+    le.subject_id, le.hadm_id, le.charttime, le.specimen_id, le.itemid,
     CAST(le.valuenum AS FLOAT64) AS val,
     LOWER(COALESCE(le.valueuom,'')) AS uom,
     LOWER(di.label) AS lbl,
@@ -2480,27 +2646,25 @@ hosp_cand AS (
   JOIN `{PHYS}.{HOSP}.d_labitems` di ON di.itemid = le.itemid
   JOIN hadms h ON h.hadm_id = le.hadm_id
   WHERE le.valuenum IS NOT NULL
-    AND (
-         LOWER(COALESCE(di.category,'')) LIKE '%blood gas%' OR
-         LOWER(di.label) LIKE '%pco2%' OR
-         REGEXP_CONTAINS(LOWER(di.label), r'\bph\b') OR
-         REGEXP_CONTAINS(LOWER(di.label), r'\bpa?\s*co(?:2|₂)\b')
-        )
-    AND NOT REGEXP_CONTAINS(LOWER(di.label), r'(et\s*co2|end[- ]?tidal|t\s*co2|tco2|total\s*co2|hco3|bicar)')
+    AND le.itemid IN UNNEST(ARRAY_CONCAT({LAB_PCO2_SQL_ARRAY}, {LAB_PH_SQL_ARRAY}))
+    AND LOWER(COALESCE(di.fluid,'')) IN ({LAB_BLOOD_FLUID_SQL_LIST})
 ),
 hosp_spec AS (
   SELECT le.specimen_id, LOWER(COALESCE(le.value,'')) AS spec_val
   FROM `{PHYS}.{HOSP}.labevents` le
-  JOIN `{PHYS}.{HOSP}.d_labitems` di ON di.itemid = le.itemid
   WHERE le.specimen_id IS NOT NULL
-    AND REGEXP_CONTAINS(LOWER(di.label), r'(specimen|sample)')
+    AND le.itemid IN UNNEST({LAB_SPECIMEN_SQL_ARRAY})
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY le.specimen_id
+    ORDER BY le.charttime DESC
+  ) = 1
 ),
 hosp_class AS (
   SELECT
-    c.hadm_id, c.charttime, c.specimen_id, c.val, c.uom, c.lbl, c.fl,
+    c.hadm_id, c.charttime, c.specimen_id, c.itemid, c.val, c.uom, c.lbl, c.fl,
     CASE
-      WHEN REGEXP_CONTAINS(c.lbl, r'\b(?:blood\s*)?ph\b') THEN 'ph'
-      WHEN (c.lbl LIKE '%pco2%' OR REGEXP_CONTAINS(c.lbl, r'\bpa?\s*co(?:2|₂)\b')) THEN 'pco2'
+      WHEN c.itemid IN UNNEST({LAB_PH_SQL_ARRAY}) THEN 'ph'
+      WHEN c.itemid IN UNNEST({LAB_PCO2_SQL_ARRAY}) THEN 'pco2'
       ELSE NULL
     END AS analyte,
     CASE
@@ -2524,7 +2688,7 @@ hosp_pairs AS (
     (ARRAY_AGG(site IGNORE NULLS LIMIT 1))[OFFSET(0)] AS site
   FROM hosp_class
   GROUP BY hadm_id, specimen_id
-  HAVING (ph IS NOT NULL OR pco2_raw IS NOT NULL) AND site IN ('arterial','venous','other')
+  HAVING pco2_raw IS NOT NULL AND site IN ('arterial','venous','other')
 ),
 hosp_pairs_std AS (
   SELECT
@@ -2573,25 +2737,27 @@ icu_item_map AS (
     itemid,
     LOWER(label) AS lbl,
     CASE
+      WHEN itemid IN UNNEST({ICU_PH_SQL_ARRAY}) THEN 'ph'
+      WHEN itemid IN UNNEST({ICU_PCO2_SQL_ARRAY}) THEN 'pco2'
       WHEN REGEXP_CONTAINS(LOWER(label), r'(^|[^a-z])ph([^a-z]|$)') THEN 'ph'
       WHEN REGEXP_CONTAINS(LOWER(label), r'(^|[^a-z])p(?:a)?\s*co\s*(?:2|₂)([^a-z]|$)')
-           AND NOT REGEXP_CONTAINS(
-             LOWER(label),
-             r'((^|[^a-z])p(?:a)?\s*o\s*2([^a-z]|$)|\bpo2\b|\bpao2\b|oxygen|o2\s*(sat|saturation)|sao2|spo2|fio2|et\s*co2|end[- ]?tidal|t\s*co2|tco2|total\s*co2|hco3|bicar|v\s*co2|vco2|co2\s*(prod|elimin|production|elimination))'
-           )
+           AND NOT REGEXP_CONTAINS(LOWER(label), r'({ICU_LABEL_DENY_REGEX})')
       THEN 'pco2'
       ELSE NULL
     END AS analyte
   FROM `{PHYS}.{ICU}.d_items`
-  WHERE
-    REGEXP_CONTAINS(LOWER(label), r'(^|[^a-z])ph([^a-z]|$)')
-    OR (
-      REGEXP_CONTAINS(LOWER(label), r'(^|[^a-z])p(?:a)?\s*co\s*(?:2|₂)([^a-z]|$)')
-      AND NOT REGEXP_CONTAINS(
-        LOWER(label),
-        r'((^|[^a-z])p(?:a)?\s*o\s*2([^a-z]|$)|\bpo2\b|\bpao2\b|oxygen|o2\s*(sat|saturation)|sao2|spo2|fio2|et\s*co2|end[- ]?tidal|t\s*co2|tco2|total\s*co2|hco3|bicar|v\s*co2|vco2|co2\s*(prod|elimin|production|elimination))'
-      )
-    )
+  WHERE itemid IN UNNEST(ARRAY_CONCAT({ICU_PH_SQL_ARRAY}, {ICU_PCO2_SQL_ARRAY}))
+     {icu_ph_pairs_fallback_clause}
+     {icu_pco2_pairs_fallback_clause}
+),
+icu_spec AS (
+  SELECT
+    ce.stay_id,
+    ce.charttime,
+    LOWER(COALESCE(ce.value, '')) AS spec_val
+  FROM `{PHYS}.{ICU}.chartevents` ce
+  WHERE ce.itemid IN UNNEST({ICU_SPECIMEN_SQL_ARRAY})
+    AND ce.value IS NOT NULL
 ),
 icu_raw AS (
   SELECT
@@ -2609,17 +2775,33 @@ icu_raw AS (
   JOIN `{PHYS}.{ICU}.icustays` ie ON ie.stay_id = ce.stay_id
   JOIN hadms h ON h.hadm_id = ie.hadm_id
 ),
+icu_cand_ranked AS (
+  SELECT
+    r.*,
+    s.spec_val,
+    ROW_NUMBER() OVER (
+      PARTITION BY r.hadm_id, r.stay_id, r.itemid, r.charttime
+      ORDER BY ABS(TIMESTAMP_DIFF(r.charttime, s.charttime, SECOND))
+    ) AS spec_rank
+  FROM icu_raw r
+  LEFT JOIN icu_spec s
+    ON s.stay_id = r.stay_id
+   AND ABS(TIMESTAMP_DIFF(r.charttime, s.charttime, MINUTE)) <= 120
+),
 icu_cand AS (
   SELECT
     hadm_id, stay_id, itemid, charttime, lbl, analyte, uom_nospace, valstr, val,
     CASE
+      WHEN REGEXP_CONTAINS(COALESCE(spec_val, ''), r'arter|\\bart\\b') THEN 'arterial'
+      WHEN REGEXP_CONTAINS(COALESCE(spec_val, ''), r'ven|central|mixed') THEN 'venous'
       WHEN REGEXP_CONTAINS(lbl, r'\b(abg|art|arterial|a[- ]?line)\b') THEN 'arterial'
       WHEN REGEXP_CONTAINS(lbl, r'\b(vbg|ven|venous|mixed|central)\b') THEN 'venous'
       ELSE 'other'
     END AS site
-  FROM icu_raw
+  FROM icu_cand_ranked
   WHERE val IS NOT NULL
     AND analyte IN ('ph', 'pco2')
+    AND (spec_rank = 1 OR spec_val IS NULL)
 ),
 icu_ph AS (
   SELECT hadm_id, stay_id, charttime, val AS ph, site AS site_ph
@@ -2739,11 +2921,9 @@ SELECT
          SELECT 'POC', pv.poc_vbg_time, pv.poc_vbg_ph, pv.poc_vbg_paco2)
    WHERE t IS NOT NULL
    ORDER BY t LIMIT 1) AS first_vbg,
-  -- First OTHER-source pCO2 across LAB+POC
+  -- First OTHER-source pCO2 (LAB blood-gas unknown specimen only; POC OTHER is quarantined)
   (SELECT AS STRUCT src, t, ph, pco2
-   FROM (SELECT 'LAB' AS src, lo.lab_other_time AS t, lo.lab_other_ph AS ph, lo.lab_other_paco2 AS pco2
-         UNION ALL
-         SELECT 'POC', po.poc_other_time, po.poc_other_ph, po.poc_other_paco2)
+   FROM (SELECT 'LAB_BG_UNKNOWN' AS src, lo.lab_other_time AS t, lo.lab_other_ph AS ph, lo.lab_other_paco2 AS pco2)
    WHERE t IS NOT NULL
    ORDER BY t LIMIT 1) AS first_other
 FROM hadms h
@@ -2765,6 +2945,24 @@ for col in ["first_abg","first_vbg","first_other"]:
         bg_pairs[f"{col}_ph"]   = bg_pairs[col].apply(lambda x: x.get("ph")  if isinstance(x, dict) else None)
         bg_pairs[f"{col}_pco2"] = bg_pairs[col].apply(lambda x: x.get("pco2")if isinstance(x, dict) else None)
         bg_pairs = bg_pairs.drop(columns=[col])
+
+if {"first_other_src", "poc_other_paco2"}.issubset(bg_pairs.columns):
+    first_other_src_upper = (
+        bg_pairs["first_other_src"].astype("string").str.upper().fillna("")
+    )
+    bg_pairs["first_other_src_detail"] = np.select(
+        [
+            first_other_src_upper.eq("LAB_BG_UNKNOWN"),
+            pd.to_numeric(bg_pairs["poc_other_paco2"], errors="coerce").notna(),
+        ],
+        [
+            "lab_bg_unknown",
+            "poc_quarantined",
+        ],
+        default="missing",
+    )
+else:
+    bg_pairs["first_other_src_detail"] = "missing"
 
 bg_pairs.head(3)
 ```
@@ -3397,6 +3595,11 @@ existing_other = _num_series(df, "other_hypercap_threshold").fillna(0).astype(in
 abg_from_values = _any_ge(df, ["lab_abg_paco2", "poc_abg_paco2", "first_abg_pco2"], 45.0)
 vbg_from_values = _any_ge(df, ["lab_vbg_paco2", "poc_vbg_paco2", "first_vbg_pco2"], 50.0)
 other_from_values = _any_ge(df, ["first_other_pco2"], 50.0)
+if "first_other_src_detail" in df.columns:
+    other_detail = df["first_other_src_detail"].astype("string").str.lower()
+    other_from_values = ((other_from_values == 1) & other_detail.eq("lab_bg_unknown")).astype(
+        "Int64"
+    )
 
 df["abg_hypercap_threshold"] = ((existing_abg == 1) | (abg_from_values == 1)).astype("Int64")
 df["vbg_hypercap_threshold"] = ((existing_vbg == 1) | (vbg_from_values == 1)).astype("Int64")
@@ -3418,6 +3621,14 @@ print(
     "OTHER=", int(df["other_hypercap_threshold"].fillna(0).sum()),
     "ANY=", int(df["pco2_threshold_any"].fillna(0).sum()),
 )
+if "poc_other_quarantined_hypercap_threshold" in df.columns:
+    poc_other_quarantine_n = int(
+        pd.to_numeric(df["poc_other_quarantined_hypercap_threshold"], errors="coerce")
+        .fillna(0)
+        .astype(int)
+        .sum()
+    )
+    print("POC OTHER quarantined hadm count:", poc_other_quarantine_n)
 
 # Harmonize NIH race/ethnicity into a collapsed reporting label at cohort-build time.
 RACE_NIH_MAP = {
@@ -4451,16 +4662,54 @@ cat_gas = re.compile(r"blood\s*gas|blood gas|arterial|venous", re.I)
 cat_chem = re.compile(r"chemistry|chem|blood", re.I)
 cat_cbc = re.compile(r"hematology|cbc", re.I)
 
+manifest_lab_itemid_sets: dict[str, set[int]] = {
+    "gas_pco2": set(LAB_PCO2_ITEMIDS),
+    "gas_ph": set(LAB_PH_ITEMIDS),
+    "gas_specimen": set(LAB_SPECIMEN_TYPE_ITEMIDS),
+}
+manifest_missing_rows: list[dict[str, Any]] = []
+for group_name, itemids in manifest_lab_itemid_sets.items():
+    if not itemids:
+        continue
+    present_itemids = set(
+        pd.to_numeric(
+            labitems.loc[labitems["itemid"].isin(itemids), "itemid"],
+            errors="coerce",
+        )
+        .dropna()
+        .astype(int)
+        .tolist()
+    )
+    missing_itemids = sorted(itemids.difference(present_itemids))
+    if missing_itemids:
+        manifest_missing_rows.append(
+            {
+                "group_name": group_name,
+                "missing_itemids": ";".join(str(value) for value in missing_itemids),
+                "status": "missing_from_d_labitems",
+            }
+        )
+
+if manifest_missing_rows:
+    raise ValueError(
+        "Manifest lab itemids were not found in d_labitems: "
+        f"{manifest_missing_rows}. Update specs/blood_gas_itemids.json."
+    )
+
 matches = {}
 for name, pat in patterns.items():
-    dfm = labitems.copy()
-    dfm = dfm[dfm["label"].str.contains(pat, na=False)]
-    if name.startswith("gas_"):
-        dfm = dfm[dfm["category"].str.contains(cat_gas, na=False)]
-    elif name.startswith("chem_"):
-        dfm = dfm[dfm["category"].str.contains(cat_chem, na=False)]
-    elif name.startswith("cbc_"):
-        dfm = dfm[dfm["category"].str.contains(cat_cbc, na=False)]
+    if name in manifest_lab_itemid_sets:
+        itemids = manifest_lab_itemid_sets[name]
+        dfm = labitems.loc[labitems["itemid"].isin(itemids)].copy()
+    else:
+        dfm = labitems.copy()
+        dfm = dfm[dfm["label"].str.contains(pat, na=False)]
+        if name.startswith("gas_"):
+            dfm = dfm[dfm["category"].str.contains(cat_gas, na=False)]
+        elif name.startswith("chem_"):
+            dfm = dfm[dfm["category"].str.contains(cat_chem, na=False)]
+        elif name.startswith("cbc_"):
+            dfm = dfm[dfm["category"].str.contains(cat_cbc, na=False)]
     matches[name] = dfm[["itemid", "label", "category"]]
 
 # Build lab_item_map with cohort counts. Run hadm counts in chunks to avoid one oversized query.
@@ -4508,6 +4757,28 @@ for name, dfm in matches.items():
 lab_item_map_path = WORK_DIR / "lab_item_map.json"
 lab_item_map_path.write_text(json.dumps(lab_item_map, indent=2))
 print("Wrote:", lab_item_map_path)
+
+manifest_lab_audit_rows: list[dict[str, Any]] = []
+for analyte_name, itemids in manifest_lab_itemid_sets.items():
+    if not itemids:
+        continue
+    frame = labitems.loc[labitems["itemid"].isin(itemids), ["itemid", "label", "category", "fluid"]].copy()
+    frame = frame.merge(counts, on="itemid", how="left").fillna({"n": 0})
+    for record in frame.to_dict(orient="records"):
+        manifest_lab_audit_rows.append(
+            {
+                "source_branch": "LAB",
+                "analyte": analyte_name,
+                "itemid": int(record["itemid"]),
+                "label": record.get("label"),
+                "category": record.get("category"),
+                "fluid": record.get("fluid"),
+                "cohort_row_count": int(record.get("n", 0)),
+                "manifest_version": BLOOD_GAS_MANIFEST["version"],
+            }
+        )
+
+blood_gas_itemid_manifest_audit = pd.DataFrame(manifest_lab_audit_rows)
 ```
 
 ```{python}
@@ -4638,10 +4909,18 @@ if hco3_ids:
 if lact_ids:
     panel = panel.merge(pick_analyte(labs, lact_ids, "lactate"), on=["ed_stay_id","specimen_id"], how="left")
 
-# First panel per ED stay
-first_panel = (
-    panel.sort_values(["ed_stay_id","panel_time"]).groupby("ed_stay_id", as_index=False).first()
-)
+# First pCO2-qualified panel per ED stay (gas anchor must include pCO2)
+panel_anchor_candidates = panel.loc[
+    pd.to_numeric(panel.get("pco2"), errors="coerce").notna()
+].copy()
+if panel_anchor_candidates.empty:
+    first_panel = panel.head(0).copy()
+else:
+    first_panel = (
+        panel_anchor_candidates.sort_values(["ed_stay_id", "panel_time"])
+        .groupby("ed_stay_id", as_index=False)
+        .first()
+    )
 
 # 0–6h and 0–24h extrema
 panel = panel.merge(ed_df[["ed_stay_id","ed_intime"]], on="ed_stay_id", how="left")
@@ -4658,9 +4937,34 @@ p24 = panel.loc[panel["dt_hours"].between(0,24, inclusive="both")]
 agg06 = p06.groupby("ed_stay_id", as_index=False).agg(max_pco2_0_6h=("pco2","max"), min_ph_0_6h=("ph","min"))
 agg24 = p24.groupby("ed_stay_id", as_index=False).agg(max_pco2_0_24h=("pco2","max"), min_ph_0_24h=("ph","min"))
 
-ed_df = ed_df.merge(first_panel[["ed_stay_id","panel_time","pco2","ph","hco3","lactate"]].rename(
-    columns={"panel_time":"first_gas_time","pco2":"first_pco2","ph":"first_ph","hco3":"first_hco3","lactate":"first_lactate"}
-), on="ed_stay_id", how="left")
+first_panel_export_cols = [
+    col
+    for col in ["ed_stay_id", "panel_time", "pco2", "ph", "hco3", "lactate"]
+    if col in first_panel.columns
+]
+if first_panel_export_cols:
+    ed_df = ed_df.merge(
+        first_panel[first_panel_export_cols].rename(
+            columns={
+                "panel_time": "first_gas_time",
+                "pco2": "first_pco2",
+                "ph": "first_ph",
+                "hco3": "first_hco3",
+                "lactate": "first_lactate",
+            }
+        ),
+        on="ed_stay_id",
+        how="left",
+    )
+else:
+    ed_df["first_gas_time"] = pd.NaT
+    ed_df["first_pco2"] = pd.NA
+    ed_df["first_ph"] = pd.NA
+    ed_df["first_hco3"] = pd.NA
+    ed_df["first_lactate"] = pd.NA
+
+ed_df["first_gas_anchor_has_pco2"] = ed_df["first_gas_time"].notna()
+ed_df["first_gas_anchor_source_validated"] = False
 
 ed_df = ed_df.merge(agg06, on="ed_stay_id", how="left")
 ed_df = ed_df.merge(agg24, on="ed_stay_id", how="left")
@@ -4769,6 +5073,58 @@ else:
 
 gas_source_audit_path.write_text(json.dumps(gas_source_audit, indent=2))
 print("Wrote:", gas_source_audit_path)
+
+panel["pco2_source_branch"] = "LAB"
+panel_anchor = panel.loc[pd.to_numeric(panel["pco2"], errors="coerce").notna()].copy()
+if panel_anchor.empty:
+    first_anchor = ed_df[["ed_stay_id"]].drop_duplicates().copy()
+    first_anchor["first_gas_time"] = pd.NaT
+    first_anchor["first_pco2"] = pd.NA
+    first_anchor["first_ph"] = pd.NA
+    first_anchor["first_hco3"] = pd.NA
+    first_anchor["first_lactate"] = pd.NA
+    first_anchor["first_gas_anchor_has_pco2"] = False
+    first_anchor["first_gas_anchor_source_validated"] = False
+else:
+    first_anchor = (
+        panel_anchor.sort_values(["ed_stay_id", "panel_time"])
+        .groupby("ed_stay_id", as_index=False)
+        .first()
+    )
+    first_anchor = first_anchor.rename(
+        columns={
+            "panel_time": "first_gas_time",
+            "pco2": "first_pco2",
+            "ph": "first_ph",
+            "hco3": "first_hco3",
+            "lactate": "first_lactate",
+        }
+    )
+    first_anchor["first_gas_anchor_has_pco2"] = True
+    first_anchor["first_gas_anchor_source_validated"] = first_anchor["source"].isin(
+        {"arterial", "venous", "other"}
+    )
+
+anchor_merge_cols = [
+    "ed_stay_id",
+    "first_gas_time",
+    "first_pco2",
+    "first_ph",
+    "first_hco3",
+    "first_lactate",
+    "first_gas_anchor_has_pco2",
+    "first_gas_anchor_source_validated",
+]
+drop_existing_anchor_cols = [col for col in anchor_merge_cols if col in ed_df.columns and col != "ed_stay_id"]
+if drop_existing_anchor_cols:
+    ed_df = ed_df.drop(columns=drop_existing_anchor_cols)
+ed_df = ed_df.merge(first_anchor[anchor_merge_cols], on="ed_stay_id", how="left")
+ed_df["first_gas_anchor_has_pco2"] = (
+    ed_df["first_gas_anchor_has_pco2"].fillna(False).astype(bool)
+)
+ed_df["first_gas_anchor_source_validated"] = (
+    ed_df["first_gas_anchor_source_validated"].fillna(False).astype(bool)
+)
 
 # flags
 panel["flag_abg_hypercapnia"] = ((panel["source"]=="arterial") & (panel["pco2"]>=45)).astype(int)
@@ -4892,21 +5248,29 @@ icu_patterns = {
 }
 
 icu_cat = re.compile(r"blood\s*gas|blood gas|resp|arterial|venous", re.I)
-icu_pco2_exclusion = re.compile(
-    r"(?:^|[^a-z])p(?:a)?\s*o\s*2(?:[^a-z]|$)|\bpo2\b|\bpao2\b|oxygen|o2\s*(?:sat|saturation)|sao2|spo2|fio2|co2\s*(?:prod|production|elimin|elimination)|\bvco2\b",
-    re.I,
-)
+icu_pco2_exclusion = re.compile(ICU_LABEL_DENY_REGEX, re.I)
 
 icu_matches = {}
+manifest_icu_itemids = {
+    "pco2": set(ICU_PCO2_ITEMIDS),
+    "ph": set(ICU_PH_ITEMIDS),
+    "specimen": set(ICU_SPECIMEN_TYPE_ITEMIDS),
+}
 for name, pat in icu_patterns.items():
-    dfm = ditems[ditems["label"].str.contains(pat, na=False)]
-    dfm = dfm[dfm["category"].str.contains(icu_cat, na=False)]
-    icu_matches[name] = dfm[["itemid","label","category"]]
-# Exclude non-blood pCO2 measurements from ICU candidates
-if "pco2" in icu_matches and len(icu_matches["pco2"]) > 0:
-    icu_matches["pco2"] = icu_matches["pco2"][
-        ~icu_matches["pco2"]["label"].str.contains(icu_pco2_exclusion, na=False)
-    ]
+    manifest_ids = manifest_icu_itemids.get(name, set())
+    if manifest_ids:
+        dfm = ditems.loc[ditems["itemid"].isin(manifest_ids)].copy()
+    else:
+        dfm = pd.DataFrame(columns=["itemid", "label", "category"])
+
+    if dfm.empty and ICU_ALLOW_PATTERN_FALLBACK:
+        dfm = ditems[ditems["label"].str.contains(pat, na=False)].copy()
+        if name in {"pco2", "ph", "specimen"}:
+            dfm = dfm[dfm["category"].str.contains(icu_cat, na=False)]
+
+    if name == "pco2" and len(dfm) > 0:
+        dfm = dfm[~dfm["label"].str.contains(icu_pco2_exclusion, na=False)]
+    icu_matches[name] = dfm[["itemid", "label", "category"]]
 
 icu_itemid_map_frames = [
     frame.assign(analyte=name)
@@ -4936,6 +5300,44 @@ prior_runs_dir.mkdir(parents=True, exist_ok=True)
 icu_itemid_map_path = prior_runs_dir / f"{audit_date} icu_poc_itemid_map.csv"
 icu_itemid_map.to_csv(icu_itemid_map_path, index=False)
 print("Wrote:", icu_itemid_map_path)
+
+manifest_icu_audit_rows: list[dict[str, Any]] = []
+for analyte_name, itemids in manifest_icu_itemids.items():
+    if not itemids:
+        continue
+    frame = ditems.loc[ditems["itemid"].isin(itemids), ["itemid", "label", "category"]].copy()
+    present_ids = set(frame["itemid"].astype(int).tolist()) if not frame.empty else set()
+    for itemid in sorted(itemids):
+        row = {
+            "source_branch": "ICU",
+            "analyte": analyte_name,
+            "itemid": int(itemid),
+            "label": None,
+            "category": None,
+            "fluid": None,
+            "cohort_row_count": 0,
+            "manifest_version": BLOOD_GAS_MANIFEST["version"],
+            "present_in_dictionary": int(itemid in present_ids),
+        }
+        if itemid in present_ids:
+            record = frame.loc[frame["itemid"].eq(itemid)].iloc[0]
+            row["label"] = record.get("label")
+            row["category"] = record.get("category")
+        manifest_icu_audit_rows.append(row)
+
+if "blood_gas_itemid_manifest_audit" in globals() and not blood_gas_itemid_manifest_audit.empty:
+    manifest_audit_combined = pd.concat(
+        [blood_gas_itemid_manifest_audit, pd.DataFrame(manifest_icu_audit_rows)],
+        ignore_index=True,
+        sort=False,
+    )
+else:
+    manifest_audit_combined = pd.DataFrame(manifest_icu_audit_rows)
+
+blood_gas_itemid_manifest_audit = manifest_audit_combined
+blood_gas_itemid_manifest_audit_path = prior_runs_dir / f"{audit_date} blood_gas_itemid_manifest_audit.csv"
+blood_gas_itemid_manifest_audit.to_csv(blood_gas_itemid_manifest_audit_path, index=False)
+print("Wrote:", blood_gas_itemid_manifest_audit_path)
 ```
 
 ```{python}
@@ -5036,6 +5438,25 @@ if len(icu_poc_long) > 0:
     icu_itemid_usage_path = prior_runs_dir / f"{audit_date} icu_poc_itemid_usage.csv"
     icu_itemid_usage.to_csv(icu_itemid_usage_path, index=False)
     print("Wrote:", icu_itemid_usage_path)
+    if "blood_gas_itemid_manifest_audit" in globals() and not blood_gas_itemid_manifest_audit.empty:
+        usage_merge = icu_itemid_usage[["itemid", "row_count"]].copy()
+        usage_merge["itemid"] = pd.to_numeric(usage_merge["itemid"], errors="coerce").astype("Int64")
+        manifest_audit = blood_gas_itemid_manifest_audit.copy()
+        manifest_audit["itemid"] = pd.to_numeric(manifest_audit["itemid"], errors="coerce").astype("Int64")
+        manifest_audit = manifest_audit.merge(
+            usage_merge.rename(columns={"row_count": "icu_usage_row_count"}),
+            on="itemid",
+            how="left",
+        )
+        if "cohort_row_count" in manifest_audit.columns:
+            manifest_audit["cohort_row_count"] = manifest_audit["cohort_row_count"].fillna(0).astype(int)
+            manifest_audit["cohort_row_count"] = (
+                manifest_audit["cohort_row_count"] + manifest_audit["icu_usage_row_count"].fillna(0).astype(int)
+            )
+        manifest_audit = manifest_audit.drop(columns=["icu_usage_row_count"])
+        blood_gas_itemid_manifest_audit = manifest_audit
+        blood_gas_itemid_manifest_audit.to_csv(blood_gas_itemid_manifest_audit_path, index=False)
+        print("Updated:", blood_gas_itemid_manifest_audit_path)
 else:
     panel_poc = pd.DataFrame()
 
@@ -5696,6 +6117,117 @@ source_unknown_rate = float(gas_source_audit.get("source_rates", {}).get("unknow
 print("% source other (panel-level):", round(gas_source_other_rate * 100, 1))
 print("% source unknown (panel-level):", round(source_unknown_rate * 100, 1))
 
+# Blood-gas source distribution audit (validated LAB + quarantined POC OTHER monitoring).
+pco2_source_distribution_rows: list[dict[str, Any]] = []
+if "panel" in globals() and len(panel) > 0 and "pco2" in panel.columns:
+    panel_pco2 = panel.copy()
+    panel_pco2["pco2"] = pd.to_numeric(panel_pco2["pco2"], errors="coerce")
+    panel_pco2 = panel_pco2.loc[panel_pco2["pco2"].notna()].copy()
+    if len(panel_pco2) > 0:
+        for source_name, subset in panel_pco2.groupby("source", dropna=False):
+            values = pd.to_numeric(subset["pco2"], errors="coerce").dropna()
+            if values.empty:
+                continue
+            pco2_source_distribution_rows.append(
+                {
+                    "source_branch": "LAB",
+                    "source": str(source_name),
+                    "n": int(values.shape[0]),
+                    "median": float(values.median()),
+                    "p95": float(values.quantile(0.95)),
+                    "max": float(values.max()),
+                    "pct_ge_50": float((values >= 50).mean()),
+                }
+            )
+
+if "poc_other_paco2" in ed_df.columns:
+    poc_other_values = pd.to_numeric(ed_df["poc_other_paco2"], errors="coerce").dropna()
+    if len(poc_other_values) > 0:
+        pco2_source_distribution_rows.append(
+            {
+                "source_branch": "POC_QUARANTINED",
+                "source": "other",
+                "n": int(poc_other_values.shape[0]),
+                "median": float(poc_other_values.median()),
+                "p95": float(poc_other_values.quantile(0.95)),
+                "max": float(poc_other_values.max()),
+                "pct_ge_50": float((poc_other_values >= 50).mean()),
+            }
+        )
+
+pco2_source_distribution_audit = pd.DataFrame(pco2_source_distribution_rows)
+pco2_source_distribution_audit_path = prior_runs_dir / f"{out_date} pco2_source_distribution_audit.csv"
+pco2_source_distribution_audit.to_csv(pco2_source_distribution_audit_path, index=False)
+print("Wrote:", pco2_source_distribution_audit_path)
+
+poc_other_values_all = (
+    pd.to_numeric(ed_df["poc_other_paco2"], errors="coerce")
+    if "poc_other_paco2" in ed_df.columns
+    else pd.Series(dtype="float64")
+)
+poc_other_quarantine_series = (
+    pd.to_numeric(ed_df["poc_other_quarantined_hypercap_threshold"], errors="coerce")
+    if "poc_other_quarantined_hypercap_threshold" in ed_df.columns
+    else pd.Series(0, index=ed_df.index, dtype="float64")
+)
+other_threshold_series = (
+    pd.to_numeric(ed_df["other_hypercap_threshold"], errors="coerce")
+    if "other_hypercap_threshold" in ed_df.columns
+    else pd.Series(0, index=ed_df.index, dtype="float64")
+)
+first_other_detail_series = (
+    ed_df["first_other_src_detail"].astype("string")
+    if "first_other_src_detail" in ed_df.columns
+    else pd.Series("missing", index=ed_df.index, dtype="string")
+)
+poc_other_candidate_n = int(poc_other_values_all.notna().sum())
+poc_other_hypercap_n = int((poc_other_values_all >= 50).sum())
+poc_other_quarantined_hadm_n = int(
+    poc_other_quarantine_series.fillna(0).astype(int).sum()
+)
+poc_other_leak_into_other_threshold_n = int(
+    (
+        other_threshold_series.fillna(0).astype(int).eq(1)
+        & first_other_detail_series.str.lower().eq("poc_quarantined")
+    ).sum()
+)
+other_route_quarantine_audit = pd.DataFrame(
+    [
+        {
+            "poc_other_candidate_n": poc_other_candidate_n,
+            "poc_other_ge50_n": poc_other_hypercap_n,
+            "poc_other_ge50_rate": float(poc_other_hypercap_n / poc_other_candidate_n)
+            if poc_other_candidate_n
+            else 0.0,
+            "poc_other_quarantined_hadm_n": poc_other_quarantined_hadm_n,
+            "other_hypercap_threshold_hadm_n": int(other_threshold_series.fillna(0).astype(int).sum()),
+            "poc_other_leak_into_other_threshold_n": poc_other_leak_into_other_threshold_n,
+        }
+    ]
+)
+other_route_quarantine_audit_path = prior_runs_dir / f"{out_date} other_route_quarantine_audit.csv"
+other_route_quarantine_audit.to_csv(other_route_quarantine_audit_path, index=False)
+print("Wrote:", other_route_quarantine_audit_path)
+
+first_gas_anchor_audit = pd.DataFrame(
+    [
+        {
+            "row_count": int(len(ed_df)),
+            "first_gas_time_nonnull_n": int(pd.to_datetime(ed_df.get("first_gas_time"), errors="coerce").notna().sum())
+            if "first_gas_time" in ed_df.columns
+            else 0,
+            "first_gas_anchor_has_pco2_n": int(ed_df.get("first_gas_anchor_has_pco2", pd.Series(False, index=ed_df.index)).fillna(False).astype(bool).sum()),
+            "first_gas_anchor_source_validated_n": int(ed_df.get("first_gas_anchor_source_validated", pd.Series(False, index=ed_df.index)).fillna(False).astype(bool).sum()),
+        }
+    ]
+)
+first_gas_anchor_audit["first_gas_without_pco2_anchor_n"] = (
+    first_gas_anchor_audit["first_gas_time_nonnull_n"] - first_gas_anchor_audit["first_gas_anchor_has_pco2_n"]
+)
+first_gas_anchor_audit_path = prior_runs_dir / f"{out_date} first_gas_anchor_audit.csv"
+first_gas_anchor_audit.to_csv(first_gas_anchor_audit_path, index=False)
+print("Wrote:", first_gas_anchor_audit_path)
+
 hadm_rows = int(len(df)) if "df" in globals() else None
 hadm_cc_rows = None
 if "df" in globals() and "ed_triage_cc" in df.columns:
@@ -5721,6 +6253,12 @@ if uom_failed_checks:
     qa_warnings.append("uom_checks_failed")
 if "status" in first_other_pco2_audit.columns and (first_other_pco2_audit["status"] == "missing_columns").any():
     qa_warnings.append("first_other_pco2_audit_missing_columns")
+if "poc_other_leak_into_other_threshold_n" in other_route_quarantine_audit.columns:
+    if int(other_route_quarantine_audit["poc_other_leak_into_other_threshold_n"].iloc[0]) > 0:
+        qa_warnings.append("poc_other_quarantine_leakage_detected")
+if "first_gas_without_pco2_anchor_n" in first_gas_anchor_audit.columns:
+    if int(first_gas_anchor_audit["first_gas_without_pco2_anchor_n"].iloc[0]) > 0:
+        qa_warnings.append("first_gas_anchor_without_pco2_detected")
 qa_other_warn_threshold = float(os.getenv("COHORT_WARN_OTHER_RATE", "0.50"))
 qa_other_fail_raw = os.getenv("COHORT_FAIL_OTHER_RATE", "").strip()
 qa_other_fail_threshold = float(qa_other_fail_raw) if qa_other_fail_raw else None
@@ -5735,6 +6273,18 @@ outliers_audit_records = json.loads(outliers_audit.to_json(orient="records"))
 ed_vitals_distribution_summary_records = json.loads(ed_vitals_distribution_summary.to_json(orient="records"))
 ed_vitals_model_delta_records = json.loads(ed_vitals_model_delta.to_json(orient="records"))
 gas_overlap_summary_records = json.loads(gas_overlap_summary.to_json(orient="records")) if "gas_overlap_summary" in globals() else []
+pco2_source_distribution_audit_records = json.loads(
+    pco2_source_distribution_audit.to_json(orient="records")
+)
+other_route_quarantine_audit_records = json.loads(
+    other_route_quarantine_audit.to_json(orient="records")
+)
+first_gas_anchor_audit_records = json.loads(first_gas_anchor_audit.to_json(orient="records"))
+blood_gas_itemid_manifest_audit_records = (
+    json.loads(blood_gas_itemid_manifest_audit.to_json(orient="records"))
+    if "blood_gas_itemid_manifest_audit" in globals() and not blood_gas_itemid_manifest_audit.empty
+    else []
+)
 
 qa_status = "warning" if qa_warnings else "pass"
 
@@ -5754,6 +6304,14 @@ qa_summary = {
     "source_unknown_rate": source_unknown_rate,
     "gas_source_audit": gas_source_audit,
     "gas_source_overlap_summary": gas_overlap_summary_records,
+    "blood_gas_manifest": {
+        "version": BLOOD_GAS_MANIFEST.get("version"),
+        "path": BLOOD_GAS_MANIFEST.get("path"),
+    },
+    "blood_gas_itemid_manifest_audit": blood_gas_itemid_manifest_audit_records,
+    "pco2_source_distribution_audit": pco2_source_distribution_audit_records,
+    "other_route_quarantine_audit": other_route_quarantine_audit_records,
+    "first_gas_anchor_audit": first_gas_anchor_audit_records,
     "omr_diagnostics": omr_diagnostics if "omr_diagnostics" in globals() else None,
     "omr_window_diagnostics": omr_window_diagnostics if "omr_window_diagnostics" in globals() else None,
     "anthro_timing_tier_counts": omr_diagnostics.get("selected_tier_counts", {}) if "omr_diagnostics" in globals() else {},
@@ -5774,6 +6332,14 @@ qa_summary = {
         "distribution_summary": str(ed_vitals_distribution_summary_path),
         "extreme_examples": str(ed_vitals_extreme_examples_path),
         "model_delta": str(ed_vitals_model_delta_path),
+    },
+    "blood_gas_audit_paths": {
+        "manifest_itemids": str(blood_gas_itemid_manifest_audit_path)
+        if "blood_gas_itemid_manifest_audit_path" in globals()
+        else None,
+        "pco2_source_distribution": str(pco2_source_distribution_audit_path),
+        "other_route_quarantine": str(other_route_quarantine_audit_path),
+        "first_gas_anchor": str(first_gas_anchor_audit_path),
     },
     "qa_status": qa_status,
     "qa_warnings": qa_warnings,

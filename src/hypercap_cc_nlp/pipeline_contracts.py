@@ -21,6 +21,13 @@ from .workflow_contracts import (
 COHORT_POC_PCO2_MEDIAN_MIN = 45.0
 COHORT_POC_PCO2_MEDIAN_MAX = 80.0
 COHORT_POC_PCO2_FAIL_ENABLED = True
+COHORT_FIRST_GAS_ANCHOR_TOLERANCE = 0
+COHORT_REQUIRED_AUDIT_SUFFIXES = (
+    "blood_gas_itemid_manifest_audit.csv",
+    "pco2_source_distribution_audit.csv",
+    "other_route_quarantine_audit.csv",
+    "first_gas_anchor_audit.csv",
+)
 
 COHORT_REQUIRED_ED_VITALS_CLEAN_COLUMNS: dict[str, tuple[str, ...]] = {
     "ed_triage_temp": (
@@ -163,6 +170,58 @@ def validate_cohort_contract(
             }
         )
 
+    if "first_gas_time" in df.columns:
+        missing_anchor_columns = sorted(
+            {"first_gas_anchor_has_pco2", "first_gas_anchor_source_validated"}.difference(
+                df.columns
+            )
+        )
+        if missing_anchor_columns:
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": "missing_first_gas_anchor_columns",
+                    "message": (
+                        "first_gas_time is present but required anchor columns are missing: "
+                        f"{missing_anchor_columns}"
+                    ),
+                }
+            )
+        else:
+            first_gas_present = pd.to_datetime(
+                df["first_gas_time"], errors="coerce"
+            ).notna()
+            anchor_has_pco2 = (
+                df["first_gas_anchor_has_pco2"].fillna(False).astype(bool)
+            )
+            source_validated = (
+                df["first_gas_anchor_source_validated"].fillna(False).astype(bool)
+            )
+            without_pco2_anchor_n = int((first_gas_present & ~anchor_has_pco2).sum())
+            without_validated_source_n = int((first_gas_present & ~source_validated).sum())
+            if without_pco2_anchor_n > COHORT_FIRST_GAS_ANCHOR_TOLERANCE:
+                findings.append(
+                    {
+                        "severity": "error",
+                        "code": "first_gas_anchor_missing_pco2",
+                        "message": (
+                            "first_gas_time contains rows without pCO2-qualified anchors: "
+                            f"{without_pco2_anchor_n}"
+                        ),
+                    }
+                )
+            if without_validated_source_n > COHORT_FIRST_GAS_ANCHOR_TOLERANCE:
+                findings.append(
+                    {
+                        "severity": "error",
+                        "code": "first_gas_anchor_unvalidated_source",
+                        "message": (
+                            "first_gas_time contains rows without validated source anchors: "
+                            f"{without_validated_source_n}"
+                        ),
+                    }
+                )
+
     for raw_column, required_clean_columns in COHORT_REQUIRED_ED_VITALS_CLEAN_COLUMNS.items():
         if raw_column not in df.columns:
             continue
@@ -269,6 +328,28 @@ def validate_cohort_contract(
                     }
                 )
 
+    poc_other_quarantine_leak_n = 0
+    if {"other_hypercap_threshold", "first_other_src_detail"}.issubset(df.columns):
+        detail = df["first_other_src_detail"].astype("string").str.lower()
+        other_flag = (
+            pd.to_numeric(df["other_hypercap_threshold"], errors="coerce")
+            .fillna(0)
+            .astype(int)
+            .eq(1)
+        )
+        poc_other_quarantine_leak_n = int((other_flag & detail.eq("poc_quarantined")).sum())
+        if poc_other_quarantine_leak_n > 0:
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": "poc_other_quarantine_leakage",
+                    "message": (
+                        "POC quarantined OTHER rows leaked into other_hypercap_threshold: "
+                        f"{poc_other_quarantine_leak_n} rows."
+                    ),
+                }
+            )
+
     anthro_source_counts: dict[str, int] = {}
     if "anthro_source" in df.columns:
         anthro_source_counts = {
@@ -315,6 +396,7 @@ def validate_cohort_contract(
         "gas_source_other_rate_mean": gas_source_other_rate,
         "poc_other_pco2_median": poc_other_pco2_median,
         "poc_other_pco2_count": poc_other_pco2_count,
+        "poc_other_quarantine_leak_n": poc_other_quarantine_leak_n,
         "anthro_bmi_coverage_rate": bmi_coverage_rate,
         "anthro_source_counts": anthro_source_counts,
         "findings": findings,
@@ -341,6 +423,7 @@ def build_pipeline_contract_report_for_stages(
     data_dir = (work_dir / DATA_DIRNAME).expanduser().resolve()
     cohort_path = data_dir / CANONICAL_COHORT_FILENAME
     classifier_path = data_dir / CANONICAL_NLP_FILENAME
+    prior_runs_dir = data_dir / PRIOR_RUNS_DIRNAME
 
     findings: list[dict[str, str]] = []
     contracts: dict[str, Any] = {}
@@ -362,6 +445,30 @@ def build_pipeline_contract_report_for_stages(
                 gas_source_other_fail_threshold=fail_threshold,
                 min_bmi_coverage=min_bmi_coverage,
             )
+            audit_artifacts: dict[str, str | None] = {}
+            for suffix in COHORT_REQUIRED_AUDIT_SUFFIXES:
+                candidates = (
+                    list(prior_runs_dir.glob(f"* {suffix}"))
+                    if prior_runs_dir.exists()
+                    else []
+                )
+                latest_path = (
+                    str(max(candidates, key=lambda path: path.stat().st_mtime))
+                    if candidates
+                    else None
+                )
+                audit_artifacts[suffix] = latest_path
+                if latest_path is None:
+                    finding = {
+                        "severity": "error",
+                        "code": "missing_cohort_audit_artifact",
+                        "message": (
+                            "Missing required cohort audit artifact matching "
+                            f"'* {suffix}' in {prior_runs_dir}."
+                        ),
+                    }
+                    cohort_report.setdefault("findings", []).append(finding)
+            cohort_report["audit_artifacts"] = audit_artifacts
             contracts["cohort"] = cohort_report
             findings.extend(cohort_report["findings"])
         else:
@@ -380,7 +487,6 @@ def build_pipeline_contract_report_for_stages(
         if classifier_path.exists():
             classifier_df = pd.read_excel(classifier_path, engine="openpyxl")
             classifier_report = validate_classifier_contract(classifier_df)
-            prior_runs_dir = data_dir / PRIOR_RUNS_DIRNAME
             latest_cc_audit = None
             if prior_runs_dir.exists():
                 candidates = list(prior_runs_dir.glob("* classifier_cc_missing_audit.csv"))

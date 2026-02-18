@@ -481,14 +481,35 @@ def validate_classifier_contract(
                     "message": f"hypercap_by_bg mismatch in {mismatch} rows.",
                 }
             )
-        if int(abg.sum()) == 0:
-            findings.append(
-                {
-                    "severity": "warning",
-                    "code": "abg_all_zero",
-                    "message": "hypercap_by_abg has zero positives.",
-                }
+        abg_sum = int(abg.sum())
+        abg_authoritative_positive = 0
+        if "flag_abg_hypercapnia" in df.columns:
+            abg_authoritative_numeric = pd.to_numeric(
+                df["flag_abg_hypercapnia"], errors="coerce"
             )
+            abg_authoritative_positive = int(
+                (abg_authoritative_numeric.fillna(0).astype(int) > 0).sum()
+            )
+        if abg_sum == 0:
+            if abg_authoritative_positive > 0:
+                findings.append(
+                    {
+                        "severity": "error",
+                        "code": "abg_all_zero_with_authoritative_positive",
+                        "message": (
+                            "hypercap_by_abg has zero positives despite non-zero "
+                            f"flag_abg_hypercapnia positives ({abg_authoritative_positive})."
+                        ),
+                    }
+                )
+            else:
+                findings.append(
+                    {
+                        "severity": "warning",
+                        "code": "abg_all_zero",
+                        "message": "hypercap_by_abg has zero positives.",
+                    }
+                )
         if "flag_abg_hypercapnia" in df.columns:
             abg_authoritative = pd.to_numeric(
                 df["flag_abg_hypercapnia"], errors="coerce"

@@ -1,11 +1,11 @@
 Goal (incl. success criteria):
-- Implement ED vitals cleaning and audit artifacts in the Quarto-first cohort pipeline, with cleaned-vitals preference in analysis.
+- Implement blood-gas source integrity remediation in the Quarto-first pipeline, with specimen-driven extraction and explicit quarantine of unreliable OTHER routes.
 - Success criteria:
-  - notebook-embedded ED vitals cleaning converts Celsius-like temperatures and handles pain/BP/SpO2 sentinel/outliers deterministically,
-  - canonical cohort workbook includes the requested `*_clean` + flag columns,
-  - ED vitals audit CSV artifacts are written each run under `MIMIC tabular data/prior runs/`,
-  - cohort contract checks validate cleaned-vitals bounds,
-  - cohort + analysis Quarto stages rerun successfully with updated outputs.
+  - curated versioned blood-gas itemid manifest is introduced and used by cohort core logic,
+  - OTHER thresholding is LAB blood-gas unknown-specimen only (POC-other quarantined from enrollment thresholds),
+  - first gas anchor is pCO2-qualified and auditable,
+  - classifier ABG-derived hypercap flags fail fast on authoritative-flag inconsistencies,
+  - contracts/tests and stage renders pass with new audit artifacts present.
 
 Constraints/Assumptions:
 - Core phase logic must reside in `.qmd` notebooks.
@@ -27,10 +27,52 @@ Key decisions:
 
 State:
 - Done: prior P0/P1/P2 remediation and Quarto migration are in place.
-- Now: implement ED vitals normalization/sentinel handling + dedicated audit artifacts.
-- Next: rerun cohort/analysis and validate new vitals contracts/artifacts.
+- Now: blood-gas source integrity remediation implemented and validated.
+- Next: optional baseline refresh for parity (latest run intentionally drifts from old baseline).
 
 Done:
+- Added versioned blood-gas manifest: `specs/blood_gas_itemids.json`.
+- Refactored cohort core gas extraction in `MIMICIV_hypercap_EXT_cohort.qmd`:
+  - strict LAB pCO2/pH/specimen itemid allowlists + blood-fluid guard,
+  - specimen-first site assignment with metadata fallback,
+  - POC OTHER quarantine from enrollment thresholds (`other_hypercap_threshold` now LAB-only OTHER),
+  - `first_gas_time` anchor now requires pCO2-qualified panel.
+- Added cohort provenance/audit outputs:
+  - `YYYY-MM-DD blood_gas_itemid_manifest_audit.csv`
+  - `YYYY-MM-DD pco2_source_distribution_audit.csv`
+  - `YYYY-MM-DD other_route_quarantine_audit.csv`
+  - `YYYY-MM-DD first_gas_anchor_audit.csv`
+  - plus new QA summary keys under `qa_summary.json`.
+- Added cohort columns:
+  - `first_other_src_detail`
+  - `first_gas_anchor_has_pco2`
+  - `first_gas_anchor_source_validated`
+- Tightened classifier safeguards in `Hypercap CC NLP Classifier.qmd`:
+  - hard fail when authoritative ABG positives exist but `hypercap_by_abg` is all-zero,
+  - added `classifier_hypercap_flags_audit.csv`.
+- Updated contracts/tests:
+  - `src/hypercap_cc_nlp/pipeline_contracts.py` now checks first-gas anchor integrity, POC-other leakage, required new audit artifacts.
+  - `src/hypercap_cc_nlp/classifier_quality.py` now errors on `abg_all_zero_with_authoritative_positive`.
+  - Updated tests in `tests/test_pipeline_contracts.py`, `tests/test_classifier_quality.py`, `tests/test_notebook_output_contracts.py`.
+- Updated docs:
+  - `README.md` now documents manifest-based blood-gas extraction and new audit artifacts.
+- Validation completed:
+  - `make lint` passed.
+  - `make test` passed (`85 passed`).
+  - `make quarto-cohort` passed.
+  - `make quarto-classifier` passed.
+  - `make quarto-analysis` passed.
+  - `make contracts-check STAGE=all` passed with `status=warning` (only `gas_source_other_rate_high`).
+  - `make quarto-parity-check BASELINE=latest` returned `fail` due expected intentional cohort/ID drift vs older baseline.
+- Post-rerun spot checks from canonical workbooks:
+  - cohort rows `11,769`; classifier rows `11,769`
+  - `first_other_src`: only `LAB_BG_UNKNOWN` (no POC contribution)
+  - `first_other_pco2` median (`LAB_BG_UNKNOWN`) = `48.0` (n=`2,499`)
+  - `poc_other_paco2` non-null count = `0`
+  - `poc_leak_other_threshold_n` = `0`
+  - `first_gas_without_pco2_anchor_n` = `0`
+  - `flag_abg_hypercapnia_sum` = `7,276`; `hypercap_by_abg_sum` = `7,276`; union mismatch = `0`
+  - `abnormal_loss_rows` = `0` in abnormal-lab phrase subset.
 - Implemented notebook-embedded ED vitals cleaning in `MIMICIV_hypercap_EXT_cohort.qmd`:
   - Celsius-like temperature normalization to Fahrenheit (`20–50` -> `°F` conversion),
   - pain sentinel `13` handling + range validation,
@@ -123,14 +165,13 @@ Done:
   - pseudo-missing blank-RFV leakage `0`.
 
 Now:
-- Prepare final handoff summary with file-level changes, verification results, and remaining warning(s).
+- Final handoff summary and optional follow-up baseline refresh.
 
 Next:
-- Optional: refresh parity baseline to latest accepted post-fix run before treating parity failures as regressions.
-- Optional: investigate remaining high `gas_source_other_rate` despite improved ICU/POC extraction.
+- If desired, capture a new parity baseline from this post-remediation run to remove intentional P0/P1 parity drift against pre-remediation baseline.
 
 Open questions (UNCONFIRMED if needed):
-- UNCONFIRMED: whether `make quarto-pipeline-audit` stall at cohort stage is environment/transient or deterministic.
+- UNCONFIRMED: exact final allowlists for all blood-gas itemids beyond currently known high-confidence IDs.
 
 Working set (files/ids/commands):
 - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/AGENTS.md`
