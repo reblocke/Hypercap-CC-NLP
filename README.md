@@ -138,6 +138,7 @@ COHORT_ANTHRO_CHARTED_FALLBACK=1  # enable charted anthropometric fallback extra
 COHORT_ANTHRO_NEAREST_ANYTIME=1  # use nearest-anytime charted fallback selection
 COHORT_ANTHRO_MIN_BMI_COVERAGE=0.30  # contract minimum BMI coverage floor
 CLASSIFIER_STRICT_RESOURCE_HASH=1  # fail on resource-manifest hash mismatch (set 0 to warn)
+CC_SPELL_CORRECTION_MODE=auto  # auto compares disabled vs strict spell correction and selects lower-risk mode
 PIPELINE_CONTRACT_MODE=fail  # fail|warn contract enforcement mode
 RUN_MANIFEST_STAGE_SCOPE=all  # per-stage run manifests are written for cohort/classifier/rater/analysis
 ```
@@ -149,8 +150,9 @@ Hard-coded QA-only POC sanity contract (not a runtime notebook env setting):
 - Enforced by `make contracts-check` / pipeline audit checks against exported cohort artifacts.
 
 Blood-gas item selection is versioned in `specs/blood_gas_itemids.json`:
-- LAB pCO2/pH/specimen-type extraction uses manifest allowlists (blood-only fluid guard).
+- LAB pCO2/pH/HCO3/specimen-type extraction uses manifest allowlists (blood-only fluid guard).
 - POC OTHER is quarantined from enrollment thresholds in this release.
+- ICU HCO3 fallback is explicit-itemid only (no regex fallback).
 - Update this manifest (not ad-hoc notebook regex) when itemids need to change.
 
 `GOOGLE_APPLICATION_CREDENTIALS` is also supported (optional) when you prefer service-account auth over ADC login.
@@ -379,6 +381,8 @@ ED vitals cleaning policy (cohort stage):
 | NLP‑augmented workbook | `Hypercap CC NLP Classifier.qmd` | Canonical: `MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx`; optional archive (`WRITE_ARCHIVE_XLSX_EXPORTS=1`): `MIMIC tabular data/prior runs/YYYY-MM-DD MIMICIV all with CC_with_NLP.xlsx` |
 | Classifier CC missingness audit | `Hypercap CC NLP Classifier.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD classifier_cc_missing_audit.csv` |
 | Classifier phrase regression audit | `Hypercap CC NLP Classifier.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD classifier_phrase_audit.csv` |
+| Classifier spell-mode comparison audit | `Hypercap CC NLP Classifier.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD classifier_spell_mode_comparison.csv` |
+| Classifier spellfix row audit | `Hypercap CC NLP Classifier.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD classifier_spellfix_log.csv` |
 | Classifier hypercap flags audit | `Hypercap CC NLP Classifier.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD classifier_hypercap_flags_audit.csv` |
 | Classifier contract report | `Hypercap CC NLP Classifier.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD classifier_contract_report.json` |
 | Classifier run manifest | `Hypercap CC NLP Classifier.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD classifier_run_manifest.json` |

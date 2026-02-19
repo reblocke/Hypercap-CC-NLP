@@ -4,13 +4,13 @@
     "subject_id"
   ],
   "r3_rows": 160,
-  "nlp_rows": 27975,
-  "matched_rows": 150,
-  "unmatched_adjudicated_rows": 10,
-  "unmatched_nlp_rows": 27825,
-  "matched_rate_vs_adjudicated": 0.9375,
-  "unmatched_rate_vs_adjudicated": 0.0625,
-  "unmatched_rate_vs_nlp": 0.9946380697050938,
+  "nlp_rows": 11769,
+  "matched_rows": 60,
+  "unmatched_adjudicated_rows": 100,
+  "unmatched_nlp_rows": 11709,
+  "matched_rate_vs_adjudicated": 0.375,
+  "unmatched_rate_vs_adjudicated": 0.625,
+  "unmatched_rate_vs_nlp": 0.9949018608208005,
   "join_interpretation": "partial_adjudicated_overlap",
   "severity": "warning"
 }

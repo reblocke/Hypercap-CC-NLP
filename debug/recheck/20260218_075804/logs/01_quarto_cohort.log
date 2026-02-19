@@ -1,0 +1,94 @@
+QUARTO_PYTHON="/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/.venv/bin/python" quarto render "MIMICIV_hypercap_EXT_cohort.qmd" --to pdf --output-dir "artifacts/reports/20260218_075804"
+
+Starting hypercap-cc-nlp kernel...Done
+
+Executing 'MIMICIV_hypercap_EXT_cohort.quarto_ipynb'
+  Cell 1/47: 'mimiciv-hypercap-ext-cohort-cell-001'....Done
+  Cell 2/47: 'mimiciv-hypercap-ext-cohort-cell-002'....Done
+  Cell 3/47: 'mimiciv-hypercap-ext-cohort-cell-003'....Done
+  Cell 4/47: 'mimiciv-hypercap-ext-cohort-cell-004'....Done
+  Cell 5/47: 'mimiciv-hypercap-ext-cohort-cell-005'....Done
+  Cell 6/47: 'mimiciv-hypercap-ext-cohort-cell-006'....Done
+  Cell 7/47: 'mimiciv-hypercap-ext-cohort-cell-007'....Done
+  Cell 8/47: 'mimiciv-hypercap-ext-cohort-cell-008'....Done
+  Cell 9/47: 'mimiciv-hypercap-ext-cohort-cell-009'....Done
+  Cell 10/47: 'mimiciv-hypercap-ext-cohort-cell-010'....Done
+  Cell 11/47: 'mimiciv-hypercap-ext-cohort-cell-011'....Done
+  Cell 12/47: 'mimiciv-hypercap-ext-cohort-cell-012'....Done
+  Cell 13/47: 'mimiciv-hypercap-ext-cohort-cell-013'....Done
+  Cell 14/47: 'mimiciv-hypercap-ext-cohort-cell-014'....Done
+  Cell 15/47: 'mimiciv-hypercap-ext-cohort-cell-015'....Done
+  Cell 16/47: 'mimiciv-hypercap-ext-cohort-cell-016'....Done
+  Cell 17/47: 'mimiciv-hypercap-ext-cohort-cell-017'....Done
+  Cell 18/47: 'mimiciv-hypercap-ext-cohort-cell-018'....Done
+  Cell 19/47: 'mimiciv-hypercap-ext-cohort-cell-019'....Done
+  Cell 20/47: 'mimiciv-hypercap-ext-cohort-cell-020'....Done
+  Cell 21/47: 'mimiciv-hypercap-ext-cohort-cell-021'....Done
+  Cell 22/47: 'mimiciv-hypercap-ext-cohort-cell-021b'...Done
+  Cell 23/47: 'mimiciv-hypercap-ext-cohort-cell-022'....Done
+  Cell 24/47: 'mimiciv-hypercap-ext-cohort-cell-023'....Done
+  Cell 25/47: 'mimiciv-hypercap-ext-cohort-cell-024'....Done
+  Cell 26/47: 'mimiciv-hypercap-ext-cohort-cell-025'....Done
+  Cell 27/47: 'mimiciv-hypercap-ext-cohort-cell-026'....Done
+  Cell 28/47: 'mimiciv-hypercap-ext-cohort-cell-027'....Done
+  Cell 29/47: 'mimiciv-hypercap-ext-cohort-cell-028'....Done
+  Cell 30/47: 'mimiciv-hypercap-ext-cohort-cell-029'....Done
+  Cell 31/47: 'mimiciv-hypercap-ext-cohort-cell-030'....Done
+  Cell 32/47: 'mimiciv-hypercap-ext-cohort-cell-031'....Done
+  Cell 33/47: 'mimiciv-hypercap-ext-cohort-cell-032'....Done
+  Cell 34/47: 'mimiciv-hypercap-ext-cohort-cell-033'....Done
+  Cell 35/47: 'mimiciv-hypercap-ext-cohort-cell-034'....Done
+  Cell 36/47: 'mimiciv-hypercap-ext-cohort-cell-035'....Done
+  Cell 37/47: 'mimiciv-hypercap-ext-cohort-cell-036'....Done
+  Cell 38/47: 'mimiciv-hypercap-ext-cohort-cell-037'....Done
+  Cell 39/47: 'mimiciv-hypercap-ext-cohort-cell-038'....Done
+  Cell 40/47: 'mimiciv-hypercap-ext-cohort-cell-039'....Done
+  Cell 41/47: 'mimiciv-hypercap-ext-cohort-cell-040'....Done
+  Cell 42/47: 'mimiciv-hypercap-ext-cohort-cell-041'....Done
+  Cell 43/47: 'mimiciv-hypercap-ext-cohort-cell-042'....Done
+  Cell 44/47: 'mimiciv-hypercap-ext-cohort-cell-043'....Done
+  Cell 45/47: 'mimiciv-hypercap-ext-cohort-cell-044'....Done
+  Cell 46/47: 'mimiciv-hypercap-ext-cohort-cell-045'....Done
+  Cell 47/47: 'mimiciv-hypercap-ext-cohort-cell-046'....Done
+
+pandoc 
+  to: latex
+  output-file: MIMICIV_hypercap_EXT_cohort.tex
+  standalone: true
+  pdf-engine: lualatex
+  variables:
+    graphics: true
+    tables: true
+  default-image-extension: pdf
+  toc: true
+  number-sections: true
+  
+metadata
+  documentclass: scrartcl
+  classoption:
+    - DIV=11
+    - numbers=noendperiod
+  papersize: letter
+  header-includes:
+    - \KOMAoption{captions}{tableheading}
+  block-headings: true
+  title: MIMICIV_hypercap_EXT_cohort
+  jupyter: hypercap-cc-nlp
+  
+
+Rendering PDF
+running lualatex - 1
+  This is LuaHBTeX, Version 1.22.0 (TeX Live 2025) 
+   restricted system commands enabled.
+  
+running lualatex - 2
+  This is LuaHBTeX, Version 1.22.0 (TeX Live 2025) 
+   restricted system commands enabled.
+  
+running lualatex - 3
+  This is LuaHBTeX, Version 1.22.0 (TeX Live 2025) 
+   restricted system commands enabled.
+  
+
+Output created: artifacts/reports/20260218_075804/MIMICIV_hypercap_EXT_cohort.pdf
+

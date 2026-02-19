@@ -1,12 +1,12 @@
 {
-  "run_id": "rater_20260217_081152",
-  "generated_utc": "2026-02-17T15:11:52.129123+00:00",
+  "run_id": "rater_20260218_163002",
+  "generated_utc": "2026-02-18T23:30:02.330747+00:00",
   "work_dir": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP",
   "python_version": "3.11.10 (main, Oct 16 2024, 08:56:36) [Clang 18.1.8 ]",
   "uv_version": "uv 0.9.28 (Homebrew 2026-01-29)",
   "git": {
     "branch": "main",
-    "commit": "83bc46373cb697f4d9ab97b1600516878a2ad527",
+    "commit": "f811b90f97184a45c7126384aa3e18269146c8f5",
     "dirty": true
   },
   "package_versions": {
@@ -48,13 +48,13 @@
       "subject_id"
     ],
     "r3_rows": 160,
-    "nlp_rows": 27975,
-    "matched_rows": 150,
-    "unmatched_adjudicated_rows": 10,
-    "unmatched_nlp_rows": 27825,
-    "matched_rate_vs_adjudicated": 0.9375,
-    "unmatched_rate_vs_adjudicated": 0.0625,
-    "unmatched_rate_vs_nlp": 0.9946380697050938,
+    "nlp_rows": 11769,
+    "matched_rows": 60,
+    "unmatched_adjudicated_rows": 100,
+    "unmatched_nlp_rows": 11709,
+    "matched_rate_vs_adjudicated": 0.375,
+    "unmatched_rate_vs_adjudicated": 0.625,
+    "unmatched_rate_vs_nlp": 0.9949018608208005,
     "join_interpretation": "partial_adjudicated_overlap",
     "severity": "warning"
   },

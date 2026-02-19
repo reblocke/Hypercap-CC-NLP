@@ -1,0 +1,53 @@
+QUARTO_PYTHON="/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/.venv/bin/python" quarto render "Rater Agreement Analysis.qmd" --to pdf --output-dir "artifacts/reports/20260218_075804"
+
+Starting hypercap-cc-nlp kernel...Done
+
+Executing 'Rater Agreement Analysis.quarto_ipynb'
+  Cell 1/6: 'rater-agreement-analysis-cell-001'....Done
+  Cell 2/6: 'rater-agreement-analysis-cell-002'....Done
+  Cell 3/6: 'rater-agreement-analysis-cell-003'....Done
+  Cell 4/6: 'rater-agreement-analysis-cell-004'....Done
+  Cell 5/6: 'rater-agreement-analysis-cell-004b'...Done
+  Cell 6/6: 'rater-agreement-analysis-cell-005'....Done
+
+pandoc 
+  to: latex
+  output-file: Rater-Agreement-Analysis.tex
+  standalone: true
+  pdf-engine: lualatex
+  variables:
+    graphics: true
+    tables: true
+  default-image-extension: pdf
+  toc: true
+  number-sections: true
+  
+metadata
+  documentclass: scrartcl
+  classoption:
+    - DIV=11
+    - numbers=noendperiod
+  papersize: letter
+  header-includes:
+    - \KOMAoption{captions}{tableheading}
+  block-headings: true
+  title: Rater Agreement Analysis
+  jupyter: hypercap-cc-nlp
+  
+
+Rendering PDF
+running lualatex - 1
+  This is LuaHBTeX, Version 1.22.0 (TeX Live 2025) 
+   restricted system commands enabled.
+  
+running lualatex - 2
+  This is LuaHBTeX, Version 1.22.0 (TeX Live 2025) 
+   restricted system commands enabled.
+  
+running lualatex - 3
+  This is LuaHBTeX, Version 1.22.0 (TeX Live 2025) 
+   restricted system commands enabled.
+  
+
+Output created: artifacts/reports/20260218_075804/Rater-Agreement-Analysis.pdf
+

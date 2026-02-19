@@ -121,7 +121,7 @@ ls -l ~/.config/gcloud/application_default_credentials.json
 # Purpose: Set up project paths, environment variables, and BigQuery client connections for reproducible execution.
 
 # --- Imports & environment
-import os, re, json, math, textwrap, sys
+import os, re, json, math, textwrap, sys, hashlib
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -243,6 +243,7 @@ def load_blood_gas_itemid_manifest(path: Path) -> dict[str, Any]:
 
     lab_pco2 = _coerce_itemid_list(lab.get("pco2_itemids", []), key_name="lab.pco2_itemids")
     lab_ph = _coerce_itemid_list(lab.get("ph_itemids", []), key_name="lab.ph_itemids")
+    lab_hco3 = _coerce_itemid_list(lab.get("hco3_itemids", []), key_name="lab.hco3_itemids")
     lab_spec = _coerce_itemid_list(
         lab.get("specimen_type_itemids", []),
         key_name="lab.specimen_type_itemids",
@@ -251,6 +252,8 @@ def load_blood_gas_itemid_manifest(path: Path) -> dict[str, Any]:
         raise ValueError("Blood-gas manifest requires at least one lab.pco2_itemids value.")
     if not lab_ph:
         raise ValueError("Blood-gas manifest requires at least one lab.ph_itemids value.")
+    if not lab_hco3:
+        raise ValueError("Blood-gas manifest requires at least one lab.hco3_itemids value.")
     if not lab_spec:
         raise ValueError(
             "Blood-gas manifest requires at least one lab.specimen_type_itemids value."
@@ -263,6 +266,7 @@ def load_blood_gas_itemid_manifest(path: Path) -> dict[str, Any]:
 
     icu_pco2 = _coerce_itemid_list(icu.get("pco2_itemids", []), key_name="icu.pco2_itemids")
     icu_ph = _coerce_itemid_list(icu.get("ph_itemids", []), key_name="icu.ph_itemids")
+    icu_hco3 = _coerce_itemid_list(icu.get("hco3_itemids", []), key_name="icu.hco3_itemids")
     icu_spec = _coerce_itemid_list(
         icu.get("specimen_type_itemids", []),
         key_name="icu.specimen_type_itemids",
@@ -280,12 +284,14 @@ def load_blood_gas_itemid_manifest(path: Path) -> dict[str, Any]:
         "lab": {
             "pco2_itemids": lab_pco2,
             "ph_itemids": lab_ph,
+            "hco3_itemids": lab_hco3,
             "specimen_type_itemids": lab_spec,
             "blood_fluid_terms": blood_fluid_terms,
         },
         "icu": {
             "pco2_itemids": icu_pco2,
             "ph_itemids": icu_ph,
+            "hco3_itemids": icu_hco3,
             "specimen_type_itemids": icu_spec,
             "allow_pattern_fallback": allow_pattern_fallback,
         },
@@ -298,19 +304,23 @@ def load_blood_gas_itemid_manifest(path: Path) -> dict[str, Any]:
 BLOOD_GAS_MANIFEST = load_blood_gas_itemid_manifest(BLOOD_GAS_SPEC_PATH)
 LAB_PCO2_ITEMIDS = BLOOD_GAS_MANIFEST["lab"]["pco2_itemids"]
 LAB_PH_ITEMIDS = BLOOD_GAS_MANIFEST["lab"]["ph_itemids"]
+LAB_HCO3_ITEMIDS = BLOOD_GAS_MANIFEST["lab"]["hco3_itemids"]
 LAB_SPECIMEN_TYPE_ITEMIDS = BLOOD_GAS_MANIFEST["lab"]["specimen_type_itemids"]
 LAB_BLOOD_FLUID_TERMS = BLOOD_GAS_MANIFEST["lab"]["blood_fluid_terms"]
 ICU_PCO2_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["pco2_itemids"]
 ICU_PH_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["ph_itemids"]
+ICU_HCO3_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["hco3_itemids"]
 ICU_SPECIMEN_TYPE_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["specimen_type_itemids"]
 ICU_ALLOW_PATTERN_FALLBACK = bool(BLOOD_GAS_MANIFEST["icu"]["allow_pattern_fallback"])
 ICU_LABEL_DENY_TOKENS = BLOOD_GAS_MANIFEST["denylist"]["label_tokens"]
 
 LAB_PCO2_SQL_ARRAY = _sql_int_array(LAB_PCO2_ITEMIDS)
 LAB_PH_SQL_ARRAY = _sql_int_array(LAB_PH_ITEMIDS)
+LAB_HCO3_SQL_ARRAY = _sql_int_array(LAB_HCO3_ITEMIDS)
 LAB_SPECIMEN_SQL_ARRAY = _sql_int_array(LAB_SPECIMEN_TYPE_ITEMIDS)
 ICU_PCO2_SQL_ARRAY = _sql_int_array(ICU_PCO2_ITEMIDS)
 ICU_PH_SQL_ARRAY = _sql_int_array(ICU_PH_ITEMIDS)
+ICU_HCO3_SQL_ARRAY = _sql_int_array(ICU_HCO3_ITEMIDS)
 ICU_SPECIMEN_SQL_ARRAY = _sql_int_array(ICU_SPECIMEN_TYPE_ITEMIDS)
 LAB_BLOOD_FLUID_SQL_LIST = ", ".join(f"'{term}'" for term in LAB_BLOOD_FLUID_TERMS)
 ICU_LABEL_DENY_REGEX = (
@@ -3629,6 +3639,31 @@ if "poc_other_quarantined_hypercap_threshold" in df.columns:
         .sum()
     )
     print("POC OTHER quarantined hadm count:", poc_other_quarantine_n)
+    poc_other_threshold_leak_n = int(
+        (
+            pd.to_numeric(df["poc_other_quarantined_hypercap_threshold"], errors="coerce")
+            .fillna(0)
+            .astype(int)
+            .eq(1)
+            & pd.to_numeric(df["other_hypercap_threshold"], errors="coerce")
+            .fillna(0)
+            .astype(int)
+            .eq(1)
+        ).sum()
+    )
+    if poc_other_threshold_leak_n > 0:
+        raise ValueError(
+            "Detected quarantined POC-other leakage into other_hypercap_threshold: "
+            f"{poc_other_threshold_leak_n} rows."
+        )
+
+if "first_other_src" in df.columns:
+    first_other_poc_n = int(df["first_other_src"].astype("string").str.upper().eq("POC").sum())
+    if first_other_poc_n > 0:
+        raise ValueError(
+            "first_other_src includes POC rows after LAB-only OTHER quarantine policy: "
+            f"{first_other_poc_n} rows."
+        )
 
 # Harmonize NIH race/ethnicity into a collapsed reporting label at cohort-build time.
 RACE_NIH_MAP = {
@@ -4665,6 +4700,7 @@ cat_cbc = re.compile(r"hematology|cbc", re.I)
 manifest_lab_itemid_sets: dict[str, set[int]] = {
     "gas_pco2": set(LAB_PCO2_ITEMIDS),
     "gas_ph": set(LAB_PH_ITEMIDS),
+    "gas_hco3": set(LAB_HCO3_ITEMIDS),
     "gas_specimen": set(LAB_SPECIMEN_TYPE_ITEMIDS),
 }
 manifest_missing_rows: list[dict[str, Any]] = []
@@ -4963,6 +4999,73 @@ else:
     ed_df["first_hco3"] = pd.NA
     ed_df["first_lactate"] = pd.NA
 
+# Prioritize LAB blood-gas bicarbonate aligned to pCO2 anchor panel, then fallback
+# to nearest LAB bicarbonate around first_gas_time when same-panel value is missing.
+if "first_hco3_source" not in ed_df.columns:
+    ed_df["first_hco3_source"] = "missing"
+
+panel_hco3_present = pd.to_numeric(ed_df.get("first_hco3"), errors="coerce").notna()
+ed_df.loc[panel_hco3_present, "first_hco3_source"] = "lab_panel_same_specimen"
+
+if hco3_ids and "first_gas_time" in ed_df.columns:
+    lab_hco3_long = labs.loc[
+        labs["itemid"].isin(hco3_ids),
+        ["ed_stay_id", "charttime", "valuenum"],
+    ].copy()
+    if not lab_hco3_long.empty:
+        lab_hco3_long["valuenum"] = pd.to_numeric(lab_hco3_long["valuenum"], errors="coerce")
+        lab_hco3_long = lab_hco3_long.loc[lab_hco3_long["valuenum"].notna()].copy()
+        anchor_missing = ed_df.loc[
+            pd.to_numeric(ed_df["first_hco3"], errors="coerce").isna()
+            & pd.to_datetime(ed_df["first_gas_time"], errors="coerce").notna(),
+            ["ed_stay_id", "first_gas_time"],
+        ].copy()
+        if not anchor_missing.empty and not lab_hco3_long.empty:
+            fallback_candidates = anchor_missing.merge(
+                lab_hco3_long,
+                on="ed_stay_id",
+                how="left",
+            )
+            fallback_candidates["first_gas_time"] = pd.to_datetime(
+                fallback_candidates["first_gas_time"], errors="coerce"
+            )
+            fallback_candidates["charttime"] = pd.to_datetime(
+                fallback_candidates["charttime"], errors="coerce"
+            )
+            fallback_candidates["dt_abs_hours"] = (
+                (fallback_candidates["charttime"] - fallback_candidates["first_gas_time"])
+                .dt.total_seconds()
+                .abs()
+                / 3600.0
+            )
+            fallback_candidates = fallback_candidates.loc[
+                fallback_candidates["dt_abs_hours"].notna()
+            ].copy()
+            if not fallback_candidates.empty:
+                nearest_hco3 = (
+                    fallback_candidates.sort_values(
+                        ["ed_stay_id", "dt_abs_hours", "charttime"],
+                        kind="stable",
+                    )
+                    .groupby("ed_stay_id", as_index=False)
+                    .first()
+                    .rename(columns={"valuenum": "first_hco3_fallback_lab"})
+                )
+                ed_df = ed_df.merge(
+                    nearest_hco3[["ed_stay_id", "first_hco3_fallback_lab"]],
+                    on="ed_stay_id",
+                    how="left",
+                )
+                fill_mask = (
+                    pd.to_numeric(ed_df["first_hco3"], errors="coerce").isna()
+                    & pd.to_numeric(ed_df["first_hco3_fallback_lab"], errors="coerce").notna()
+                )
+                ed_df.loc[fill_mask, "first_hco3"] = ed_df.loc[
+                    fill_mask, "first_hco3_fallback_lab"
+                ]
+                ed_df.loc[fill_mask, "first_hco3_source"] = "lab_nearest_to_anchor"
+                ed_df = ed_df.drop(columns=["first_hco3_fallback_lab"])
+
 ed_df["first_gas_anchor_has_pco2"] = ed_df["first_gas_time"].notna()
 ed_df["first_gas_anchor_source_validated"] = False
 
@@ -5254,6 +5357,7 @@ icu_matches = {}
 manifest_icu_itemids = {
     "pco2": set(ICU_PCO2_ITEMIDS),
     "ph": set(ICU_PH_ITEMIDS),
+    "hco3": set(ICU_HCO3_ITEMIDS),
     "specimen": set(ICU_SPECIMEN_TYPE_ITEMIDS),
 }
 for name, pat in icu_patterns.items():
@@ -5263,7 +5367,8 @@ for name, pat in icu_patterns.items():
     else:
         dfm = pd.DataFrame(columns=["itemid", "label", "category"])
 
-    if dfm.empty and ICU_ALLOW_PATTERN_FALLBACK:
+    allow_fallback_for_analyte = ICU_ALLOW_PATTERN_FALLBACK and name != "hco3"
+    if dfm.empty and allow_fallback_for_analyte:
         dfm = ditems[ditems["label"].str.contains(pat, na=False)].copy()
         if name in {"pco2", "ph", "specimen"}:
             dfm = dfm[dfm["category"].str.contains(icu_cat, na=False)]
@@ -5480,6 +5585,36 @@ if "flag_any_gas_hypercapnia_poc" in ed_df.columns:
 
 if len(poc_flags) > 0:
     ed_df = ed_df.merge(poc_flags, on="ed_stay_id", how="left")
+
+# Optional fallback for first_hco3 from ICU POC only when explicit manifest itemids are provided.
+if ICU_HCO3_ITEMIDS and len(panel_poc) > 0:
+    poc_hco3_candidates = panel_poc.loc[
+        panel_poc["dt_hours"].between(0, 24, inclusive="both")
+    ].copy()
+    poc_hco3_candidates["hco3"] = pd.to_numeric(poc_hco3_candidates["hco3"], errors="coerce")
+    poc_hco3_candidates = poc_hco3_candidates.loc[poc_hco3_candidates["hco3"].notna()].copy()
+    if not poc_hco3_candidates.empty:
+        first_poc_hco3 = (
+            poc_hco3_candidates.sort_values(
+                ["ed_stay_id", "dt_hours", "panel_time"],
+                kind="stable",
+            )
+            .groupby("ed_stay_id", as_index=False)
+            .first()[["ed_stay_id", "hco3"]]
+            .rename(columns={"hco3": "first_hco3_poc_fallback"})
+        )
+        ed_df = ed_df.merge(first_poc_hco3, on="ed_stay_id", how="left")
+        hco3_missing_mask = pd.to_numeric(ed_df.get("first_hco3"), errors="coerce").isna()
+        hco3_fill_mask = hco3_missing_mask & pd.to_numeric(
+            ed_df["first_hco3_poc_fallback"], errors="coerce"
+        ).notna()
+        ed_df.loc[hco3_fill_mask, "first_hco3"] = ed_df.loc[
+            hco3_fill_mask, "first_hco3_poc_fallback"
+        ]
+        if "first_hco3_source" not in ed_df.columns:
+            ed_df["first_hco3_source"] = "missing"
+        ed_df.loc[hco3_fill_mask, "first_hco3_source"] = "poc_explicit_itemid_fallback"
+        ed_df = ed_df.drop(columns=["first_hco3_poc_fallback"])
 
 # incremental yield
 base = ed_df.get("flag_any_gas_hypercapnia", pd.Series(0, index=ed_df.index)).fillna(0).astype(int)
@@ -6522,8 +6657,24 @@ def _atomic_write_excel(df_obj, target_path: Path) -> None:
     df_obj.to_excel(tmp_path, index=False)
     os.replace(tmp_path, target_path)
 
+
+def _sha256_file(path: Path) -> str:
+    hasher = hashlib.sha256()
+    with path.open("rb") as file_handle:
+        for chunk in iter(lambda: file_handle.read(1024 * 1024), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
 _atomic_write_excel(final_cc, dated_out_path)
 _atomic_write_excel(final_cc, canonical_out_path)
+canonical_sha256 = _sha256_file(canonical_out_path)
+dated_sha256 = _sha256_file(dated_out_path)
+print(
+    "EXPORT_SHAPE cohort",
+    f"rows={len(final_cc):,}",
+    f"cols={final_cc.shape[1]:,}",
+    f"canonical_sha256={canonical_sha256}",
+)
 
 cohort_manifest = collect_run_manifest(
     WORK_DIR,
@@ -6532,7 +6683,9 @@ cohort_manifest = collect_run_manifest(
 cohort_manifest["stage"] = "cohort"
 cohort_manifest["outputs"] = {
     "canonical_output_path": str(canonical_out_path),
+    "canonical_output_sha256": canonical_sha256,
     "dated_output_path": str(dated_out_path),
+    "dated_output_sha256": dated_sha256,
     "gas_source_audit_path": str(gas_source_audit_path) if "gas_source_audit_path" in globals() else None,
     "gas_source_overlap_summary_path": str(gas_overlap_summary_path) if "gas_overlap_summary_path" in globals() else None,
     "anthropometrics_coverage_audit_path": str(anthro_coverage_audit_path) if "anthro_coverage_audit_path" in globals() else None,

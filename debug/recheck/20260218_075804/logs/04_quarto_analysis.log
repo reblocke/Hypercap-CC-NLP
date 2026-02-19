@@ -1,0 +1,65 @@
+QUARTO_PYTHON="/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/.venv/bin/python" quarto render "Hypercap CC NLP Analysis.qmd" --to pdf --output-dir "artifacts/reports/20260218_075804"
+
+Starting hypercap-cc-nlp kernel...Done
+
+Executing 'Hypercap CC NLP Analysis.quarto_ipynb'
+  Cell 1/18: 'hypercap-cc-nlp-analysis-cell-001'....Done
+  Cell 2/18: 'hypercap-cc-nlp-analysis-cell-002'....Done
+  Cell 3/18: 'hypercap-cc-nlp-analysis-cell-003'....Done
+  Cell 4/18: 'hypercap-cc-nlp-analysis-cell-003b'...Done
+  Cell 5/18: 'hypercap-cc-nlp-analysis-cell-003c'...Done
+  Cell 6/18: 'hypercap-cc-nlp-analysis-cell-004'....Done
+  Cell 7/18: 'hypercap-cc-nlp-analysis-cell-005'....Done
+  Cell 8/18: 'hypercap-cc-nlp-analysis-cell-006'....Done
+  Cell 9/18: 'hypercap-cc-nlp-analysis-cell-007'....Done
+  Cell 10/18: 'hypercap-cc-nlp-analysis-cell-008'....Done
+  Cell 11/18: 'hypercap-cc-nlp-analysis-cell-009'....Done
+  Cell 12/18: 'hypercap-cc-nlp-analysis-cell-009b'...Done
+  Cell 13/18: 'hypercap-cc-nlp-analysis-cell-009c'...Done
+  Cell 14/18: 'hypercap-cc-nlp-analysis-cell-009d'...Done
+  Cell 15/18: 'hypercap-cc-nlp-analysis-cell-010'....Done
+  Cell 16/18: 'hypercap-cc-nlp-analysis-cell-011'....Done
+  Cell 17/18: 'hypercap-cc-nlp-analysis-cell-012'....Done
+  Cell 18/18: 'hypercap-cc-nlp-analysis-cell-013'....Done
+
+pandoc 
+  to: latex
+  output-file: Hypercap-CC-NLP-Analysis.tex
+  standalone: true
+  pdf-engine: lualatex
+  variables:
+    graphics: true
+    tables: true
+  default-image-extension: pdf
+  toc: true
+  number-sections: true
+  
+metadata
+  documentclass: scrartcl
+  classoption:
+    - DIV=11
+    - numbers=noendperiod
+  papersize: letter
+  header-includes:
+    - \KOMAoption{captions}{tableheading}
+  block-headings: true
+  title: Hypercap CC NLP Analysis
+  jupyter: hypercap-cc-nlp
+  
+
+Rendering PDF
+running lualatex - 1
+  This is LuaHBTeX, Version 1.22.0 (TeX Live 2025) 
+   restricted system commands enabled.
+  
+running lualatex - 2
+  This is LuaHBTeX, Version 1.22.0 (TeX Live 2025) 
+   restricted system commands enabled.
+  
+running lualatex - 3
+  This is LuaHBTeX, Version 1.22.0 (TeX Live 2025) 
+   restricted system commands enabled.
+  
+
+Output created: artifacts/reports/20260218_075804/Hypercap-CC-NLP-Analysis.pdf
+

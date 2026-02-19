@@ -74,8 +74,8 @@
       "141": 777,
       "101": 747,
       "103": 745,
-      "102": 739,
       "0.6": 739,
+      "102": 739,
       "104": 720
     },
     "unresolved_label_top": {
@@ -95,10 +95,10 @@
       "Chloride, Whole Blood | Blood": 200,
       "Calculated Bicarbonate, Whole Blood | Blood": 97
     },
-    "baseline_other_rate": 0.548049457171136,
-    "baseline_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-16 gas_source_audit.json",
-    "relative_reduction_vs_baseline": 0.33859231819821334,
-    "relative_reduction_target": 0.1
+    "baseline_other_rate": 0.3624841209802886,
+    "baseline_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-17 gas_source_audit.json",
+    "relative_reduction_vs_baseline": 0.0,
+    "relative_reduction_target": 0.0
   },
   "gas_source_overlap_summary": [
     {
@@ -165,6 +165,16 @@
       "category": "Blood Gas",
       "fluid": "Blood",
       "cohort_row_count": 523650,
+      "manifest_version": "2026-02-17"
+    },
+    {
+      "source_branch": "LAB",
+      "analyte": "gas_hco3",
+      "itemid": 50803,
+      "label": "Calculated Bicarbonate, Whole Blood",
+      "category": "Blood Gas",
+      "fluid": "Blood",
+      "cohort_row_count": 5417,
       "manifest_version": "2026-02-17"
     },
     {
@@ -1544,15 +1554,15 @@
     }
   ],
   "ed_vitals_audit_paths": {
-    "distribution_summary": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-17 ed_vitals_distribution_summary.csv",
-    "extreme_examples": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-17 ed_vitals_extreme_examples.csv",
-    "model_delta": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-17 ed_vitals_model_delta.csv"
+    "distribution_summary": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-18 ed_vitals_distribution_summary.csv",
+    "extreme_examples": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-18 ed_vitals_extreme_examples.csv",
+    "model_delta": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-18 ed_vitals_model_delta.csv"
   },
   "blood_gas_audit_paths": {
-    "manifest_itemids": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-17 blood_gas_itemid_manifest_audit.csv",
-    "pco2_source_distribution": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-17 pco2_source_distribution_audit.csv",
-    "other_route_quarantine": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-17 other_route_quarantine_audit.csv",
-    "first_gas_anchor": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-17 first_gas_anchor_audit.csv"
+    "manifest_itemids": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-18 blood_gas_itemid_manifest_audit.csv",
+    "pco2_source_distribution": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-18 pco2_source_distribution_audit.csv",
+    "other_route_quarantine": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-18 other_route_quarantine_audit.csv",
+    "first_gas_anchor": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-18 first_gas_anchor_audit.csv"
   },
   "qa_status": "pass",
   "qa_warnings": [],
@@ -1560,7 +1570,7 @@
     "omr_pre_window_empty_post_window_fallback_used"
   ],
   "run_metadata": {
-    "run_utc": "2026-02-17T20:50:11.043733+00:00",
+    "run_utc": "2026-02-18T23:21:02.180404+00:00",
     "work_project": "mimic-hypercapnia",
     "physionet_project": "physionet-data",
     "datasets": {

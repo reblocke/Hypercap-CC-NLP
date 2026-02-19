@@ -77,3 +77,22 @@ def test_analysis_notebook_contains_requested_outputs() -> None:
     assert "Ascertainment_Overlap_UpSet.png" in analysis_text
     assert "from upsetplot import UpSet, from_indicators" in analysis_text
     assert "def select_preferred_vital_column(" in analysis_text
+
+
+def test_classifier_notebook_contains_spell_mode_comparison_and_audit() -> None:
+    classifier_text = (WORK_DIR / "Hypercap CC NLP Classifier.qmd").read_text()
+    assert "CC_SPELL_CORRECTION_MODE" in classifier_text
+    assert "SPELL_CORRECTION_MODES" in classifier_text
+    assert "choose_spell_mode(" in classifier_text
+    assert "classifier_spell_mode_comparison.csv" in classifier_text
+    assert "classifier_spellfix_log.csv" in classifier_text
+    assert "integrity_violation_total" in classifier_text
+
+
+def test_cohort_notebook_requires_manifest_hco3_and_poc_fallback_guard() -> None:
+    cohort_text = (WORK_DIR / "MIMICIV_hypercap_EXT_cohort.qmd").read_text()
+    assert "lab.get(\"hco3_itemids\"" in cohort_text
+    assert "icu.get(\"hco3_itemids\"" in cohort_text
+    assert "CO2_other" not in cohort_text or "LAB-only OTHER quarantine policy" in cohort_text
+    assert "first_hco3_source" in cohort_text
+    assert "poc_explicit_itemid_fallback" in cohort_text

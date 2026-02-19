@@ -1,0 +1,3 @@
+Title:           Hypercap CC NLP Classifier
+Pages:           80
+Page size:       612 x 792 pts (letter)

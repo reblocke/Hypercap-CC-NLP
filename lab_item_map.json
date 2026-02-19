@@ -29,12 +29,6 @@
         "label": "Calculated Bicarbonate, Whole Blood",
         "category": "Blood Gas",
         "n": 5417
-      },
-      {
-        "itemid": 52039,
-        "label": "Calculated Bicarbonate",
-        "category": "Blood Gas",
-        "n": 0
       }
     ]
   },

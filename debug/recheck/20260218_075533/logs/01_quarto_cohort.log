@@ -1,0 +1,313 @@
+QUARTO_PYTHON="/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/.venv/bin/python" quarto render "MIMICIV_hypercap_EXT_cohort.qmd" --to pdf --output-dir "artifacts/reports/20260218_075533"
+
+Starting hypercap-cc-nlp kernel...Done
+
+Executing 'MIMICIV_hypercap_EXT_cohort.quarto_ipynb'
+  Cell 1/47: 'mimiciv-hypercap-ext-cohort-cell-001'....Done
+  Cell 2/47: 'mimiciv-hypercap-ext-cohort-cell-002'....Done
+  Cell 3/47: 'mimiciv-hypercap-ext-cohort-cell-003'....Done
+  Cell 4/47: 'mimiciv-hypercap-ext-cohort-cell-004'....Done
+  Cell 5/47: 'mimiciv-hypercap-ext-cohort-cell-005'....Done
+  Cell 6/47: 'mimiciv-hypercap-ext-cohort-cell-006'....Done
+  Cell 7/47: 'mimiciv-hypercap-ext-cohort-cell-007'....Done
+  Cell 8/47: 'mimiciv-hypercap-ext-cohort-cell-008'....Done
+  Cell 9/47: 'mimiciv-hypercap-ext-cohort-cell-009'....Done
+  Cell 10/47: 'mimiciv-hypercap-ext-cohort-cell-010'....Done
+  Cell 11/47: 'mimiciv-hypercap-ext-cohort-cell-011'....Done
+  Cell 12/47: 'mimiciv-hypercap-ext-cohort-cell-012'....Done
+  Cell 13/47: 'mimiciv-hypercap-ext-cohort-cell-013'....Done
+  Cell 14/47: 'mimiciv-hypercap-ext-cohort-cell-014'....Done
+  Cell 15/47: 'mimiciv-hypercap-ext-cohort-cell-015'....Done
+  Cell 16/47: 'mimiciv-hypercap-ext-cohort-cell-016'....Done
+  Cell 17/47: 'mimiciv-hypercap-ext-cohort-cell-017'....Done
+  Cell 18/47: 'mimiciv-hypercap-ext-cohort-cell-018'....Done
+  Cell 19/47: 'mimiciv-hypercap-ext-cohort-cell-019'....Done
+  Cell 20/47: 'mimiciv-hypercap-ext-cohort-cell-020'....Done
+  Cell 21/47: 'mimiciv-hypercap-ext-cohort-cell-021'....Done
+  Cell 22/47: 'mimiciv-hypercap-ext-cohort-cell-021b'...Done
+  Cell 23/47: 'mimiciv-hypercap-ext-cohort-cell-022'....Done
+  Cell 24/47: 'mimiciv-hypercap-ext-cohort-cell-023'....Done
+  Cell 25/47: 'mimiciv-hypercap-ext-cohort-cell-024'....Done
+  Cell 26/47: 'mimiciv-hypercap-ext-cohort-cell-025'....Done
+  Cell 27/47: 'mimiciv-hypercap-ext-cohort-cell-026'....Done
+  Cell 28/47: 'mimiciv-hypercap-ext-cohort-cell-027'....Done
+  Cell 29/47: 'mimiciv-hypercap-ext-cohort-cell-028'....Done
+  Cell 30/47: 'mimiciv-hypercap-ext-cohort-cell-029'....Done
+  Cell 31/47: 'mimiciv-hypercap-ext-cohort-cell-030'....Done
+  Cell 32/47: 'mimiciv-hypercap-ext-cohort-cell-031'....Done
+  Cell 33/47: 'mimiciv-hypercap-ext-cohort-cell-032'....Done
+  Cell 34/47: 'mimiciv-hypercap-ext-cohort-cell-033'....Done
+  Cell 35/47: 'mimiciv-hypercap-ext-cohort-cell-034'....
+
+An error occurred while executing the following cell:
+------------------
+# Purpose: Reconstruct gas panels and normalize units before ED-stay level aggregation.
+
+# ABG vs VBG classification (specimen- and label-based inference)
+gas_source_mode = os.getenv("COHORT_GAS_SOURCE_INFERENCE_MODE", "metadata_only").strip().lower()
+panel, gas_source_audit = infer_panel_gas_source_metadata(
+    panel,
+    labs,
+    labitems,
+    specimen_source_itemids=itemid_sets.get("gas_specimen", []),
+    pco2_itemids=itemid_sets.get("gas_pco2", []),
+    mode=gas_source_mode,
+)
+
+fail_on_all_other_source = os.getenv("COHORT_FAIL_ON_ALL_OTHER_SOURCE", "1").strip() == "1"
+if gas_source_audit["all_other_or_unknown"]:
+    if fail_on_all_other_source:
+        assert_gas_source_coverage(
+            gas_source_audit,
+            fail_on_all_other_source=fail_on_all_other_source,
+        )
+    else:
+        print(
+            "WARNING: Gas source attribution collapsed to other/unknown; "
+            "continuing because COHORT_FAIL_ON_ALL_OTHER_SOURCE=0."
+        )
+
+warn_other_rate_threshold = float(os.getenv("COHORT_WARN_OTHER_RATE", "0.50"))
+fail_other_rate_raw = os.getenv("COHORT_FAIL_OTHER_RATE", "").strip()
+fail_other_rate_threshold = float(fail_other_rate_raw) if fail_other_rate_raw else None
+other_source_rate = float(gas_source_audit.get("source_rates", {}).get("other", 0.0))
+
+if fail_other_rate_threshold is not None and other_source_rate >= fail_other_rate_threshold:
+    raise ValueError(
+        "gas_source_other_rate exceeded configured fail threshold "
+        f"{fail_other_rate_threshold:.3f}: {other_source_rate:.4f}."
+    )
+if other_source_rate >= warn_other_rate_threshold:
+    print(
+        "WARNING: gas_source_other_rate exceeded warning threshold "
+        f"{warn_other_rate_threshold:.3f}: {other_source_rate:.4f}."
+    )
+
+print("Gas source rates:", gas_source_audit.get("source_rates", {}))
+print("Gas source inference tiers:", gas_source_audit.get("tier_rates", {}))
+print("Unresolved specimen IDs:", gas_source_audit.get("unresolved_specimen_id_count", 0))
+
+prior_runs_dir = DATA_DIR / "prior runs"
+prior_runs_dir.mkdir(parents=True, exist_ok=True)
+out_date = datetime.now().strftime("%Y-%m-%d")
+gas_source_audit_path = prior_runs_dir / f"{out_date} gas_source_audit.json"
+
+reduction_target = float(os.getenv("COHORT_OTHER_RELATIVE_REDUCTION_MIN", "0.10"))
+baseline_other_rate = None
+baseline_audit_path = None
+for candidate in sorted(prior_runs_dir.glob("* gas_source_audit.json"), reverse=True):
+    if candidate.resolve() == gas_source_audit_path.resolve():
+        continue
+    try:
+        baseline_payload = json.loads(candidate.read_text())
+        baseline_other_rate = float(
+            baseline_payload.get("source_rates", {}).get("other", float("nan"))
+        )
+        if math.isnan(baseline_other_rate):
+            baseline_other_rate = None
+            continue
+        baseline_audit_path = candidate
+        break
+    except Exception:
+        continue
+
+if baseline_other_rate is None or baseline_other_rate <= 0:
+    gas_source_audit["baseline_other_rate"] = None
+    gas_source_audit["baseline_path"] = str(baseline_audit_path) if baseline_audit_path else None
+    gas_source_audit["relative_reduction_vs_baseline"] = None
+    print(
+        "WARNING: Unable to evaluate gas_source_other_rate relative reduction "
+        "because no valid baseline gas_source_audit was found."
+    )
+else:
+    relative_reduction = (baseline_other_rate - other_source_rate) / baseline_other_rate
+    gas_source_audit["baseline_other_rate"] = baseline_other_rate
+    gas_source_audit["baseline_path"] = str(baseline_audit_path)
+    gas_source_audit["relative_reduction_vs_baseline"] = relative_reduction
+    gas_source_audit["relative_reduction_target"] = reduction_target
+    print(
+        "Gas source OTHER relative reduction vs baseline: "
+        f"{relative_reduction:.4f} (target={reduction_target:.4f})"
+    )
+    if relative_reduction < reduction_target:
+        message = (
+            "gas_source_other_rate relative reduction target not met: "
+            f"baseline={baseline_other_rate:.4f}, current={other_source_rate:.4f}, "
+            f"reduction={relative_reduction:.4f}, target={reduction_target:.4f}."
+        )
+        contract_mode = os.getenv("PIPELINE_CONTRACT_MODE", "fail").strip().lower()
+        if contract_mode == "fail":
+            raise ValueError(message)
+        print(f"WARNING: {message}")
+
+gas_source_audit_path.write_text(json.dumps(gas_source_audit, indent=2))
+print("Wrote:", gas_source_audit_path)
+
+panel["pco2_source_branch"] = "LAB"
+panel_anchor = panel.loc[pd.to_numeric(panel["pco2"], errors="coerce").notna()].copy()
+if panel_anchor.empty:
+    first_anchor = ed_df[["ed_stay_id"]].drop_duplicates().copy()
+    first_anchor["first_gas_time"] = pd.NaT
+    first_anchor["first_pco2"] = pd.NA
+    first_anchor["first_ph"] = pd.NA
+    first_anchor["first_hco3"] = pd.NA
+    first_anchor["first_lactate"] = pd.NA
+    first_anchor["first_gas_anchor_has_pco2"] = False
+    first_anchor["first_gas_anchor_source_validated"] = False
+else:
+    first_anchor = (
+        panel_anchor.sort_values(["ed_stay_id", "panel_time"])
+        .groupby("ed_stay_id", as_index=False)
+        .first()
+    )
+    first_anchor = first_anchor.rename(
+        columns={
+            "panel_time": "first_gas_time",
+            "pco2": "first_pco2",
+            "ph": "first_ph",
+            "hco3": "first_hco3",
+            "lactate": "first_lactate",
+        }
+    )
+    first_anchor["first_gas_anchor_has_pco2"] = True
+    first_anchor["first_gas_anchor_source_validated"] = first_anchor["source"].isin(
+        {"arterial", "venous", "other"}
+    )
+
+anchor_merge_cols = [
+    "ed_stay_id",
+    "first_gas_time",
+    "first_pco2",
+    "first_ph",
+    "first_hco3",
+    "first_lactate",
+    "first_gas_anchor_has_pco2",
+    "first_gas_anchor_source_validated",
+]
+drop_existing_anchor_cols = [col for col in anchor_merge_cols if col in ed_df.columns and col != "ed_stay_id"]
+if drop_existing_anchor_cols:
+    ed_df = ed_df.drop(columns=drop_existing_anchor_cols)
+ed_df = ed_df.merge(first_anchor[anchor_merge_cols], on="ed_stay_id", how="left")
+ed_df["first_gas_anchor_has_pco2"] = (
+    ed_df["first_gas_anchor_has_pco2"].fillna(False).astype(bool)
+)
+ed_df["first_gas_anchor_source_validated"] = (
+    ed_df["first_gas_anchor_source_validated"].fillna(False).astype(bool)
+)
+
+# flags
+panel["flag_abg_hypercapnia"] = ((panel["source"]=="arterial") & (panel["pco2"]>=45)).astype(int)
+panel["flag_vbg_hypercapnia"] = ((panel["source"]=="venous") & (panel["pco2"]>=50)).astype(int)
+panel["flag_other_hypercapnia"] = ((panel["source"]=="other") & (panel["pco2"]>=50)).astype(int)
+panel["flag_any_gas_hypercapnia"] = ((panel["flag_abg_hypercapnia"]==1) | (panel["flag_vbg_hypercapnia"]==1) | (panel["flag_other_hypercapnia"]==1)).astype(int)
+
+# per-stay unknown source rate
+if len(panel) > 0:
+    unk_rate = (
+        panel.assign(_unk=(panel["source"].fillna("other") == "other"))
+             .groupby("ed_stay_id", as_index=False)["_unk"].mean()
+             .rename(columns={"_unk": "gas_source_other_rate"})
+    )
+else:
+    unk_rate = panel[["ed_stay_id"]].drop_duplicates()
+    unk_rate["gas_source_other_rate"] = 1.0
+
+if len(panel) > 0:
+    panel_for_diag = panel.copy()
+    panel_for_diag["source_inference_tier"] = (
+        panel_for_diag["source_inference_tier"]
+        .astype("string")
+        .fillna("fallback_other")
+    )
+    panel_for_diag["source_hint_conflict"] = (
+        panel_for_diag["source_hint_conflict"]
+        .fillna(False)
+        .astype(bool)
+    )
+    panel_for_diag["source"] = (
+        panel_for_diag["source"].astype("string").fillna("other").str.lower()
+    )
+    panel_for_diag["source_resolved"] = panel_for_diag["source"].isin(
+        {"arterial", "venous"}
+    )
+    panel_for_diag["tier_specimen_text"] = panel_for_diag["source_inference_tier"].eq(
+        "specimen_text"
+    )
+    panel_for_diag["tier_label_fluid"] = panel_for_diag["source_inference_tier"].eq(
+        "label_fluid"
+    )
+    panel_for_diag["tier_cluster_inheritance"] = panel_for_diag[
+        "source_inference_tier"
+    ].eq("cluster_inheritance")
+    panel_for_diag["tier_panel_cooccurrence"] = panel_for_diag[
+        "source_inference_tier"
+    ].eq("panel_cooccurrence")
+    panel_for_diag["tier_fallback_other"] = panel_for_diag["source_inference_tier"].eq(
+        "fallback_other"
+    )
+
+    def _tier_mode(series: pd.Series) -> str:
+        mode_values = series.mode(dropna=True)
+        if mode_values.empty:
+            return "fallback_other"
+        return str(mode_values.iloc[0])
+
+    source_diag = (
+        panel_for_diag.groupby("ed_stay_id", as_index=False)
+        .agg(
+            gas_source_inference_primary_tier=("source_inference_tier", _tier_mode),
+            gas_source_hint_conflict_rate=("source_hint_conflict", "mean"),
+            gas_source_resolved_rate=("source_resolved", "mean"),
+            gas_source_tier_specimen_text_rate=("tier_specimen_text", "mean"),
+            gas_source_tier_label_fluid_rate=("tier_label_fluid", "mean"),
+            gas_source_tier_cluster_inheritance_rate=("tier_cluster_inheritance", "mean"),
+            gas_source_tier_panel_cooccurrence_rate=("tier_panel_cooccurrence", "mean"),
+            gas_source_tier_fallback_other_rate=("tier_fallback_other", "mean"),
+        )
+        .copy()
+    )
+else:
+    source_diag = ed_df[["ed_stay_id"]].drop_duplicates().copy()
+    source_diag["gas_source_inference_primary_tier"] = "fallback_other"
+    source_diag["gas_source_hint_conflict_rate"] = 0.0
+    source_diag["gas_source_resolved_rate"] = 0.0
+    source_diag["gas_source_tier_specimen_text_rate"] = 0.0
+    source_diag["gas_source_tier_label_fluid_rate"] = 0.0
+    source_diag["gas_source_tier_cluster_inheritance_rate"] = 0.0
+    source_diag["gas_source_tier_panel_cooccurrence_rate"] = 0.0
+    source_diag["gas_source_tier_fallback_other_rate"] = 1.0
+
+# collapse to ED stay flags
+flags = panel.groupby("ed_stay_id", as_index=False).agg(
+    flag_abg_hypercapnia=("flag_abg_hypercapnia","max"),
+    flag_vbg_hypercapnia=("flag_vbg_hypercapnia","max"),
+    flag_other_hypercapnia=("flag_other_hypercapnia","max"),
+    flag_any_gas_hypercapnia=("flag_any_gas_hypercapnia","max"),
+)
+
+ed_df = ed_df.merge(flags, on="ed_stay_id", how="left")
+ed_df = ed_df.merge(unk_rate, on="ed_stay_id", how="left")
+ed_df = ed_df.merge(source_diag, on="ed_stay_id", how="left")
+ed_df["gas_source_other_rate"] = ed_df["gas_source_other_rate"].fillna(1.0)
+------------------
+
+----- stdout -----
+Gas source rates: {'other': 0.3624841209802886, 'arterial': 0.3613137123363926, 'venous': 0.2762021666833188}
+Gas source inference tiers: {'fallback_other': 0.3624841209802886, 'specimen_text': 0.3382480980859537, 'cluster_inheritance': 0.2992677809337577}
+Unresolved specimen IDs: 25379
+Gas source OTHER relative reduction vs baseline: 0.0000 (target=0.1000)
+------------------
+
+[31m---------------------------------------------------------------------------[39m
+[31mValueError[39m                                Traceback (most recent call last)
+[36mCell[39m[36m [39m[32mIn[35][39m[32m, line 97[39m
+[32m     95[39m         contract_mode = os.getenv([33m"[39m[33mPIPELINE_CONTRACT_MODE[39m[33m"[39m, [33m"[39m[33mfail[39m[33m"[39m).strip().lower()
+[32m     96[39m         [38;5;28;01mif[39;00m contract_mode == [33m"[39m[33mfail[39m[33m"[39m:
+[32m---> [39m[32m97[39m             [38;5;28;01mraise[39;00m [38;5;167;01mValueError[39;00m(message)
+[32m     98[39m         [38;5;28mprint[39m([33mf[39m[33m"[39m[33mWARNING: [39m[38;5;132;01m{[39;00mmessage[38;5;132;01m}[39;00m[33m"[39m)
+[32m    100[39m gas_source_audit_path.write_text(json.dumps(gas_source_audit, indent=[32m2[39m))
+
+[31mValueError[39m: gas_source_other_rate relative reduction target not met: baseline=0.3625, current=0.3625, reduction=0.0000, target=0.1000.
+
+WARN: Error encountered when rendering files
+make: *** [quarto-cohort] Error 1

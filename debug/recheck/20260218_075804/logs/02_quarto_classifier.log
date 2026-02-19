@@ -1,0 +1,60 @@
+QUARTO_PYTHON="/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/.venv/bin/python" quarto render "Hypercap CC NLP Classifier.qmd" --to pdf --output-dir "artifacts/reports/20260218_075804"
+
+Starting hypercap-cc-nlp kernel...Done
+
+Executing 'Hypercap CC NLP Classifier.quarto_ipynb'
+  Cell 1/13: 'hypercap-cc-nlp-classifier-cell-001'....Done
+  Cell 2/13: 'hypercap-cc-nlp-classifier-cell-002'....Done
+  Cell 3/13: 'hypercap-cc-nlp-classifier-cell-002b'...Done
+  Cell 4/13: 'hypercap-cc-nlp-classifier-cell-002c'...Done
+  Cell 5/13: 'hypercap-cc-nlp-classifier-cell-003'....Done
+  Cell 6/13: 'hypercap-cc-nlp-classifier-cell-004'....Done
+  Cell 7/13: 'hypercap-cc-nlp-classifier-cell-005'....Done
+  Cell 8/13: 'hypercap-cc-nlp-classifier-cell-006'....Done
+  Cell 9/13: 'hypercap-cc-nlp-classifier-cell-007'....Done
+  Cell 10/13: 'hypercap-cc-nlp-classifier-cell-008'....Done
+  Cell 11/13: 'hypercap-cc-nlp-classifier-cell-009'....Done
+  Cell 12/13: 'hypercap-cc-nlp-classifier-cell-009b'...Done
+  Cell 13/13: 'hypercap-cc-nlp-classifier-cell-010'....Done
+
+pandoc 
+  to: latex
+  output-file: Hypercap-CC-NLP-Classifier.tex
+  standalone: true
+  pdf-engine: lualatex
+  variables:
+    graphics: true
+    tables: true
+  default-image-extension: pdf
+  toc: true
+  number-sections: true
+  
+metadata
+  documentclass: scrartcl
+  classoption:
+    - DIV=11
+    - numbers=noendperiod
+  papersize: letter
+  header-includes:
+    - \KOMAoption{captions}{tableheading}
+  block-headings: true
+  title: Hypercap CC NLP Classifier
+  jupyter: hypercap-cc-nlp
+  
+
+Rendering PDF
+running lualatex - 1
+  This is LuaHBTeX, Version 1.22.0 (TeX Live 2025) 
+   restricted system commands enabled.
+  
+running lualatex - 2
+  This is LuaHBTeX, Version 1.22.0 (TeX Live 2025) 
+   restricted system commands enabled.
+  
+running lualatex - 3
+  This is LuaHBTeX, Version 1.22.0 (TeX Live 2025) 
+   restricted system commands enabled.
+  
+
+Output created: artifacts/reports/20260218_075804/Hypercap-CC-NLP-Classifier.pdf
+

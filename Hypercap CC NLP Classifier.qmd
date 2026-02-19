@@ -233,7 +233,34 @@ CC_CANDIDATES: tuple[str, ...] = (
 )
 
 PROTECT = ("n/v", "n/v/d", "s/p", "w/", "w/o", "h/o", "c/o", "h/a", "f/c", "c/p", "lab", "labs")
-SPELL_PROTECT_TOKENS = {"lab", "labs", "abnl", "abnormal"}
+SPELL_PROTECT_TOKENS = {
+    "lab",
+    "labs",
+    "abnl",
+    "abnormal",
+    "fall",
+    "falls",
+    "head",
+    "foot",
+    "feet",
+    "left",
+    "right",
+    "cold",
+    "copd",
+    "cord",
+    "hyperglycemia",
+    "hyperkalemia",
+    "hypoglycemia",
+    "hypokalemia",
+}
+STRICT_SPELL_MIN_TOKEN_LEN = 5
+STRICT_SPELL_MAX_EDIT_DISTANCE = 1
+POLARITY_GUARD_PREFIX_PAIRS: tuple[tuple[str, str], ...] = (
+    ("hyper", "hypo"),
+    ("hypo", "hyper"),
+)
+LATERALITY_GUARD_TOKENS = {"left", "right"}
+SPELL_CORRECTION_MODES = {"disabled", "strict", "auto"}
 MISSING_RE = re.compile(
     r"^(?:n/?a|na|none|unknown|unk|no chief complaint|no complaint|not applicable|not available)$",
     re.I,
@@ -726,16 +753,59 @@ def _clean_tok(token: str) -> str:
     return _PUNCT_EDGE.sub("", token)
 
 
-def _spell(token: str) -> str:
+def _violates_spell_guard(original: str, candidate: str) -> bool:
+    original_norm = original.strip().lower()
+    candidate_norm = candidate.strip().lower()
+    if not original_norm or not candidate_norm:
+        return False
+    if original_norm == candidate_norm:
+        return False
+    for prefix_from, prefix_to in POLARITY_GUARD_PREFIX_PAIRS:
+        if original_norm.startswith(prefix_from) and candidate_norm.startswith(prefix_to):
+            return True
+    if original_norm in LATERALITY_GUARD_TOKENS or candidate_norm in LATERALITY_GUARD_TOKENS:
+        return original_norm != candidate_norm
+    return False
+
+
+def _spell_candidate(token: str, *, max_edit_distance: int) -> tuple[str, int | None]:
+    candidates = sym.lookup(token, Verbosity.CLOSEST, max_edit_distance=max_edit_distance)
+    if not candidates:
+        return token, None
+    match = candidates[0]
+    return match.term, int(match.distance)
+
+
+def _spell_strict(token: str) -> tuple[str, dict[str, Any] | None]:
     normalized = token.strip().lower()
-    if normalized in SPELL_PROTECT_TOKENS:
-        return token
-    if len(token) <= 3 and token not in SAFE_SHORT_TOKENS:
-        return token
-    if not token.isalpha():
-        return token
-    candidates = sym.lookup(token, Verbosity.CLOSEST, max_edit_distance=2)
-    return candidates[0].term if candidates else token
+    if (
+        not normalized
+        or normalized in SPELL_PROTECT_TOKENS
+        or not normalized.isalpha()
+        or len(normalized) < STRICT_SPELL_MIN_TOKEN_LEN
+    ):
+        return token, None
+    corrected, distance = _spell_candidate(normalized, max_edit_distance=STRICT_SPELL_MAX_EDIT_DISTANCE)
+    corrected_norm = corrected.strip().lower()
+    if (
+        distance is None
+        or corrected_norm == normalized
+        or _violates_spell_guard(normalized, corrected_norm)
+    ):
+        return token, None
+    return corrected_norm, {
+        "orig": normalized,
+        "corrected": corrected_norm,
+        "edit_distance": int(distance),
+    }
+
+
+def _spell_token(token: str, *, mode: str) -> tuple[str, dict[str, Any] | None]:
+    if mode == "disabled":
+        return token, None
+    if mode == "strict":
+        return _spell_strict(token)
+    raise ValueError(f"Unsupported spell correction mode: {mode}")
 
 
 def _expand_tokens(segment: str) -> str:
@@ -866,12 +936,25 @@ def segment_cc(raw: str, keep_negated: bool = False) -> list[str]:
     return segments
 
 
-def normalize_cc(raw: str, keep_negated: bool = False) -> list[str]:
-    """Normalize a raw chief complaint to deduplicated, lemmatized segments."""
+def normalize_cc(
+    raw: str,
+    keep_negated: bool = False,
+    *,
+    spell_mode: str = "strict",
+) -> tuple[list[str], list[dict[str, Any]]]:
+    """Normalize a raw chief complaint to deduplicated, lemmatized segments.
+
+    Returns:
+        tuple(list[str], list[dict]): normalized segments and accepted spell-fix log rows.
+    """
+    if spell_mode not in SPELL_CORRECTION_MODES.difference({"auto"}):
+        raise ValueError(f"spell_mode must be one of {{'disabled','strict'}}, got {spell_mode!r}")
+
     output: list[str] = []
     seen: set[str] = set()
+    spellfix_log: list[dict[str, Any]] = []
 
-    for segment in segment_cc(raw, keep_negated=keep_negated):
+    for segment_index, segment in enumerate(segment_cc(raw, keep_negated=keep_negated)):
         if segment in SEG_OVR:
             segment = SEG_OVR[segment]
         else:
@@ -885,14 +968,152 @@ def normalize_cc(raw: str, keep_negated: bool = False) -> list[str]:
 
         segment = _expand_duration(segment)
         segment = _expand_tokens(segment)
-        corrected_tokens = [_spell(token) for token in segment.split()]
+        corrected_tokens: list[str] = []
+        for token_index, token in enumerate(segment.split()):
+            corrected, correction = _spell_token(token, mode=spell_mode)
+            corrected_tokens.append(corrected)
+            if correction is not None:
+                spellfix_log.append(
+                    {
+                        "segment_idx": int(segment_index),
+                        "token_idx": int(token_index),
+                        "segment_raw": segment,
+                        **correction,
+                    }
+                )
         segment = _lemmatize_segment(" ".join(corrected_tokens))
 
         if segment and segment not in seen:
             output.append(segment)
             seen.add(segment)
 
-    return output
+    return output, spellfix_log
+
+
+def _run_normalization_mode(
+    cc_series: pd.Series,
+    *,
+    spell_mode: str,
+    keep_negated: bool = False,
+) -> dict[str, Any]:
+    cleaned_segments: list[list[str]] = []
+    spellfix_logs: list[list[dict[str, Any]]] = []
+    for raw in cc_series.tolist():
+        if pd.isna(raw):
+            cleaned_segments.append([])
+            spellfix_logs.append([])
+            continue
+        segments, fix_log = normalize_cc(
+            str(raw),
+            keep_negated=keep_negated,
+            spell_mode=spell_mode,
+        )
+        cleaned_segments.append(segments)
+        spellfix_logs.append(fix_log)
+
+    cleaned_canon = [canonize_cc_segments(segments) for segments in cleaned_segments]
+    cleaned_str = ["; ".join(segments) for segments in cleaned_segments]
+    cleaned_canon_str = ["; ".join(segments) for segments in cleaned_canon]
+    spellfix_n = [len(entries) for entries in spellfix_logs]
+    spellfix_any = [count > 0 for count in spellfix_n]
+    spellfix_log_json = [json.dumps(entries, ensure_ascii=False) for entries in spellfix_logs]
+
+    normalized_frame = pd.DataFrame(
+        {
+            "cc_cleaned": cleaned_segments,
+            "cc_cleaned_str": cleaned_str,
+            "cc_cleaned_canon": cleaned_canon,
+            "cc_cleaned_canon_str": cleaned_canon_str,
+            "cc_spellfix_n": pd.Series(spellfix_n, dtype="Int64"),
+            "cc_spellfix_any": pd.Series(spellfix_any, dtype="boolean"),
+            "cc_spellfix_log": spellfix_log_json,
+        },
+        index=cc_series.index,
+    )
+    return {
+        "mode": spell_mode,
+        "frame": normalized_frame,
+        "spellfix_count_total": int(sum(spellfix_n)),
+    }
+
+
+def _score_normalization_integrity(
+    raw_series: pd.Series,
+    cleaned_str_series: pd.Series,
+) -> dict[str, int]:
+    raw = raw_series.fillna("").astype("string").str.lower()
+    clean = cleaned_str_series.fillna("").astype("string").str.lower()
+    rules = {
+        "fall_to_small": raw.str.contains(r"\bfall\b", na=False)
+        & ~raw.str.contains(r"\bsmall\b", na=False)
+        & clean.str.contains(r"\bsmall\b", na=False),
+        "head_to_heart": raw.str.contains(r"\bhead\b", na=False)
+        & ~raw.str.contains(r"\bheart\b", na=False)
+        & clean.str.contains(r"\bheart\b", na=False),
+        "foot_to_post": raw.str.contains(r"\bfoot\b", na=False)
+        & ~raw.str.contains(r"\bpost\b", na=False)
+        & ~raw.str.contains(r"\bs/p\b|\bstatus\s+post\b|\bsp\b", na=False)
+        & clean.str.contains(r"\bpost\b", na=False),
+        "copd_or_cold_to_covid": raw.str.contains(r"\b(?:copd|cold|cord)\b", na=False)
+        & ~raw.str.contains(r"\bcovid\b", na=False)
+        & clean.str.contains(r"\bcovid\b", na=False),
+        "hyperglycemia_to_hypoglycemia": raw.str.contains(r"\bhyperglycemia\b", na=False)
+        & clean.str.contains(r"\bhypoglycemia\b", na=False),
+        "hyperkalemia_to_hypokalemia": raw.str.contains(r"\bhyperkalemia\b", na=False)
+        & clean.str.contains(r"\bhypokalemia\b", na=False),
+    }
+    return {name: int(mask.sum()) for name, mask in rules.items()}
+
+
+def choose_spell_mode(
+    df: pd.DataFrame,
+    *,
+    cc_source_column: str,
+    requested_mode: str = "auto",
+) -> tuple[dict[str, Any], pd.DataFrame]:
+    """Run disabled/strict normalization and select a mode by integrity score."""
+    requested = requested_mode.strip().lower()
+    if requested not in SPELL_CORRECTION_MODES:
+        raise ValueError(
+            f"CC_SPELL_CORRECTION_MODE must be one of {sorted(SPELL_CORRECTION_MODES)}"
+        )
+    cc_series = df[cc_source_column].astype("string")
+    modes_to_run = ["disabled", "strict"] if requested == "auto" else [requested]
+
+    mode_runs: dict[str, dict[str, Any]] = {}
+    mode_scores: list[dict[str, Any]] = []
+    for mode in modes_to_run:
+        run_payload = _run_normalization_mode(cc_series, spell_mode=mode)
+        mode_runs[mode] = run_payload
+        integrity_counts = _score_normalization_integrity(
+            cc_series,
+            run_payload["frame"]["cc_cleaned_str"],
+        )
+        integrity_violation_total = int(sum(integrity_counts.values()))
+        nonempty_segment_rows = int(
+            run_payload["frame"]["cc_cleaned"].map(lambda values: len(values) > 0).sum()
+        )
+        mode_scores.append(
+            {
+                "mode": mode,
+                "integrity_violation_total": integrity_violation_total,
+                "nonempty_segment_rows": nonempty_segment_rows,
+                "spellfix_count_total": int(run_payload["spellfix_count_total"]),
+                **integrity_counts,
+            }
+        )
+
+    score_df = pd.DataFrame(mode_scores).sort_values(
+        ["integrity_violation_total", "nonempty_segment_rows", "spellfix_count_total", "mode"],
+        ascending=[True, False, False, True],
+        kind="stable",
+    )
+    selected_mode = str(score_df.iloc[0]["mode"])
+    selected_payload = mode_runs[selected_mode]
+    selected_payload["selection_scores"] = score_df.reset_index(drop=True)
+    selected_payload["requested_mode"] = requested
+    selected_payload["selected_mode"] = selected_mode
+    return selected_payload, score_df.reset_index(drop=True)
 
 
 def canonize_cc_segments(segments: list[str]) -> list[str]:
@@ -2604,15 +2825,24 @@ if {"flag_abg_hypercapnia", "hypercap_by_abg"}.issubset(df.columns):
             f"({authoritative_abg_positive}) but hypercap_by_abg is all zero."
         )
 df = annotate_cc_missingness(df, cc_column=cc_column)
-df["cc_cleaned"] = df["cc_text_for_nlp"].apply(normalize_cc)
-df["cc_cleaned_str"] = df["cc_cleaned"].str.join("; ")
-df["cc_cleaned_canon"] = df["cc_cleaned"].apply(canonize_cc_segments)
-df["cc_cleaned_canon_str"] = df["cc_cleaned_canon"].str.join("; ")
+requested_spell_mode = os.getenv("CC_SPELL_CORRECTION_MODE", "auto").strip().lower()
+normalization_payload, spell_mode_scores = choose_spell_mode(
+    df,
+    cc_source_column="cc_text_for_nlp",
+    requested_mode=requested_spell_mode,
+)
+df = pd.concat([df, normalization_payload["frame"]], axis=1)
+df["cc_spell_mode_selected"] = normalization_payload["selected_mode"]
 
 cc_missing_audit = build_cc_missing_audit(df, cc_column=cc_column)
 print("CC missingness audit:")
 print(cc_missing_audit.to_string(index=False))
 print("Pseudo-missing rows:", int(df["cc_pseudomissing_flag"].fillna(False).sum()))
+print("Spell correction mode requested:", normalization_payload["requested_mode"])
+print("Spell correction mode selected:", normalization_payload["selected_mode"])
+print("Spell mode integrity comparison:")
+print(spell_mode_scores.to_string(index=False))
+print("Total accepted spell fixes:", int(df["cc_spellfix_n"].fillna(0).sum()))
 
 print("Text normalization complete.")
 print(
@@ -2622,6 +2852,8 @@ print(
             "cc_missing_flag",
             "cc_missing_reason",
             "cc_pseudomissing_flag",
+            "cc_spell_mode_selected",
+            "cc_spellfix_n",
             "cc_cleaned",
             "cc_cleaned_str",
         ]
@@ -2793,6 +3025,35 @@ if abnormal_loss_rows > 0:
         f"{abnormal_loss_rows} rows still contain 'abnormal loss' segments."
     )
 
+normalization_integrity = _score_normalization_integrity(
+    df_out["cc_text_for_nlp"].astype("string"),
+    df_out["cc_cleaned_str"].astype("string"),
+)
+integrity_violation_total = int(sum(normalization_integrity.values()))
+print("\nNormalization integrity checks:")
+for metric_name, metric_value in normalization_integrity.items():
+    print(f"{metric_name}: {metric_value:,}")
+print(f"integrity_violation_total: {integrity_violation_total:,}")
+if integrity_violation_total > 0:
+    raise AssertionError(
+        "Detected clinically invalid normalization substitutions: "
+        f"{normalization_integrity}"
+    )
+
+if {"ed_intime", "cc_cleaned_str"}.issubset(df_out.columns):
+    years = pd.to_datetime(df_out["ed_intime"], errors="coerce").dt.year
+    covid_artifact_rows = int(
+        (
+            years.between(2011, 2019, inclusive="both")
+            & df_out["cc_cleaned_str"].astype("string").str.contains(r"\bcovid\b", case=False, na=False)
+        ).sum()
+    )
+    print(f"covid_token_rows_2011_2019: {covid_artifact_rows:,}")
+    if covid_artifact_rows > 0:
+        raise AssertionError(
+            "Found covid tokens in pre-2020 visits after normalization/classification."
+        )
+
 parsed_segment_preds = df_out["segment_preds"].fillna("[]").map(
     lambda value: json.loads(value) if isinstance(value, str) else []
 )
@@ -2863,9 +3124,24 @@ canonical_output_path, archive_output_path = resolve_classifier_output_paths(WOR
 archive_output_path.parent.mkdir(parents=True, exist_ok=True)
 write_archive_xlsx = os.getenv("WRITE_ARCHIVE_XLSX_EXPORTS", "0").strip() == "1"
 
+def _sha256_file(path: Path) -> str:
+    hasher = hashlib.sha256()
+    with path.open("rb") as file_handle:
+        for chunk in iter(lambda: file_handle.read(1024 * 1024), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
 df_out.to_excel(canonical_output_path, index=False, sheet_name=cfg.output_sheet_name)
 if write_archive_xlsx:
     df_out.to_excel(archive_output_path, index=False, sheet_name=cfg.output_sheet_name)
+canonical_output_sha256 = _sha256_file(canonical_output_path)
+archive_output_sha256 = _sha256_file(archive_output_path) if write_archive_xlsx else None
+print(
+    "EXPORT_SHAPE classifier",
+    f"rows={len(df_out):,}",
+    f"cols={df_out.shape[1]:,}",
+    f"canonical_sha256={canonical_output_sha256}",
+)
 
 run_date = pd.Timestamp.now().strftime("%Y-%m-%d")
 cc_missing_audit_path = archive_output_path.parent / f"{run_date} classifier_cc_missing_audit.csv"
@@ -2880,6 +3156,18 @@ if not phrase_audit_rfv.empty:
     phrase_detail["audit_type"] = "rfv_distribution"
     phrase_audit = pd.concat([phrase_audit, phrase_detail], ignore_index=True, sort=False)
 phrase_audit.to_csv(phrase_audit_path, index=False)
+
+spell_mode_comparison_path = archive_output_path.parent / f"{run_date} classifier_spell_mode_comparison.csv"
+spell_mode_scores.to_csv(spell_mode_comparison_path, index=False)
+spellfix_log_rows = (
+    df_out.loc[
+        df_out["cc_spellfix_any"].fillna(False).astype(bool),
+        ["hadm_id", "subject_id", "cc_text_for_nlp", "cc_cleaned_str", "cc_spell_mode_selected", "cc_spellfix_log"],
+    ]
+    .copy()
+)
+spellfix_log_path = archive_output_path.parent / f"{run_date} classifier_spellfix_log.csv"
+spellfix_log_rows.to_csv(spellfix_log_path, index=False)
 
 hypercap_flags_audit = pd.DataFrame(
     [
@@ -2942,9 +3230,13 @@ stage_manifest["model_metadata"] = {
 stage_manifest["resource_verification"] = resource_report
 stage_manifest["outputs"] = {
     "canonical_output_path": str(canonical_output_path),
+    "canonical_output_sha256": canonical_output_sha256,
     "archive_output_path": str(archive_output_path) if write_archive_xlsx else None,
+    "archive_output_sha256": archive_output_sha256,
     "cc_missing_audit_path": str(cc_missing_audit_path),
     "phrase_audit_path": str(phrase_audit_path),
+    "spell_mode_comparison_path": str(spell_mode_comparison_path),
+    "spellfix_log_path": str(spellfix_log_path),
     "hypercap_flags_audit_path": str(hypercap_flags_audit_path),
     "classifier_contract_report_path": str(contract_report_path),
 }
@@ -2967,6 +3259,8 @@ else:
     print("Skipped archive workbook export (WRITE_ARCHIVE_XLSX_EXPORTS!=1).")
 print(f"Wrote CC missingness audit: {cc_missing_audit_path}")
 print(f"Wrote phrase regression audit: {phrase_audit_path}")
+print(f"Wrote spell-mode comparison audit: {spell_mode_comparison_path}")
+print(f"Wrote spellfix log audit: {spellfix_log_path}")
 print(f"Wrote hypercapnia flags audit: {hypercap_flags_audit_path}")
 print(f"Wrote classifier contract report: {contract_report_path}")
 print(f"Wrote classifier run manifest: {stage_manifest_path}")

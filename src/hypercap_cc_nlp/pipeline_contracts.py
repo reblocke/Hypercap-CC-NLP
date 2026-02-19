@@ -21,6 +21,7 @@ from .workflow_contracts import (
 COHORT_POC_PCO2_MEDIAN_MIN = 45.0
 COHORT_POC_PCO2_MEDIAN_MAX = 80.0
 COHORT_POC_PCO2_FAIL_ENABLED = True
+COHORT_HCO3_WARN_MIN_COVERAGE = 0.20
 COHORT_FIRST_GAS_ANCHOR_TOLERANCE = 0
 COHORT_REQUIRED_AUDIT_SUFFIXES = (
     "blood_gas_itemid_manifest_audit.csv",
@@ -302,8 +303,21 @@ def validate_cohort_contract(
 
     poc_other_pco2_median = None
     poc_other_pco2_count = 0
+    first_other_poc_rows = 0
     if {"first_other_src", "first_other_pco2"}.issubset(df.columns):
         source = df["first_other_src"].astype("string").str.strip().str.upper()
+        first_other_poc_rows = int(source.eq("POC").sum())
+        if first_other_poc_rows > 0:
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": "first_other_src_contains_poc",
+                    "message": (
+                        "first_other_src contains POC rows under LAB-only OTHER policy: "
+                        f"{first_other_poc_rows} rows."
+                    ),
+                }
+            )
         values = pd.to_numeric(df["first_other_pco2"], errors="coerce")
         poc_values = values.loc[source.eq("POC") & values.notna()]
         poc_other_pco2_count = int(poc_values.shape[0])
@@ -388,6 +402,23 @@ def validate_cohort_contract(
                 }
             )
 
+    hco3_coverage_rate = None
+    if "first_hco3" in df.columns:
+        hco3_coverage_rate = float(
+            pd.to_numeric(df["first_hco3"], errors="coerce").notna().mean()
+        )
+        if hco3_coverage_rate < COHORT_HCO3_WARN_MIN_COVERAGE:
+            findings.append(
+                {
+                    "severity": "warning",
+                    "code": "first_hco3_coverage_low",
+                    "message": (
+                        "first_hco3 coverage below warning floor "
+                        f"{COHORT_HCO3_WARN_MIN_COVERAGE:.2f}: {hco3_coverage_rate:.4f}"
+                    ),
+                }
+            )
+
     status = _status_from_findings(findings)
     return {
         "status": status,
@@ -396,8 +427,10 @@ def validate_cohort_contract(
         "gas_source_other_rate_mean": gas_source_other_rate,
         "poc_other_pco2_median": poc_other_pco2_median,
         "poc_other_pco2_count": poc_other_pco2_count,
+        "first_other_poc_rows": first_other_poc_rows,
         "poc_other_quarantine_leak_n": poc_other_quarantine_leak_n,
         "anthro_bmi_coverage_rate": bmi_coverage_rate,
+        "first_hco3_coverage_rate": hco3_coverage_rate,
         "anthro_source_counts": anthro_source_counts,
         "findings": findings,
     }

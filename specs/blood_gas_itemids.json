@@ -7,6 +7,9 @@
     "ph_itemids": [
       50820
     ],
+    "hco3_itemids": [
+      50803
+    ],
     "specimen_type_itemids": [
       52033
     ],
@@ -17,6 +20,7 @@
   "icu": {
     "pco2_itemids": [],
     "ph_itemids": [],
+    "hco3_itemids": [],
     "specimen_type_itemids": [],
     "allow_pattern_fallback": true
   },

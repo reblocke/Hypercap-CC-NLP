@@ -229,6 +229,61 @@ def test_validate_cohort_contract_accepts_poc_other_pco2_median_within_bounds() 
     assert report["poc_other_pco2_count"] == 2
 
 
+def test_validate_cohort_contract_flags_first_other_src_poc_rows() -> None:
+    df = pd.DataFrame(
+        {
+            "hadm_id": [1, 2],
+            "ed_stay_id": [11, 22],
+            "abg_hypercap_threshold": [1, 0],
+            "vbg_hypercap_threshold": [0, 1],
+            "other_hypercap_threshold": [0, 1],
+            "pco2_threshold_any": [1, 1],
+            "gas_source_other_rate": [0.2, 0.2],
+            "gas_source_inference_primary_tier": ["specimen_text", "specimen_text"],
+            "gas_source_hint_conflict_rate": [0.0, 0.0],
+            "gas_source_resolved_rate": [1.0, 1.0],
+            "bmi_closest_pre_ed": [30.0, 32.0],
+            "anthro_source": ["omr", "icu_charted"],
+            "first_other_src": ["POC", "LAB_BG_UNKNOWN"],
+            "first_other_pco2": [55.0, 50.0],
+        }
+    )
+    report = validate_cohort_contract(df)
+    codes = {finding["code"] for finding in report["findings"]}
+    assert report["status"] == "fail"
+    assert "first_other_src_contains_poc" in codes
+
+
+def test_validate_cohort_contract_warns_on_low_first_hco3_coverage() -> None:
+    df = pd.DataFrame(
+        {
+            "hadm_id": [1, 2, 3, 4, 5, 6],
+            "ed_stay_id": [11, 22, 33, 44, 55, 66],
+            "abg_hypercap_threshold": [1, 0, 1, 0, 1, 0],
+            "vbg_hypercap_threshold": [0, 1, 0, 1, 0, 1],
+            "other_hypercap_threshold": [0, 0, 1, 0, 0, 0],
+            "pco2_threshold_any": [1, 1, 1, 1, 1, 1],
+            "gas_source_other_rate": [0.2, 0.2, 0.2, 0.2, 0.2, 0.2],
+            "gas_source_inference_primary_tier": [
+                "specimen_text",
+                "specimen_text",
+                "specimen_text",
+                "specimen_text",
+                "specimen_text",
+                "specimen_text",
+            ],
+            "gas_source_hint_conflict_rate": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            "gas_source_resolved_rate": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            "bmi_closest_pre_ed": [30.0, 32.0, 34.0, 35.0, 31.0, 33.0],
+            "anthro_source": ["omr", "icu_charted", "omr", "icu_charted", "omr", "icu_charted"],
+            "first_hco3": [pd.NA, pd.NA, 24.0, pd.NA, pd.NA, pd.NA],
+        }
+    )
+    report = validate_cohort_contract(df)
+    codes = {finding["code"] for finding in report["findings"]}
+    assert "first_hco3_coverage_low" in codes
+
+
 def test_build_pipeline_contract_report_reads_canonical_outputs(tmp_path: Path) -> None:
     data_dir = tmp_path / DATA_DIRNAME
     data_dir.mkdir(parents=True)
