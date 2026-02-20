@@ -242,6 +242,10 @@ def load_blood_gas_itemid_manifest(path: Path) -> dict[str, Any]:
     denylist = payload["denylist"]
 
     lab_pco2 = _coerce_itemid_list(lab.get("pco2_itemids", []), key_name="lab.pco2_itemids")
+    lab_pco2_excluded = _coerce_itemid_list(
+        lab.get("excluded_pco2_itemids", []),
+        key_name="lab.excluded_pco2_itemids",
+    )
     lab_ph = _coerce_itemid_list(lab.get("ph_itemids", []), key_name="lab.ph_itemids")
     lab_hco3 = _coerce_itemid_list(lab.get("hco3_itemids", []), key_name="lab.hco3_itemids")
     lab_spec = _coerce_itemid_list(
@@ -278,11 +282,52 @@ def load_blood_gas_itemid_manifest(path: Path) -> dict[str, Any]:
         if str(token).strip()
     ]
     allow_pattern_fallback = bool(icu.get("allow_pattern_fallback", True))
+    inclusion_mode = str(icu.get("inclusion_mode", "validated_only")).strip().lower()
+    if inclusion_mode not in {"validated_only", "disabled"}:
+        raise ValueError(
+            "Blood-gas manifest icu.inclusion_mode must be one of "
+            "{'validated_only', 'disabled'}."
+        )
+
+    pco2_qc_payload = icu.get("pco2_qc", {})
+    if pco2_qc_payload is None:
+        pco2_qc_payload = {}
+    if not isinstance(pco2_qc_payload, dict):
+        raise ValueError("Blood-gas manifest icu.pco2_qc must be a JSON object.")
+    qc_allowed_uoms = [
+        str(value).strip().lower()
+        for value in pco2_qc_payload.get("allowed_uoms", ["", "mmhg", "kpa"])
+    ]
+    qc_allowed_uoms = sorted(set(qc_allowed_uoms))
+    if not qc_allowed_uoms:
+        qc_allowed_uoms = ["", "mmhg", "kpa"]
+    qc_label_include = [
+        str(value).strip().lower()
+        for value in pco2_qc_payload.get("label_must_include_tokens", ["pco2"])
+        if str(value).strip()
+    ]
+    qc_label_include = sorted(set(qc_label_include))
+    qc_label_exclude = [
+        str(value).strip().lower()
+        for value in pco2_qc_payload.get(
+            "label_must_exclude_tokens",
+            ["po2", "pao2", "oxygen", "sao2", "spo2", "fio2"],
+        )
+        if str(value).strip()
+    ]
+    qc_label_exclude = sorted(set(qc_label_exclude))
+    qc_median_min = float(pco2_qc_payload.get("median_min", 45.0))
+    qc_median_max = float(pco2_qc_payload.get("median_max", 80.0))
+    if qc_median_min > qc_median_max:
+        raise ValueError(
+            "Blood-gas manifest icu.pco2_qc median_min must be <= median_max."
+        )
 
     manifest = {
         "version": str(payload.get("version", "UNSPECIFIED")),
         "lab": {
             "pco2_itemids": lab_pco2,
+            "excluded_pco2_itemids": lab_pco2_excluded,
             "ph_itemids": lab_ph,
             "hco3_itemids": lab_hco3,
             "specimen_type_itemids": lab_spec,
@@ -294,6 +339,14 @@ def load_blood_gas_itemid_manifest(path: Path) -> dict[str, Any]:
             "hco3_itemids": icu_hco3,
             "specimen_type_itemids": icu_spec,
             "allow_pattern_fallback": allow_pattern_fallback,
+            "inclusion_mode": inclusion_mode,
+            "pco2_qc": {
+                "allowed_uoms": qc_allowed_uoms,
+                "median_min": qc_median_min,
+                "median_max": qc_median_max,
+                "label_must_include_tokens": qc_label_include,
+                "label_must_exclude_tokens": qc_label_exclude,
+            },
         },
         "denylist": {"label_tokens": deny_tokens},
         "path": str(path),
@@ -303,6 +356,16 @@ def load_blood_gas_itemid_manifest(path: Path) -> dict[str, Any]:
 
 BLOOD_GAS_MANIFEST = load_blood_gas_itemid_manifest(BLOOD_GAS_SPEC_PATH)
 LAB_PCO2_ITEMIDS = BLOOD_GAS_MANIFEST["lab"]["pco2_itemids"]
+LAB_EXCLUDED_PCO2_ITEMIDS = BLOOD_GAS_MANIFEST["lab"]["excluded_pco2_itemids"]
+if LAB_EXCLUDED_PCO2_ITEMIDS:
+    LAB_PCO2_ITEMIDS = sorted(
+        set(LAB_PCO2_ITEMIDS).difference(set(LAB_EXCLUDED_PCO2_ITEMIDS))
+    )
+if not LAB_PCO2_ITEMIDS:
+    raise ValueError(
+        "All lab.pco2_itemids were excluded by lab.excluded_pco2_itemids. "
+        "Update specs/blood_gas_itemids.json."
+    )
 LAB_PH_ITEMIDS = BLOOD_GAS_MANIFEST["lab"]["ph_itemids"]
 LAB_HCO3_ITEMIDS = BLOOD_GAS_MANIFEST["lab"]["hco3_itemids"]
 LAB_SPECIMEN_TYPE_ITEMIDS = BLOOD_GAS_MANIFEST["lab"]["specimen_type_itemids"]
@@ -312,7 +375,22 @@ ICU_PH_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["ph_itemids"]
 ICU_HCO3_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["hco3_itemids"]
 ICU_SPECIMEN_TYPE_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["specimen_type_itemids"]
 ICU_ALLOW_PATTERN_FALLBACK = bool(BLOOD_GAS_MANIFEST["icu"]["allow_pattern_fallback"])
+ICU_INCLUSION_MODE = str(BLOOD_GAS_MANIFEST["icu"]["inclusion_mode"]).strip().lower()
+ICU_PCO2_QC = BLOOD_GAS_MANIFEST["icu"]["pco2_qc"]
 ICU_LABEL_DENY_TOKENS = BLOOD_GAS_MANIFEST["denylist"]["label_tokens"]
+ICU_PCO2_QC_ALLOWED_UOMS = {
+    str(value).strip().lower() for value in ICU_PCO2_QC["allowed_uoms"]
+}
+ICU_PCO2_QC_MEDIAN_MIN = float(ICU_PCO2_QC["median_min"])
+ICU_PCO2_QC_MEDIAN_MAX = float(ICU_PCO2_QC["median_max"])
+ICU_PCO2_QC_INCLUDE_TOKENS = [
+    str(value).strip().lower()
+    for value in ICU_PCO2_QC["label_must_include_tokens"]
+]
+ICU_PCO2_QC_EXCLUDE_TOKENS = [
+    str(value).strip().lower()
+    for value in ICU_PCO2_QC["label_must_exclude_tokens"]
+]
 
 LAB_PCO2_SQL_ARRAY = _sql_int_array(LAB_PCO2_ITEMIDS)
 LAB_PH_SQL_ARRAY = _sql_int_array(LAB_PH_ITEMIDS)
@@ -708,6 +786,189 @@ def _resolve_route_hints(values: Sequence[str]) -> tuple[str | None, bool, int]:
     if venous_n > 0:
         return "venous", False, int(len(hints))
     return None, False, int(len(hints))
+
+
+def _classify_specimen_type_text(value: object) -> str | None:
+    text = "" if pd.isna(value) else str(value).strip().lower()
+    if not text:
+        return None
+    if re.search(r"arter|(?:^|\b)art(?:\b|$)", text):
+        return "arterial"
+    if re.search(r"ven|mixed|central", text):
+        return "venous"
+    return None
+
+
+def assign_panel_source_from_specimen(
+    panel_df: pd.DataFrame,
+    labs_df: pd.DataFrame,
+    *,
+    specimen_source_itemids: Sequence[int] | None = None,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Assign gas source using specimen-type rows only (deterministic core policy)."""
+    required_panel = {"ed_stay_id", "specimen_id"}
+    missing_panel = sorted(required_panel.difference(panel_df.columns))
+    if missing_panel:
+        raise KeyError(
+            "assign_panel_source_from_specimen missing panel columns: "
+            f"{missing_panel}"
+        )
+    required_labs = {"ed_stay_id", "specimen_id", "itemid"}
+    missing_labs = sorted(required_labs.difference(labs_df.columns))
+    if missing_labs:
+        raise KeyError(
+            "assign_panel_source_from_specimen missing labs columns: "
+            f"{missing_labs}"
+        )
+
+    key_cols = ["ed_stay_id", "specimen_id"]
+    panel = panel_df.copy()
+    panel["source"] = "other"
+    panel["source_inference_tier"] = "fallback_other"
+    panel["source_hint_conflict"] = False
+    panel["source_hint_count"] = pd.Series(0, index=panel.index, dtype="Int64")
+    panel["source_hint_specimen_text"] = pd.Series(pd.NA, index=panel.index, dtype="string")
+
+    specimen_ids = {
+        int(value) for value in (specimen_source_itemids or []) if pd.notna(value)
+    }
+    if not specimen_ids or "value_text" not in labs_df.columns:
+        diagnostics = summarize_gas_source(panel)
+        diagnostics.update(
+            {
+                "mode": "specimen_only",
+                "resolved_rows": int(panel["source"].isin({"arterial", "venous"}).sum()),
+                "resolved_rate": float(panel["source"].isin({"arterial", "venous"}).mean())
+                if len(panel)
+                else 0.0,
+                "unresolved_specimen_id_count": int(
+                    pd.to_numeric(panel["specimen_id"], errors="coerce").nunique(dropna=True)
+                ),
+                "unresolved_specimen_id_examples": [],
+            }
+        )
+        return panel, diagnostics
+
+    labs = labs_df.copy()
+    labs["itemid"] = pd.to_numeric(labs["itemid"], errors="coerce").astype("Int64")
+    labs["specimen_id"] = pd.to_numeric(labs["specimen_id"], errors="coerce").astype("Int64")
+    labs = labs.loc[labs["itemid"].isin(specimen_ids) & labs["specimen_id"].notna()].copy()
+    if labs.empty:
+        diagnostics = summarize_gas_source(panel)
+        diagnostics.update(
+            {
+                "mode": "specimen_only",
+                "resolved_rows": int(panel["source"].isin({"arterial", "venous"}).sum()),
+                "resolved_rate": float(panel["source"].isin({"arterial", "venous"}).mean())
+                if len(panel)
+                else 0.0,
+                "unresolved_specimen_id_count": int(
+                    pd.to_numeric(panel["specimen_id"], errors="coerce").nunique(dropna=True)
+                ),
+                "unresolved_specimen_id_examples": [],
+            }
+        )
+        return panel, diagnostics
+
+    labs["specimen_text_raw"] = (
+        labs["value_text"].astype("string").fillna("").str.strip()
+    )
+    labs["specimen_text_norm"] = labs["specimen_text_raw"].str.lower()
+    labs["specimen_route_hint"] = labs["specimen_text_norm"].map(_classify_specimen_type_text)
+
+    grouped = (
+        labs.groupby(key_cols, dropna=False)
+        .agg(
+            route_hints=("specimen_route_hint", list),
+            specimen_texts=("specimen_text_raw", list),
+        )
+        .reset_index()
+    )
+
+    mapping_rows: list[dict[str, Any]] = []
+    for _, grouped_row in grouped.iterrows():
+        source, conflict, hint_count = _resolve_route_hints(grouped_row["route_hints"])
+        specimen_texts = [
+            str(value).strip()
+            for value in grouped_row["specimen_texts"]
+            if str(value).strip()
+        ]
+        specimen_text = specimen_texts[0] if specimen_texts else None
+        mapping_rows.append(
+            {
+                "ed_stay_id": grouped_row["ed_stay_id"],
+                "specimen_id": grouped_row["specimen_id"],
+                "source": source if source is not None else "other",
+                "source_inference_tier": "specimen_text" if source is not None else "fallback_other",
+                "source_hint_conflict": bool(conflict),
+                "source_hint_count": int(hint_count),
+                "source_hint_specimen_text": specimen_text,
+            }
+        )
+
+    mapping = pd.DataFrame(mapping_rows)
+    if not mapping.empty:
+        panel = panel.merge(mapping, on=key_cols, how="left", suffixes=("", "_specimen"))
+        panel["source"] = (
+            panel.get("source_specimen")
+            .fillna(panel["source"])
+            .astype("string")
+            .fillna("other")
+        )
+        panel["source_inference_tier"] = (
+            panel.get("source_inference_tier_specimen")
+            .fillna(panel["source_inference_tier"])
+            .astype("string")
+            .fillna("fallback_other")
+        )
+        panel["source_hint_conflict"] = (
+            panel.get("source_hint_conflict_specimen")
+            .fillna(panel["source_hint_conflict"])
+            .astype(bool)
+        )
+        panel["source_hint_count"] = pd.to_numeric(
+            panel.get("source_hint_count_specimen").fillna(panel["source_hint_count"]),
+            errors="coerce",
+        ).fillna(0).astype("Int64")
+        panel["source_hint_specimen_text"] = (
+            panel.get("source_hint_specimen_text_specimen")
+            .fillna(panel["source_hint_specimen_text"])
+            .astype("string")
+        )
+        panel = panel.drop(
+            columns=[
+                column_name
+                for column_name in (
+                    "source_specimen",
+                    "source_inference_tier_specimen",
+                    "source_hint_conflict_specimen",
+                    "source_hint_count_specimen",
+                    "source_hint_specimen_text_specimen",
+                )
+                if column_name in panel.columns
+            ]
+        )
+
+    diagnostics = summarize_gas_source(panel)
+    unresolved = panel.loc[panel["source"].eq("other"), key_cols].drop_duplicates()
+    diagnostics.update(
+        {
+            "mode": "specimen_only",
+            "resolved_rows": int(panel["source"].isin({"arterial", "venous"}).sum()),
+            "resolved_rate": float(panel["source"].isin({"arterial", "venous"}).mean())
+            if len(panel)
+            else 0.0,
+            "unresolved_specimen_id_count": int(
+                pd.to_numeric(unresolved["specimen_id"], errors="coerce").nunique(dropna=True)
+            ),
+            "unresolved_specimen_id_examples": unresolved["specimen_id"]
+            .dropna()
+            .astype(int)
+            .head(20)
+            .tolist(),
+        }
+    )
+    return panel, diagnostics
 
 
 def infer_panel_gas_source_metadata(
@@ -2425,15 +2686,6 @@ cohort_icd.head(3)
 #| label: mimiciv-hypercap-ext-cohort-cell-006
 # Purpose: Define a reusable BigQuery execution helper so SQL calls are consistent across notebook stages.
 
-icu_pco2_fallback_clause = ""
-if ICU_ALLOW_PATTERN_FALLBACK:
-    icu_pco2_fallback_clause = f"""
-      OR (
-        REGEXP_CONTAINS(LOWER(label), r'(^|[^a-z])p(?:a)?\\s*co\\s*(?:2|₂)([^a-z]|$)')
-        AND NOT REGEXP_CONTAINS(LOWER(label), r'({ICU_LABEL_DENY_REGEX})')
-      )
-    """
-
 SQL["co2_thresholds_sql"] = f"""
 WITH hosp_raw AS (
   SELECT
@@ -2473,8 +2725,6 @@ hosp_pco2_clean AS (
     CASE
       WHEN REGEXP_CONTAINS(COALESCE(s.specimen_type_text, ''), r'arter|\\bart\\b') THEN 'arterial'
       WHEN REGEXP_CONTAINS(COALESCE(s.specimen_type_text, ''), r'ven|central|mixed') THEN 'venous'
-      WHEN REGEXP_CONTAINS(r.lbl, r'\\b(abg|art|arterial|a[- ]?line)\\b') THEN 'arterial'
-      WHEN REGEXP_CONTAINS(r.lbl, r'\\b(vbg|ven|venous|mixed|central)\\b') THEN 'venous'
       ELSE 'other'
     END AS site,
     r.charttime,
@@ -2489,7 +2739,6 @@ icu_pco2_itemids AS (
   SELECT itemid, LOWER(label) AS lbl
   FROM `{PHYS}.{ICU}.d_items`
   WHERE itemid IN UNNEST({ICU_PCO2_SQL_ARRAY})
-    {icu_pco2_fallback_clause}
 ),
 icu_pco2_raw AS (
   SELECT
@@ -2537,8 +2786,6 @@ icu_pco2_clean AS (
     CASE
       WHEN REGEXP_CONTAINS(COALESCE(specimen_type_text, ''), r'arter|\\bart\\b') THEN 'arterial'
       WHEN REGEXP_CONTAINS(COALESCE(specimen_type_text, ''), r'ven|central|mixed') THEN 'venous'
-      WHEN REGEXP_CONTAINS(lbl, r'\\b(abg|art|arterial|a[- ]?line)\\b') THEN 'arterial'
-      WHEN REGEXP_CONTAINS(lbl, r'\\b(vbg|ven|venous|mixed|central)\\b') THEN 'venous'
       ELSE 'other'
     END AS site,
     charttime,
@@ -2627,19 +2874,6 @@ len(hadm_list)
 
 params = {"hadms": hadm_list}
 
-icu_pco2_pairs_fallback_clause = ""
-icu_ph_pairs_fallback_clause = ""
-if ICU_ALLOW_PATTERN_FALLBACK:
-    icu_pco2_pairs_fallback_clause = f"""
-      OR (
-        REGEXP_CONTAINS(LOWER(label), r'(^|[^a-z])p(?:a)?\\s*co\\s*(?:2|₂)([^a-z]|$)')
-        AND NOT REGEXP_CONTAINS(LOWER(label), r'({ICU_LABEL_DENY_REGEX})')
-      )
-    """
-    icu_ph_pairs_fallback_clause = """
-      OR REGEXP_CONTAINS(LOWER(label), r'(^|[^a-z])ph([^a-z]|$)')
-    """
-
 bg_pairs_sql = rf"""
 WITH hadms AS (SELECT hadm_id FROM UNNEST(@hadms) AS hadm_id),
 
@@ -2680,8 +2914,6 @@ hosp_class AS (
     CASE
       WHEN REGEXP_CONTAINS(s.spec_val, r'arter') OR REGEXP_CONTAINS(s.spec_val, r'\bart\b') THEN 'arterial'
       WHEN REGEXP_CONTAINS(s.spec_val, r'ven|mixed|central') THEN 'venous'
-      WHEN c.fl LIKE '%arterial%' OR REGEXP_CONTAINS(c.lbl, r'\b(abg|art|arterial|a[- ]?line)\b') THEN 'arterial'
-      WHEN c.fl LIKE '%ven%'      OR REGEXP_CONTAINS(c.lbl, r'\b(vbg|ven|venous|mixed|central)\b') THEN 'venous'
       ELSE 'other'
     END AS site
   FROM hosp_cand c
@@ -2749,16 +2981,10 @@ icu_item_map AS (
     CASE
       WHEN itemid IN UNNEST({ICU_PH_SQL_ARRAY}) THEN 'ph'
       WHEN itemid IN UNNEST({ICU_PCO2_SQL_ARRAY}) THEN 'pco2'
-      WHEN REGEXP_CONTAINS(LOWER(label), r'(^|[^a-z])ph([^a-z]|$)') THEN 'ph'
-      WHEN REGEXP_CONTAINS(LOWER(label), r'(^|[^a-z])p(?:a)?\s*co\s*(?:2|₂)([^a-z]|$)')
-           AND NOT REGEXP_CONTAINS(LOWER(label), r'({ICU_LABEL_DENY_REGEX})')
-      THEN 'pco2'
       ELSE NULL
     END AS analyte
   FROM `{PHYS}.{ICU}.d_items`
   WHERE itemid IN UNNEST(ARRAY_CONCAT({ICU_PH_SQL_ARRAY}, {ICU_PCO2_SQL_ARRAY}))
-     {icu_ph_pairs_fallback_clause}
-     {icu_pco2_pairs_fallback_clause}
 ),
 icu_spec AS (
   SELECT
@@ -2804,8 +3030,6 @@ icu_cand AS (
     CASE
       WHEN REGEXP_CONTAINS(COALESCE(spec_val, ''), r'arter|\\bart\\b') THEN 'arterial'
       WHEN REGEXP_CONTAINS(COALESCE(spec_val, ''), r'ven|central|mixed') THEN 'venous'
-      WHEN REGEXP_CONTAINS(lbl, r'\b(abg|art|arterial|a[- ]?line)\b') THEN 'arterial'
-      WHEN REGEXP_CONTAINS(lbl, r'\b(vbg|ven|venous|mixed|central)\b') THEN 'venous'
       ELSE 'other'
     END AS site
   FROM icu_cand_ranked
@@ -4254,11 +4478,15 @@ TARGET_RAW_FIELDS = {
         "first_gas_time","first_pco2","first_ph","first_hco3","first_lactate",
         "max_pco2_0_6h","min_ph_0_6h","max_pco2_0_24h","min_ph_0_24h",
         "flag_abg_hypercapnia","flag_vbg_hypercapnia","flag_other_hypercapnia","flag_any_gas_hypercapnia",
-        "gas_source_other_rate",
+        "gas_source_other_rate","poc_inclusion_enabled","poc_inclusion_reason",
+        "first_gas_specimen_type","first_gas_specimen_present","first_gas_pco2_itemid","first_gas_pco2_fluid",
+        "co2_other_is_blood_asserted","first_gas_anchor_has_pco2","first_gas_anchor_source_validated",
         "dt_first_imv_hours","dt_first_niv_hours","first_other_time",
     ],
     "omr": [
         "bmi_closest_pre_ed","height_closest_pre_ed","weight_closest_pre_ed",
+        "bmi_closest_pre_ed_model","height_closest_pre_ed_model","weight_closest_pre_ed_model",
+        "bmi_outlier_flag","height_outlier_flag","weight_outlier_flag",
         "anthro_timing_tier","anthro_days_offset","anthro_chartdate","anthro_timing_uncertain",
         "anthro_source","anthro_obstime","anthro_hours_offset","anthro_timing_basis",
     ],
@@ -4268,13 +4496,17 @@ TARGET_RAW_FIELDS = {
     ],
     "timing": [
         "dt_first_qualifying_gas_hours","presenting_hypercapnia","late_hypercapnia",
+        "qualifying_gas_observed","presenting_hypercapnia_tri","late_hypercapnia_tri","hypercap_timing_class",
         "dt_first_imv_hours","dt_first_niv_hours","abg_before_imv","vbg_before_imv",
+        "dt_first_imv_hours_model","dt_first_niv_hours_model",
+        "imv_time_outside_window_flag","niv_time_outside_window_flag",
+        "hospital_los_negative_flag","admittime_before_ed_intime_flag",
         "ph_band","hco3_band","lactate_band",
     ],
 }
 
 TARGET_DERIVED_FIELDS = [
-    "hospital_los_hours","in_hospital_death",
+    "hospital_los_hours","hospital_los_hours_model","in_hospital_death",
 ]
 
 TARGET_FIELDS = sorted({c for v in TARGET_RAW_FIELDS.values() for c in v} | set(TARGET_DERIVED_FIELDS))
@@ -4916,6 +5148,16 @@ lact_ids = set(itemid_sets.get("gas_lactate", []))
 
 labs = labs_long.copy()
 
+if "fluid" in labitems.columns:
+    item_fluid = (
+        labitems[["itemid", "fluid"]]
+        .drop_duplicates(subset=["itemid"])
+        .copy()
+    )
+    labs = labs.merge(item_fluid, on="itemid", how="left")
+else:
+    labs["fluid"] = pd.NA
+
 # Convert pCO2 kPa to mmHg when needed
 is_kpa = labs["valueuom"].astype(str).str.lower().str.contains("kpa", na=False)
 mask_pco2 = labs["itemid"].isin(pco2_ids)
@@ -4931,13 +5173,47 @@ panel = (
 
 # attach analytes
 
-def pick_analyte(df, ids, name):
-    tmp = df.loc[df["itemid"].isin(ids), ["ed_stay_id","specimen_id","valuenum"]]
-    tmp = tmp.rename(columns={"valuenum": name})
-    return tmp.groupby(["ed_stay_id","specimen_id"], as_index=False).first()
+def pick_analyte(
+    df: pd.DataFrame,
+    ids: set[int],
+    name: str,
+    *,
+    include_item_meta: bool = False,
+) -> pd.DataFrame:
+    cols = ["ed_stay_id", "specimen_id", "charttime", "valuenum", "itemid", "fluid"]
+    tmp = df.loc[df["itemid"].isin(ids), cols].copy()
+    tmp["valuenum"] = pd.to_numeric(tmp["valuenum"], errors="coerce")
+    tmp = tmp.loc[tmp["valuenum"].notna()].copy()
+    if tmp.empty:
+        base_cols = ["ed_stay_id", "specimen_id", name]
+        if include_item_meta:
+            base_cols += [f"{name}_itemid", f"{name}_fluid"]
+        return pd.DataFrame(columns=base_cols)
+    tmp = tmp.sort_values(
+        ["ed_stay_id", "specimen_id", "charttime", "itemid"], kind="stable"
+    )
+    first = tmp.groupby(["ed_stay_id", "specimen_id"], as_index=False).first()
+    first = first.rename(columns={"valuenum": name})
+    if include_item_meta:
+        first = first.rename(
+            columns={"itemid": f"{name}_itemid", "fluid": f"{name}_fluid"}
+        )
+        keep_cols = ["ed_stay_id", "specimen_id", name, f"{name}_itemid", f"{name}_fluid"]
+    else:
+        keep_cols = ["ed_stay_id", "specimen_id", name]
+    return first[keep_cols]
 
 if pco2_ids:
-    panel = panel.merge(pick_analyte(labs, pco2_ids, "pco2"), on=["ed_stay_id","specimen_id"], how="left")
+    panel = panel.merge(
+        pick_analyte(
+            labs,
+            pco2_ids,
+            "pco2",
+            include_item_meta=True,
+        ),
+        on=["ed_stay_id", "specimen_id"],
+        how="left",
+    )
 if ph_ids:
     panel = panel.merge(pick_analyte(labs, ph_ids, "ph"), on=["ed_stay_id","specimen_id"], how="left")
 if hco3_ids:
@@ -4964,6 +5240,9 @@ panel["dt_hours"] = (panel["panel_time"] - panel["ed_intime"]).dt.total_seconds(
 
 # Ensure expected panel columns exist even if analyte is absent
 for col in ["pco2", "ph", "hco3", "lactate"]:
+    if col not in panel.columns:
+        panel[col] = pd.NA
+for col in ["pco2_itemid", "pco2_fluid"]:
     if col not in panel.columns:
         panel[col] = pd.NA
 
@@ -5077,16 +5356,31 @@ ed_df = ed_df.merge(agg24, on="ed_stay_id", how="left")
 #| label: mimiciv-hypercap-ext-cohort-cell-034
 # Purpose: Reconstruct gas panels and normalize units before ED-stay level aggregation.
 
-# ABG vs VBG classification (specimen- and label-based inference)
-gas_source_mode = os.getenv("COHORT_GAS_SOURCE_INFERENCE_MODE", "metadata_only").strip().lower()
-panel, gas_source_audit = infer_panel_gas_source_metadata(
+# ABG vs VBG classification (specimen-type rows only for core cohort behavior)
+panel, gas_source_audit = assign_panel_source_from_specimen(
     panel,
     labs,
-    labitems,
     specimen_source_itemids=itemid_sets.get("gas_specimen", []),
-    pco2_itemids=itemid_sets.get("gas_pco2", []),
-    mode=gas_source_mode,
 )
+
+# Keep heuristic route diagnostics for QA transparency only (non-core behavior).
+heuristic_gas_source_audit: dict[str, Any] | None = None
+heuristic_mode = os.getenv("COHORT_GAS_SOURCE_INFERENCE_MODE", "metadata_only").strip().lower()
+try:
+    _, heuristic_gas_source_audit = infer_panel_gas_source_metadata(
+        panel_df=panel.copy(),
+        labs_df=labs,
+        labitems_df=labitems,
+        specimen_source_itemids=itemid_sets.get("gas_specimen", []),
+        pco2_itemids=itemid_sets.get("gas_pco2", []),
+        mode=heuristic_mode,
+    )
+except Exception as exc:
+    heuristic_gas_source_audit = {
+        "status": "error",
+        "message": f"heuristic_diagnostics_failed: {exc}",
+    }
+gas_source_audit["heuristic_reference"] = heuristic_gas_source_audit
 
 fail_on_all_other_source = os.getenv("COHORT_FAIL_ON_ALL_OTHER_SOURCE", "1").strip() == "1"
 if gas_source_audit["all_other_or_unknown"]:
@@ -5186,6 +5480,11 @@ if panel_anchor.empty:
     first_anchor["first_ph"] = pd.NA
     first_anchor["first_hco3"] = pd.NA
     first_anchor["first_lactate"] = pd.NA
+    first_anchor["first_gas_specimen_type"] = pd.NA
+    first_anchor["first_gas_specimen_present"] = False
+    first_anchor["first_gas_pco2_itemid"] = pd.NA
+    first_anchor["first_gas_pco2_fluid"] = pd.NA
+    first_anchor["co2_other_is_blood_asserted"] = False
     first_anchor["first_gas_anchor_has_pco2"] = False
     first_anchor["first_gas_anchor_source_validated"] = False
 else:
@@ -5201,7 +5500,25 @@ else:
             "ph": "first_ph",
             "hco3": "first_hco3",
             "lactate": "first_lactate",
+            "source_hint_specimen_text": "first_gas_specimen_type",
+            "pco2_itemid": "first_gas_pco2_itemid",
+            "pco2_fluid": "first_gas_pco2_fluid",
         }
+    )
+    first_anchor["first_gas_specimen_present"] = (
+        first_anchor["first_gas_specimen_type"]
+        .astype("string")
+        .fillna("")
+        .str.strip()
+        .ne("")
+    )
+    first_anchor["co2_other_is_blood_asserted"] = (
+        first_anchor["source"].astype("string").str.lower().eq("other")
+        & first_anchor["first_gas_pco2_fluid"]
+        .astype("string")
+        .str.strip()
+        .str.lower()
+        .isin(LAB_BLOOD_FLUID_TERMS)
     )
     first_anchor["first_gas_anchor_has_pco2"] = True
     first_anchor["first_gas_anchor_source_validated"] = first_anchor["source"].isin(
@@ -5215,6 +5532,11 @@ anchor_merge_cols = [
     "first_ph",
     "first_hco3",
     "first_lactate",
+    "first_gas_specimen_type",
+    "first_gas_specimen_present",
+    "first_gas_pco2_itemid",
+    "first_gas_pco2_fluid",
+    "co2_other_is_blood_asserted",
     "first_gas_anchor_has_pco2",
     "first_gas_anchor_source_validated",
 ]
@@ -5227,6 +5549,12 @@ ed_df["first_gas_anchor_has_pco2"] = (
 )
 ed_df["first_gas_anchor_source_validated"] = (
     ed_df["first_gas_anchor_source_validated"].fillna(False).astype(bool)
+)
+ed_df["first_gas_specimen_present"] = (
+    ed_df["first_gas_specimen_present"].fillna(False).astype(bool)
+)
+ed_df["co2_other_is_blood_asserted"] = (
+    ed_df["co2_other_is_blood_asserted"].fillna(False).astype(bool)
 )
 
 # flags
@@ -5570,8 +5898,95 @@ for col in ["pco2", "ph", "hco3", "lactate"]:
     if col not in panel_poc.columns:
         panel_poc[col] = pd.NA
 
+poc_inclusion_enabled = False
+poc_inclusion_reason = "disabled_manifest_or_qc_fail"
+pco2_itemid_qc_rows: list[dict[str, Any]] = []
+
+if len(icu_poc_long) > 0 and pco2_ids:
+    pco2_long = icu_poc_long.loc[icu_poc_long["itemid"].isin(pco2_ids)].copy()
+    if not pco2_long.empty:
+        pco2_long["label"] = pco2_long["itemid"].map(
+            icu_itemid_map.set_index("itemid")["label"] if not icu_itemid_map.empty else {}
+        )
+        pco2_long["category"] = pco2_long["itemid"].map(
+            icu_itemid_map.set_index("itemid")["category"] if not icu_itemid_map.empty else {}
+        )
+        pco2_long["valuenum"] = pd.to_numeric(pco2_long["valuenum"], errors="coerce")
+        pco2_long["valueuom_norm"] = (
+            pco2_long["valueuom"].astype("string").fillna("").str.strip().str.lower()
+        )
+        is_kpa = pco2_long["valueuom_norm"].eq("kpa")
+        pco2_long.loc[is_kpa, "valuenum"] = pco2_long.loc[is_kpa, "valuenum"] * 7.50062
+        pco2_long["pco2_mmhg"] = pco2_long["valuenum"]
+
+        for itemid_value, group in pco2_long.groupby("itemid", dropna=False):
+            label_text = str(group["label"].dropna().astype(str).head(1).tolist()[0]) if group["label"].notna().any() else ""
+            category_text = str(group["category"].dropna().astype(str).head(1).tolist()[0]) if group["category"].notna().any() else ""
+            label_text_l = label_text.lower()
+            value_units = sorted(set(group["valueuom_norm"].dropna().astype(str).tolist()))
+            unit_ok = set(value_units).issubset(ICU_PCO2_QC_ALLOWED_UOMS)
+            include_ok = any(token in label_text_l for token in ICU_PCO2_QC_INCLUDE_TOKENS)
+            exclude_hit = any(token in label_text_l for token in ICU_PCO2_QC_EXCLUDE_TOKENS)
+            numeric = pd.to_numeric(group["pco2_mmhg"], errors="coerce").dropna()
+            median_value = float(numeric.median()) if len(numeric) else np.nan
+            median_ok = bool(
+                len(numeric)
+                and ICU_PCO2_QC_MEDIAN_MIN <= median_value <= ICU_PCO2_QC_MEDIAN_MAX
+            )
+            contamination_flag = bool((not include_ok) or exclude_hit or (not unit_ok))
+
+            pco2_itemid_qc_rows.append(
+                {
+                    "itemid": int(itemid_value),
+                    "label": label_text,
+                    "category": category_text,
+                    "row_count": int(len(group)),
+                    "non_null_count": int(len(numeric)),
+                    "units_observed": ";".join(value_units),
+                    "p50_mmhg": median_value if len(numeric) else np.nan,
+                    "p95_mmhg": float(numeric.quantile(0.95)) if len(numeric) else np.nan,
+                    "max_mmhg": float(numeric.max()) if len(numeric) else np.nan,
+                    "label_include_ok": bool(include_ok),
+                    "label_exclude_hit": bool(exclude_hit),
+                    "unit_ok": bool(unit_ok),
+                    "median_in_expected_range": bool(median_ok),
+                    "contamination_flag": contamination_flag,
+                    "manifest_whitelisted": int(itemid_value in set(ICU_PCO2_ITEMIDS)),
+                }
+            )
+
+pco2_itemid_qc_audit = pd.DataFrame(pco2_itemid_qc_rows)
+pco2_itemid_qc_audit_path = prior_runs_dir / f"{audit_date} pco2_itemid_qc_audit.csv"
+pco2_itemid_qc_audit.to_csv(pco2_itemid_qc_audit_path, index=False)
+print("Wrote:", pco2_itemid_qc_audit_path)
+
+if ICU_INCLUSION_MODE == "validated_only":
+    if ICU_PCO2_ITEMIDS and not pco2_itemid_qc_audit.empty:
+        whitelist_mask = pco2_itemid_qc_audit["itemid"].isin(set(ICU_PCO2_ITEMIDS))
+        whitelist_rows = pco2_itemid_qc_audit.loc[whitelist_mask].copy()
+        if (
+            len(whitelist_rows) == len(set(ICU_PCO2_ITEMIDS))
+            and whitelist_rows["contamination_flag"].eq(False).all()
+            and whitelist_rows["median_in_expected_range"].eq(True).all()
+        ):
+            poc_inclusion_enabled = True
+            poc_inclusion_reason = "validated_itemids_passed_qc"
+        else:
+            poc_inclusion_reason = "validated_itemids_failed_qc"
+    elif not ICU_PCO2_ITEMIDS:
+        poc_inclusion_reason = "manifest_has_no_icu_pco2_itemids"
+    else:
+        poc_inclusion_reason = "missing_itemid_qc_rows"
+else:
+    poc_inclusion_reason = "icu_inclusion_mode_disabled"
+
+print(
+    "POC inclusion status:",
+    {"enabled": int(poc_inclusion_enabled), "reason": poc_inclusion_reason},
+)
+
 poc_flags = pd.DataFrame(columns=["ed_stay_id", "flag_any_gas_hypercapnia_poc"])
-if len(panel_poc) > 0:
+if len(panel_poc) > 0 and poc_inclusion_enabled:
     p24_poc = panel_poc.loc[panel_poc["dt_hours"].between(0,24, inclusive="both")].copy()
     p24_poc.loc[:, "flag_any_gas_hypercapnia_poc"] = (p24_poc["pco2"] >= 50).astype("Int64")
 
@@ -5585,6 +6000,16 @@ if "flag_any_gas_hypercapnia_poc" in ed_df.columns:
 
 if len(poc_flags) > 0:
     ed_df = ed_df.merge(poc_flags, on="ed_stay_id", how="left")
+else:
+    ed_df["flag_any_gas_hypercapnia_poc"] = 0
+ed_df["flag_any_gas_hypercapnia_poc"] = (
+    pd.to_numeric(ed_df["flag_any_gas_hypercapnia_poc"], errors="coerce")
+    .fillna(0)
+    .astype("Int64")
+)
+
+ed_df["poc_inclusion_enabled"] = bool(poc_inclusion_enabled)
+ed_df["poc_inclusion_reason"] = str(poc_inclusion_reason)
 
 # Optional fallback for first_hco3 from ICU POC only when explicit manifest itemids are provided.
 if ICU_HCO3_ITEMIDS and len(panel_poc) > 0:
@@ -5762,9 +6187,42 @@ if use_charted_fallback and len(hadm_list) > 0:
     charted_anthro_diagnostics["enabled"] = True
     charted_anthro_diagnostics["nearest_anytime"] = bool(use_nearest_anytime)
 
+anthro_model_specs = {
+    "bmi_closest_pre_ed": ("bmi_closest_pre_ed_model", "bmi_outlier_flag", 0.0, 100.0),
+    "height_closest_pre_ed": ("height_closest_pre_ed_model", "height_outlier_flag", 100.0, 250.0),
+    "weight_closest_pre_ed": ("weight_closest_pre_ed_model", "weight_outlier_flag", 0.0, 400.0),
+}
+anthro_audit_rows: list[dict[str, Any]] = []
+for raw_col, (model_col, flag_col, lower_bound, upper_bound) in anthro_model_specs.items():
+    raw_numeric = pd.to_numeric(ed_df.get(raw_col), errors="coerce")
+    outlier_mask = raw_numeric.notna() & (
+        raw_numeric.le(lower_bound) | raw_numeric.gt(upper_bound)
+    )
+    ed_df[flag_col] = outlier_mask
+    ed_df[model_col] = raw_numeric.mask(outlier_mask)
+    anthro_audit_rows.append(
+        {
+            "raw_column": raw_col,
+            "model_column": model_col,
+            "lower_bound_exclusive": lower_bound,
+            "upper_bound_inclusive": upper_bound,
+            "raw_non_missing_n": int(raw_numeric.notna().sum()),
+            "outlier_n": int(outlier_mask.sum()),
+            "model_non_missing_n": int(pd.to_numeric(ed_df[model_col], errors="coerce").notna().sum()),
+        }
+    )
+
+anthropometric_cleaning_audit = pd.DataFrame(anthro_audit_rows)
+anthropometric_cleaning_audit_path = (
+    prior_runs_dir / f"{out_date} anthropometric_cleaning_audit.csv"
+)
+anthropometric_cleaning_audit.to_csv(anthropometric_cleaning_audit_path, index=False)
+print("Wrote:", anthropometric_cleaning_audit_path)
+
 anthro_coverage_audit = build_anthro_coverage_audit(ed_df)
 anthro_coverage_audit["omr"] = omr_diagnostics
 anthro_coverage_audit["charted_fallback"] = charted_anthro_diagnostics
+anthro_coverage_audit["cleaning_audit_path"] = str(anthropometric_cleaning_audit_path)
 anthro_coverage_audit_path = prior_runs_dir / f"{out_date} anthropometrics_coverage_audit.json"
 anthro_coverage_audit_path.write_text(json.dumps(anthro_coverage_audit, indent=2))
 print("Wrote:", anthro_coverage_audit_path)
@@ -5980,11 +6438,83 @@ ed_df["dt_first_qualifying_gas_hours"] = (ed_df["first_gas_time"] - ed_df[anchor
 ed_df["presenting_hypercapnia"] = (ed_df["dt_first_qualifying_gas_hours"] <= 6).astype("Int64")
 ed_df["late_hypercapnia"] = (ed_df["dt_first_qualifying_gas_hours"] > 6).astype("Int64")
 
+qualifying_hours = pd.to_numeric(ed_df["dt_first_qualifying_gas_hours"], errors="coerce")
+qualifying_observed = qualifying_hours.notna()
+ed_df["qualifying_gas_observed"] = qualifying_observed.astype("Int64")
+ed_df["presenting_hypercapnia_tri"] = pd.Series(pd.NA, index=ed_df.index, dtype="Int64")
+ed_df["late_hypercapnia_tri"] = pd.Series(pd.NA, index=ed_df.index, dtype="Int64")
+ed_df.loc[qualifying_observed, "presenting_hypercapnia_tri"] = (
+    qualifying_hours.loc[qualifying_observed].le(6).astype("Int64")
+)
+ed_df.loc[qualifying_observed, "late_hypercapnia_tri"] = (
+    qualifying_hours.loc[qualifying_observed].gt(6)
+    & qualifying_hours.loc[qualifying_observed].le(24)
+).astype("Int64")
+
+threshold_any = (
+    pd.to_numeric(ed_df.get("pco2_threshold_any", pd.Series(0, index=ed_df.index)), errors="coerce")
+    .fillna(0)
+    .astype(int)
+)
+any_icd = (
+    pd.to_numeric(ed_df.get("any_hypercap_icd", pd.Series(0, index=ed_df.index)), errors="coerce")
+    .fillna(0)
+    .astype(int)
+)
+ed_df["hypercap_timing_class"] = np.select(
+    [
+        qualifying_observed & qualifying_hours.le(6),
+        qualifying_observed & qualifying_hours.gt(6) & qualifying_hours.le(24),
+        (qualifying_observed & qualifying_hours.gt(24))
+        | (~qualifying_observed & threshold_any.eq(1)),
+    ],
+    [
+        "presenting_0_6h",
+        "late_6_24h",
+        "none_within_24h",
+    ],
+    default="icd_only_or_no_qualifying_gas",
+)
+
 # NIV/IMV timing relative to first ED presentation
 if "first_imv_time" in ed_df.columns:
     ed_df["dt_first_imv_hours"] = (ed_df["first_imv_time"] - ed_df[anchor]).dt.total_seconds() / 3600.0
 if "first_niv_time" in ed_df.columns:
     ed_df["dt_first_niv_hours"] = (ed_df["first_niv_time"] - ed_df[anchor]).dt.total_seconds() / 3600.0
+
+ed_df["hospital_los_negative_flag"] = (
+    pd.to_numeric(ed_df.get("hospital_los_hours"), errors="coerce")
+    .lt(0)
+    .fillna(False)
+)
+admittime_series = pd.to_datetime(ed_df.get("admittime"), errors="coerce")
+ed_intime_series = pd.to_datetime(ed_df.get("ed_intime"), errors="coerce")
+ed_df["admittime_before_ed_intime_flag"] = (
+    admittime_series.notna()
+    & ed_intime_series.notna()
+    & admittime_series.lt(ed_intime_series)
+)
+hospital_los_numeric = pd.to_numeric(ed_df.get("hospital_los_hours"), errors="coerce")
+ed_df["hospital_los_hours_model"] = hospital_los_numeric.mask(hospital_los_numeric.lt(0))
+
+dischtime_series = pd.to_datetime(ed_df.get("dischtime"), errors="coerce")
+anchor_series = pd.to_datetime(ed_df.get(anchor), errors="coerce")
+for event_col, delta_col, model_col, outside_col in [
+    ("first_imv_time", "dt_first_imv_hours", "dt_first_imv_hours_model", "imv_time_outside_window_flag"),
+    ("first_niv_time", "dt_first_niv_hours", "dt_first_niv_hours_model", "niv_time_outside_window_flag"),
+]:
+    if event_col not in ed_df.columns:
+        ed_df[model_col] = pd.Series(pd.NA, index=ed_df.index, dtype="Float64")
+        ed_df[outside_col] = False
+        continue
+    event_time = pd.to_datetime(ed_df[event_col], errors="coerce")
+    delta_hours = pd.to_numeric(ed_df.get(delta_col), errors="coerce")
+    outside_lower = anchor_series.notna() & event_time.notna() & event_time.lt(anchor_series)
+    outside_upper = dischtime_series.notna() & event_time.notna() & event_time.gt(dischtime_series)
+    negative_delta = delta_hours.lt(0).fillna(False)
+    outside_window = outside_lower | outside_upper | negative_delta
+    ed_df[outside_col] = outside_window.fillna(False)
+    ed_df[model_col] = delta_hours.mask(outside_window)
 
 # Bands
 bins_ph = [-1, 7.20, 7.30, 7.35, 99]
@@ -6154,6 +6684,38 @@ print("Wrote:", ed_vitals_extreme_examples_path)
 ed_vitals_model_delta_path = prior_runs_dir / f"{out_date} ed_vitals_model_delta.csv"
 ed_vitals_model_delta.to_csv(ed_vitals_model_delta_path, index=False)
 print("Wrote:", ed_vitals_model_delta_path)
+
+timing_integrity_audit = pd.DataFrame(
+    [
+        {
+            "rows_total": int(len(ed_df)),
+            "hospital_los_negative_n": int(ed_df.get("hospital_los_negative_flag", pd.Series(False, index=ed_df.index)).fillna(False).astype(bool).sum()),
+            "admittime_before_ed_intime_n": int(ed_df.get("admittime_before_ed_intime_flag", pd.Series(False, index=ed_df.index)).fillna(False).astype(bool).sum()),
+            "qualifying_gas_observed_n": int(pd.to_numeric(ed_df.get("qualifying_gas_observed"), errors="coerce").fillna(0).astype(int).sum()),
+            "qualifying_gas_missing_n": int(pd.to_numeric(ed_df.get("qualifying_gas_observed"), errors="coerce").fillna(0).astype(int).eq(0).sum()),
+        }
+    ]
+)
+timing_integrity_audit_path = prior_runs_dir / f"{out_date} timing_integrity_audit.csv"
+timing_integrity_audit.to_csv(timing_integrity_audit_path, index=False)
+print("Wrote:", timing_integrity_audit_path)
+
+ventilation_timing_audit = pd.DataFrame(
+    [
+        {
+            "rows_total": int(len(ed_df)),
+            "dt_first_imv_hours_negative_n": int(pd.to_numeric(ed_df.get("dt_first_imv_hours"), errors="coerce").lt(0).fillna(False).sum()),
+            "dt_first_niv_hours_negative_n": int(pd.to_numeric(ed_df.get("dt_first_niv_hours"), errors="coerce").lt(0).fillna(False).sum()),
+            "imv_time_outside_window_n": int(ed_df.get("imv_time_outside_window_flag", pd.Series(False, index=ed_df.index)).fillna(False).astype(bool).sum()),
+            "niv_time_outside_window_n": int(ed_df.get("niv_time_outside_window_flag", pd.Series(False, index=ed_df.index)).fillna(False).astype(bool).sum()),
+            "dt_first_imv_hours_model_nonnull_n": int(pd.to_numeric(ed_df.get("dt_first_imv_hours_model"), errors="coerce").notna().sum()),
+            "dt_first_niv_hours_model_nonnull_n": int(pd.to_numeric(ed_df.get("dt_first_niv_hours_model"), errors="coerce").notna().sum()),
+        }
+    ]
+)
+ventilation_timing_audit_path = prior_runs_dir / f"{out_date} ventilation_timing_audit.csv"
+ventilation_timing_audit.to_csv(ventilation_timing_audit_path, index=False)
+print("Wrote:", ventilation_timing_audit_path)
 
 print("ED vitals cleaning summary (raw->clean removals):")
 display(
@@ -6415,6 +6977,26 @@ other_route_quarantine_audit_records = json.loads(
     other_route_quarantine_audit.to_json(orient="records")
 )
 first_gas_anchor_audit_records = json.loads(first_gas_anchor_audit.to_json(orient="records"))
+pco2_itemid_qc_audit_records = (
+    json.loads(pco2_itemid_qc_audit.to_json(orient="records"))
+    if "pco2_itemid_qc_audit" in globals() and not pco2_itemid_qc_audit.empty
+    else []
+)
+timing_integrity_audit_records = (
+    json.loads(timing_integrity_audit.to_json(orient="records"))
+    if "timing_integrity_audit" in globals()
+    else []
+)
+ventilation_timing_audit_records = (
+    json.loads(ventilation_timing_audit.to_json(orient="records"))
+    if "ventilation_timing_audit" in globals()
+    else []
+)
+anthropometric_cleaning_audit_records = (
+    json.loads(anthropometric_cleaning_audit.to_json(orient="records"))
+    if "anthropometric_cleaning_audit" in globals()
+    else []
+)
 blood_gas_itemid_manifest_audit_records = (
     json.loads(blood_gas_itemid_manifest_audit.to_json(orient="records"))
     if "blood_gas_itemid_manifest_audit" in globals() and not blood_gas_itemid_manifest_audit.empty
@@ -6447,12 +7029,18 @@ qa_summary = {
     "pco2_source_distribution_audit": pco2_source_distribution_audit_records,
     "other_route_quarantine_audit": other_route_quarantine_audit_records,
     "first_gas_anchor_audit": first_gas_anchor_audit_records,
+    "pco2_itemid_qc_audit": pco2_itemid_qc_audit_records,
+    "poc_inclusion_enabled": bool(poc_inclusion_enabled),
+    "poc_inclusion_reason": str(poc_inclusion_reason),
     "omr_diagnostics": omr_diagnostics if "omr_diagnostics" in globals() else None,
     "omr_window_diagnostics": omr_window_diagnostics if "omr_window_diagnostics" in globals() else None,
     "anthro_timing_tier_counts": omr_diagnostics.get("selected_tier_counts", {}) if "omr_diagnostics" in globals() else {},
     "anthro_timing_tier_rates": omr_diagnostics.get("selected_tier_rates", {}) if "omr_diagnostics" in globals() else {},
     "anthro_coverage_audit": anthro_coverage_audit if "anthro_coverage_audit" in globals() else None,
+    "anthropometric_cleaning_audit": anthropometric_cleaning_audit_records,
     "charted_anthro_diagnostics": charted_anthro_diagnostics if "charted_anthro_diagnostics" in globals() else None,
+    "timing_integrity_audit": timing_integrity_audit_records,
+    "ventilation_timing_audit": ventilation_timing_audit_records,
     "unexpected_full_null_fields": unexpected_full_null_fields,
     "expected_structural_null_fields": expected_structural_null_fields,
     "uom_expectation_scope": uom_expectation_scope,
@@ -6472,10 +7060,22 @@ qa_summary = {
         "manifest_itemids": str(blood_gas_itemid_manifest_audit_path)
         if "blood_gas_itemid_manifest_audit_path" in globals()
         else None,
+        "pco2_itemid_qc": str(pco2_itemid_qc_audit_path)
+        if "pco2_itemid_qc_audit_path" in globals()
+        else None,
         "pco2_source_distribution": str(pco2_source_distribution_audit_path),
         "other_route_quarantine": str(other_route_quarantine_audit_path),
         "first_gas_anchor": str(first_gas_anchor_audit_path),
     },
+    "timing_integrity_audit_path": str(timing_integrity_audit_path)
+    if "timing_integrity_audit_path" in globals()
+    else None,
+    "ventilation_timing_audit_path": str(ventilation_timing_audit_path)
+    if "ventilation_timing_audit_path" in globals()
+    else None,
+    "anthropometric_cleaning_audit_path": str(anthropometric_cleaning_audit_path)
+    if "anthropometric_cleaning_audit_path" in globals()
+    else None,
     "qa_status": qa_status,
     "qa_warnings": qa_warnings,
     "qa_infos": qa_infos,

@@ -1,0 +1,1212 @@
+Hypercap CC NLP Analysis
+
+Table of contents
+1 Workbook for MIMIC Hypercapnia Presenting Chief Concern Analysis
+1.1 Environment Gate . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+1.2 Load Data . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+1.3 Descriptive Checks . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+1.4 ICD And Inclusion Categories . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+1.5 Symptom Composition By Hypercapnia Definition . . . . . . . . . . . . . . . .
+1.6 Symptom Distribution By Ascertainment Overlap . . . . . . . . . . . . . . . .
+1.7 Association Model . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+1.8 Export Verification . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+
+1
+1
+2
+4
+5
+7
+12
+15
+17
+
+1 Workbook for MIMIC Hypercapnia Presenting Chief Concern
+Analysis
+This notebook is a deterministic analysis workflow for the NLP-augmented hypercapnia cohort
+workbook.
+
+1.1 Environment Gate
+Fail fast if required packages are missing. Use uv sync to repair the environment.
+import importlib.util
+required_packages = [
+"numpy",
+"pandas",
+"matplotlib",
+"seaborn",
+
+1
+
+"statsmodels",
+"openpyxl",
+
+]
+missing = [pkg for pkg in required_packages if importlib.util.find_spec(pkg)
+↪
+is None]
+if missing:
+raise ModuleNotFoundError(
+"Missing required packages: "
++ ", ".join(missing)
++ ". Run `uv sync` from the repository root and rerun the notebook."
+)
+print("Environment check passed.")
+Environment check passed.
+
+1.2 Load Data
+Use a single canonical workbook path under MIMIC tabular data.
+import importlib
+import os
+import sys
+from pathlib import Path
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import statsmodels.api as sm
+WORK_DIR = Path(os.getenv("WORK_DIR", Path.cwd())).expanduser().resolve()
+SRC_DIR = WORK_DIR / "src"
+if str(SRC_DIR) not in sys.path:
+sys.path.insert(0, str(SRC_DIR))
+analysis_core = importlib.import_module("hypercap_cc_nlp.analysis_core")
+binary_crosstab_yes_no = analysis_core.binary_crosstab_yes_no
+classify_gas_source_overlap = analysis_core.classify_gas_source_overlap
+classify_icd_category_vectorized =
+↪
+analysis_core.classify_icd_category_vectorized
+classify_inclusion_type_vectorized =
+↪
+analysis_core.classify_inclusion_type_vectorized
+ensure_required_columns = analysis_core.ensure_required_columns
+
+2
+
+symptom_distribution_by_overlap =
+↪
+analysis_core.symptom_distribution_by_overlap
+to_binary_flag = analysis_core.to_binary_flag
+workflow_contracts =
+↪
+importlib.import_module("hypercap_cc_nlp.workflow_contracts")
+resolve_analysis_input_path = workflow_contracts.resolve_analysis_input_path
+CANONICAL_NLP_FILENAME = workflow_contracts.CANONICAL_NLP_FILENAME
+ANALYSIS_INPUT_FILENAME = os.getenv("ANALYSIS_INPUT_FILENAME")
+ANALYSIS_INPUT_PATH = resolve_analysis_input_path(
+WORK_DIR,
+ANALYSIS_INPUT_FILENAME if ANALYSIS_INPUT_FILENAME else None,
+)
+OUTPUT_DIR = WORK_DIR
+HYPERCAP_CRITERIA = [
+"any_hypercap_icd",
+"abg_hypercap_threshold",
+"vbg_hypercap_threshold",
+"pco2_threshold_any",
+]
+SYMPTOM_COL = "RFV1_name"
+df = pd.read_excel(ANALYSIS_INPUT_PATH, engine="openpyxl")
+required_analysis_cols = sorted({SYMPTOM_COL, *HYPERCAP_CRITERIA})
+try:
+ensure_required_columns(df, required_analysis_cols)
+except KeyError as exc:
+raise KeyError(
+"Analysis input schema mismatch. Run 'Hypercap CC NLP Classifier.qmd'
+↪
+"
+f"to regenerate '{CANONICAL_NLP_FILENAME}' before running analysis."
+) from exc
+for column in HYPERCAP_CRITERIA:
+df[column] = to_binary_flag(df[column])
+print(
+f"Loaded {ANALYSIS_INPUT_PATH.name}: {df.shape[0]:,} rows x
+↪
+{df.shape[1]:,} columns"
+)
+
+3
+
+print(f"Analysis input path: {ANALYSIS_INPUT_PATH}")
+
+Loaded MIMICIV all with CC_with_NLP.xlsx: 41,322 rows x 242 columns
+Analysis input path: /Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Res
+CC-NLP/MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx
+
+1.3 Descriptive Checks
+Compute core cohort summaries with guarded column checks.
+gender_candidates = [col for col in df.columns if
+↪
+col.lower().startswith("gender")]
+if not gender_candidates:
+raise KeyError("No gender-like column found. Expected a column starting
+↪
+with 'gender'.")
+gender_col = gender_candidates[0]
+gender_summary = (
+df[gender_col]
+.value_counts(dropna=False)
+.rename_axis(gender_col)
+.to_frame("Count")
+)
+gender_summary["Percent"] = (gender_summary["Count"] / len(df) *
+↪
+100).round(1)
+age_summary = pd.Series(
+{
+"Mean": round(float(df["age"].mean()), 2),
+"SD": round(float(df["age"].std()), 2),
+"Q1": round(float(df["age"].quantile(0.25)), 2),
+"Q3": round(float(df["age"].quantile(0.75)), 2),
+},
+name="Age (years)",
+)
+hypercap_prevalence = pd.DataFrame(
+{
+"Count": [int(df[col].sum()) for col in HYPERCAP_CRITERIA],
+"Percent": [round(float(df[col].mean() * 100), 1) for col in
+↪
+HYPERCAP_CRITERIA],
+},
+
+4
+
+)
+
+index=HYPERCAP_CRITERIA,
+
+display(gender_summary)
+display(age_summary.to_frame())
+display(hypercap_prevalence)
+
+gender
+M
+F
+
+Count
+
+Percent
+
+21865
+19457
+
+52.9
+47.1
+
+Age (years)
+Mean
+SD
+Q1
+Q3
+
+64.78
+17.78
+54.00
+78.00
+
+any_hypercap_icd
+abg_hypercap_threshold
+vbg_hypercap_threshold
+pco2_threshold_any
+
+Count
+
+Percent
+
+1983
+10749
+17548
+41080
+
+4.8
+26.0
+42.5
+99.4
+
+1.4 ICD And Inclusion Categories
+Use vectorized helper functions to avoid row-wise apply(axis=1).
+df["icd_category"] = classify_icd_category_vectorized(df)
+df["inclusion_type"] = classify_inclusion_type_vectorized(
+df["any_hypercap_icd"],
+df["pco2_threshold_any"],
+)
+icd_category_summary = (
+df["icd_category"]
+.value_counts(dropna=False)
+.rename_axis("ICD Category")
+
+5
+
+.to_frame("Count")
+
+)
+icd_category_summary["Percent"] = (icd_category_summary["Count"] / len(df) *
+↪
+100).round(1)
+inclusion_summary = (
+df["inclusion_type"]
+.value_counts(dropna=False)
+.rename_axis("Inclusion Type")
+.to_frame("Count")
+)
+inclusion_summary["Percent"] = (inclusion_summary["Count"] / len(df) *
+↪
+100).round(1)
+display(icd_category_summary)
+display(inclusion_summary)
+
+ICD Category
+Other / None
+Acute RF with hypoxia
+Obesity hypoventilation syndrome
+Acute RF with hypoxia & hypercapnia
+Respiratory failure, unspecified
+Acute RF with hypercapnia
+
+Inclusion Type
+Gas_only
+Both
+ICD_only
+
+Count
+
+Percent
+
+39339
+793
+524
+386
+187
+93
+
+95.2
+1.9
+1.3
+0.9
+0.5
+0.2
+
+Count
+
+Percent
+
+39339
+1741
+242
+
+95.2
+4.2
+0.6
+
+symptom_non_null = df.dropna(subset=[SYMPTOM_COL]).copy()
+top_symptom_labels =
+↪
+symptom_non_null[SYMPTOM_COL].value_counts().head(10).index
+symptom_non_null["symptom_group"] = symptom_non_null[SYMPTOM_COL].where(
+symptom_non_null[SYMPTOM_COL].isin(top_symptom_labels),
+"Other",
+)
+
+6
+
+crosstab_tables = {}
+for definition in HYPERCAP_CRITERIA:
+definition_table = binary_crosstab_yes_no(symptom_non_null,
+↪
+"symptom_group", definition)
+crosstab_tables[definition] = definition_table.sort_values("Percent_yes",
+↪
+ascending=False)
+display(crosstab_tables["pco2_threshold_any"].head(10))
+
+symptom_group
+Injuries & adverse effects
+Diseases (patient-stated)
+Symptom – Digestive
+Symptom – Nervous
+Symptom – Genitourinary
+Symptom – Eye/Ear
+Symptom – Circulatory
+Other
+Symptom – General
+Symptom – Skin/Hair/Nails
+
+No
+
+Yes
+
+Percent_yes
+
+7
+9
+17
+17
+10
+5
+27
+23
+18
+10
+
+2920
+3315
+5765
+6562
+2586
+1022
+4159
+3208
+2570
+978
+
+99.8
+99.7
+99.7
+99.7
+99.6
+99.5
+99.4
+99.3
+99.3
+99.0
+
+1.5 Symptom Composition By Hypercapnia Definition
+Generate counts, percentages, and clipped Wald 95% confidence intervals; export stable tables
+for downstream reporting.
+definition_long_df = symptom_non_null.melt(
+id_vars=["symptom_group"],
+value_vars=HYPERCAP_CRITERIA,
+var_name="Hypercapnia_Definition",
+value_name="Positive",
+)
+definition_positive_df =
+↪
+definition_long_df.loc[definition_long_df["Positive"].eq(1)].copy()
+definition_counts_df = (
+definition_positive_df.groupby(["Hypercapnia_Definition",
+↪
+"symptom_group"], dropna=False)
+.size()
+.reset_index(name="Count")
+
+7
+
+)
+definition_counts_df["Total"] = definition_counts_df.groupby( ⌋
+↪
+"Hypercapnia_Definition")["Count"].transform("sum")
+definition_counts_df["Percent"] = definition_counts_df["Count"] /
+↪
+definition_counts_df["Total"] * 100
+p_hat = (definition_counts_df["Percent"] / 100).clip(0, 1)
+n_obs = definition_counts_df["Total"].replace(0, np.nan)
+se = np.sqrt((p_hat * (1 - p_hat)) / n_obs).fillna(0)
+definition_counts_df["CI_lower"] = ((p_hat - 1.96 * se).clip(0, 1) *
+↪
+100).round(2)
+definition_counts_df["CI_upper"] = ((p_hat + 1.96 * se).clip(0, 1) *
+↪
+100).round(2)
+definition_counts_df["Percent"] = definition_counts_df["Percent"].round(2)
+definition_counts_df = definition_counts_df.sort_values(
+["Hypercapnia_Definition", "Count"],
+ascending=[True, False],
+)
+definition_pivot_df = definition_counts_df.pivot_table(
+index="symptom_group",
+columns="Hypercapnia_Definition",
+values="Percent",
+fill_value=0,
+).round(2)
+definition_output_path = OUTPUT_DIR /
+↪
+"Symptom_Composition_by_Hypercapnia_Definition.xlsx"
+pivot_output_path = OUTPUT_DIR / "Symptom_Composition_Pivot_ChartReady.xlsx"
+definition_counts_df.to_excel(definition_output_path, index=False)
+definition_pivot_df.to_excel(pivot_output_path)
+display(definition_counts_df.head(12))
+print(f"Exported: {definition_output_path}")
+print(f"Exported: {pivot_output_path}")
+
+9
+8
+4
+1
+
+Hypercapnia_Definition
+
+symptom_group
+
+Count
+
+Total
+
+Percent
+
+CI_lower
+
+CI_uppe
+
+abg_hypercap_threshold
+abg_hypercap_threshold
+abg_hypercap_threshold
+abg_hypercap_threshold
+
+Symptom – Respiratory
+Symptom – Nervous
+Symptom – Digestive
+Injuries & adverse effects
+
+2384
+1595
+1259
+1031
+
+10749
+10749
+10749
+10749
+
+22.18
+14.84
+11.71
+9.59
+
+21.39
+14.17
+11.10
+9.03
+
+22.96
+15.51
+12.32
+10.15
+
+8
+
+3
+0
+2
+7
+6
+10
+5
+20
+
+Hypercapnia_Definition
+
+symptom_group
+
+Count
+
+Total
+
+Percent
+
+CI_lower
+
+CI_uppe
+
+abg_hypercap_threshold
+abg_hypercap_threshold
+abg_hypercap_threshold
+abg_hypercap_threshold
+abg_hypercap_threshold
+abg_hypercap_threshold
+abg_hypercap_threshold
+any_hypercap_icd
+
+Symptom – Circulatory
+Diseases (patient-stated)
+Other
+Symptom – Genitourinary
+Symptom – General
+Symptom – Skin/Hair/Nails
+Symptom – Eye/Ear
+Symptom – Respiratory
+
+982
+950
+944
+627
+520
+285
+172
+997
+
+10749
+10749
+10749
+10749
+10749
+10749
+10749
+1983
+
+9.14
+8.84
+8.78
+5.83
+4.84
+2.65
+1.60
+50.28
+
+8.59
+8.30
+8.25
+5.39
+4.43
+2.35
+1.36
+48.08
+
+9.68
+9.37
+9.32
+6.28
+5.24
+2.96
+1.84
+52.48
+
+Exported: /Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Proje
+CC-NLP/Symptom_Composition_by_Hypercapnia_Definition.xlsx
+Exported: /Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Proje
+CC-NLP/Symptom_Composition_Pivot_ChartReady.xlsx
+composition_plot_df = definition_pivot_df.T.loc[HYPERCAP_CRITERIA]
+ax = composition_plot_df.plot(
+kind="bar",
+stacked=True,
+figsize=(10, 6),
+width=0.8,
+edgecolor="black",
+)
+ax.set_title("Symptom Composition within Each Hypercapnia Definition (%)")
+ax.set_xlabel("Hypercapnia Definition")
+ax.set_ylabel("Percent of Patients")
+ax.tick_params(axis="x", labelrotation=15)
+ax.legend(title="Symptom Group", bbox_to_anchor=(1.05, 1), loc="upper left")
+plt.tight_layout()
+plt.show()
+
+9
+
+Symptom Composition within Each Hypercapnia Definition (%)
+Symptom Group
+Diseases (patient-stated)
+Injuries & adverse effects
+Other
+Symptom Circulatory
+Symptom Digestive
+Symptom Eye/Ear
+Symptom General
+Symptom Genitourinary
+Symptom Nervous
+Symptom Respiratory
+Symptom Skin/Hair/Nails
+
+100
+
+Percent of Patients
+
+80
+
+60
+
+40
+
+20
+
+0
+
+_icd
+
+percap
+
+any_hy
+
+ld_any
+eshold
+eshold
+ap_thr
+ap_thr
+hresho
+c
+c
+t
+r
+r
+_
+e
+e
+2
+p
+p
+o
+y
+y
+c
+p
+vbg_h
+abg_h
+Hypercapnia Definition
+
+top_for_ci = (
+definition_counts_df.groupby("symptom_group")["Count"]
+.sum()
+.sort_values(ascending=False)
+.head(5)
+.index
+)
+ci_plot_df = definition_counts_df.loc[definition_counts_df["symptom_group" ⌋
+↪
+].isin(top_for_ci)].copy()
+symptom_order = list(top_for_ci)
+definition_order = HYPERCAP_CRITERIA
+x = np.arange(len(symptom_order))
+width = 0.18
+fig, ax = plt.subplots(figsize=(11, 6))
+for idx, definition in enumerate(definition_order):
+subset = (
+ci_plot_df.loc[ci_plot_df["Hypercapnia_Definition"].eq(definition)]
+.set_index("symptom_group")
+.reindex(symptom_order)
+.fillna(0)
+
+10
+
+)
+x_pos = x + (idx - (len(definition_order) - 1) / 2) * width
+y = subset["Percent"].to_numpy()
+lower = subset["CI_lower"].to_numpy()
+upper = subset["CI_upper"].to_numpy()
+ax.bar(x_pos, y, width=width, label=definition, alpha=0.85)
+ax.errorbar(
+x_pos,
+y,
+yerr=[y - lower, upper - y],
+fmt="none",
+ecolor="black",
+elinewidth=1,
+capsize=2,
+)
+ax.set_xticks(x)
+ax.set_xticklabels(symptom_order, rotation=25, ha="right")
+ax.set_ylabel("Percent of Patients")
+ax.set_xlabel("Symptom Group")
+ax.set_title("Top Symptom Group Percentages by Hypercapnia Definition (95%
+↪
+CI)")
+ax.legend(title="Definition", bbox_to_anchor=(1.05, 1), loc="upper left")
+plt.tight_layout()
+plt.show()
+
+11
+
+Top Symptom Group Percentages by Hypercapnia Definition (95% CI)
+Definition
+any_hypercap_icd
+abg_hypercap_threshold
+vbg_hypercap_threshold
+pco2_threshold_any
+
+50
+
+Percent of Patients
+
+40
+30
+20
+10
+0
+ptom
+
+Sym
+
+irato
+Resp
+
+ous
+
+ry
+Sym
+
+ptom
+
+Nerv
+
+ptom
+
+Sym
+
+stive
+
+Dige
+
+ptom
+Sym
+Symptom Group
+
+ed)
+
+y
+
+lator
+
+Circu
+
+ases
+
+Dise
+
+stat
+ient(pat
+
+1.6 Symptom Distribution By Ascertainment Overlap
+overlap_required = [
+SYMPTOM_COL,
+"abg_hypercap_threshold",
+"vbg_hypercap_threshold",
+"other_hypercap_threshold",
+"any_hypercap_icd",
+"pco2_threshold_any",
+]
+ensure_required_columns(df, overlap_required)
+abg_flag = to_binary_flag(df["abg_hypercap_threshold"])
+vbg_flag = to_binary_flag(df["vbg_hypercap_threshold"])
+other_flag = to_binary_flag(df["other_hypercap_threshold"])
+icd_flag = to_binary_flag(df["any_hypercap_icd"])
+gas_flag = to_binary_flag(df["pco2_threshold_any"])
+gas_source_labels = classify_gas_source_overlap(abg_flag, vbg_flag,
+↪
+other_flag)
+abg_vbg_labels = np.select(
+[
+abg_flag.eq(1) & vbg_flag.eq(1),
+
+12
+
+abg_flag.eq(1) & vbg_flag.eq(0),
+abg_flag.eq(0) & vbg_flag.eq(1),
+
+)
+
+],
+["ABG+VBG", "ABG-only", "VBG-only"],
+default="Neither",
+
+icd_gas_labels = np.select(
+[
+icd_flag.eq(1) & gas_flag.eq(1),
+icd_flag.eq(1) & gas_flag.eq(0),
+icd_flag.eq(0) & gas_flag.eq(1),
+],
+["ICD+Gas", "ICD-only", "Gas-only"],
+default="Neither",
+)
+overlap_df = df.copy()
+overlap_df["gas_source_overlap"] = gas_source_labels
+overlap_df["abg_vbg_overlap"] = abg_vbg_labels
+overlap_df["icd_gas_overlap"] = icd_gas_labels
+gas_positive_df = overlap_df.loc[abg_flag.eq(1) | vbg_flag.eq(1) |
+↪
+other_flag.eq(1)].copy()
+abg_vbg_positive_df = overlap_df.loc[abg_flag.eq(1) | vbg_flag.eq(1)].copy()
+abg_vbg_counts_df, abg_vbg_pivot_df = symptom_distribution_by_overlap(
+abg_vbg_positive_df,
+group_col="abg_vbg_overlap",
+symptom_col=SYMPTOM_COL,
+top_k=10,
+)
+gas_source_counts_df, gas_source_pivot_df = symptom_distribution_by_overlap(
+gas_positive_df,
+group_col="gas_source_overlap",
+symptom_col=SYMPTOM_COL,
+top_k=10,
+)
+icd_gas_counts_df, icd_gas_pivot_df = symptom_distribution_by_overlap(
+overlap_df,
+group_col="icd_gas_overlap",
+symptom_col=SYMPTOM_COL,
+top_k=10,
+)
+
+13
+
+gas_source_output_path = OUTPUT_DIR /
+↪
+"Symptom_Composition_by_ABG_VBG_Overlap.xlsx"
+gas_source_expanded_output_path = OUTPUT_DIR /
+↪
+"Symptom_Composition_by_Gas_Source_Overlap.xlsx"
+icd_gas_output_path = OUTPUT_DIR /
+↪
+"Symptom_Composition_by_ICD_Gas_Overlap.xlsx"
+abg_vbg_pivot_df.to_excel(gas_source_output_path)
+gas_source_pivot_df.to_excel(gas_source_expanded_output_path)
+icd_gas_pivot_df.to_excel(icd_gas_output_path)
+print("Symptom distribution by ABG/VBG overlap (legacy output):")
+display(abg_vbg_pivot_df.head(15))
+print("Symptom distribution by ABG/VBG/OTHER overlap (expanded output):")
+display(gas_source_pivot_df.head(15))
+print("Symptom distribution by ICD/Gas overlap:")
+display(icd_gas_pivot_df.head(15))
+print(f"Exported: {gas_source_output_path}")
+print(f"Exported: {gas_source_expanded_output_path}")
+print(f"Exported: {icd_gas_output_path}")
+Symptom distribution by ABG/VBG overlap (legacy output):
+abg_vbg_overlap
+symptom_group
+
+ABG+VBG
+
+ABG-only
+
+VBG-only
+
+Diseases (patient-stated)
+Injuries & adverse effects
+Other
+Symptom – Circulatory
+Symptom – Digestive
+Symptom – Eye/Ear
+Symptom – General
+Symptom – Genitourinary
+Symptom – Nervous
+Symptom – Respiratory
+Symptom – Skin/Hair/Nails
+
+6.4
+9.2
+7.0
+9.1
+11.7
+1.9
+5.0
+5.3
+12.7
+29.5
+2.3
+
+10.8
+9.9
+10.2
+9.2
+11.8
+1.4
+4.7
+6.3
+16.6
+16.1
+2.9
+
+5.9
+5.2
+6.2
+9.8
+16.1
+3.7
+6.8
+5.8
+14.5
+23.8
+2.1
+
+Symptom distribution by ABG/VBG/OTHER overlap (expanded output):
+
+14
+
+gas_source_overlap
+symptom_group
+
+ABG+OTHER
+
+ABG+VBG
+
+ABG+VBG+OTHER
+
+OTHER-only
+
+VBG+O
+
+Diseases (patient-stated)
+Injuries & adverse effects
+Other
+Symptom – Circulatory
+Symptom – Digestive
+Symptom – Eye/Ear
+Symptom – General
+Symptom – Genitourinary
+Symptom – Nervous
+Symptom – Respiratory
+Symptom – Skin/Hair/Nails
+
+10.8
+9.9
+10.2
+9.2
+11.8
+1.4
+4.7
+6.3
+16.6
+16.1
+2.9
+
+0.0
+0.0
+0.0
+100.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+
+6.4
+9.2
+7.0
+9.0
+11.7
+1.9
+5.0
+5.3
+12.7
+29.6
+2.3
+
+9.1
+7.0
+8.4
+10.9
+13.9
+2.2
+6.7
+6.9
+17.7
+14.7
+2.4
+
+6.2
+6.1
+6.3
+10.6
+14.8
+3.6
+6.9
+5.4
+14.5
+23.5
+2.1
+
+icd_gas_overlap
+symptom_group
+
+Gas-only
+
+ICD+Gas
+
+ICD-only
+
+Diseases (patient-stated)
+Injuries & adverse effects
+Other
+Symptom – Circulatory
+Symptom – Digestive
+Symptom – Eye/Ear
+Symptom – General
+Symptom – Genitourinary
+Symptom – Nervous
+Symptom – Respiratory
+Symptom – Skin/Hair/Nails
+
+8.3
+7.2
+8.0
+10.3
+14.4
+2.5
+6.4
+6.4
+16.1
+18.0
+2.4
+
+3.0
+4.5
+4.4
+6.3
+6.7
+1.7
+3.7
+4.1
+12.3
+51.6
+1.6
+
+3.7
+2.9
+9.5
+11.2
+7.0
+2.1
+7.4
+4.1
+7.0
+40.9
+4.1
+
+Symptom distribution by ICD/Gas overlap:
+
+Exported: /Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Proje
+CC-NLP/Symptom_Composition_by_ABG_VBG_Overlap.xlsx
+Exported: /Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Proje
+CC-NLP/Symptom_Composition_by_Gas_Source_Overlap.xlsx
+Exported: /Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Proje
+CC-NLP/Symptom_Composition_by_ICD_Gas_Overlap.xlsx
+
+1.7 Association Model
+Logistic regression of respiratory symptom flag on hypercapnia definitions.
+
+15
+
+model_df = df.dropna(subset=[SYMPTOM_COL]).copy()
+model_df["is_respiratory"] = model_df[SYMPTOM_COL].astype(str).str.contains(
+r"\brespir", case=False, na=False
+).astype(int)
+design_matrix = sm.add_constant(model_df[HYPERCAP_CRITERIA],
+↪
+has_constant="add")
+outcome = model_df["is_respiratory"]
+logit_result = sm.Logit(outcome, design_matrix,
+↪
+missing="drop").fit(disp=False)
+or_table = pd.DataFrame(
+{
+"OR": np.exp(logit_result.params),
+"CI_lo": np.exp(logit_result.conf_int()[0]),
+"CI_hi": np.exp(logit_result.conf_int()[1]),
+"p": logit_result.pvalues,
+}
+).round(3)
+display(or_table.loc[HYPERCAP_CRITERIA])
+
+any_hypercap_icd
+abg_hypercap_threshold
+vbg_hypercap_threshold
+pco2_threshold_any
+
+OR
+
+CI_lo
+
+CI_hi
+
+p
+
+3.792
+1.092
+1.707
+0.927
+
+3.426
+1.032
+1.622
+0.702
+
+4.196
+1.155
+1.796
+1.225
+
+0.000
+0.002
+0.000
+0.593
+
+or_plot_df = or_table.loc[HYPERCAP_CRITERIA]
+y_positions = np.arange(len(or_plot_df))[::-1]
+plt.figure(figsize=(6, 4))
+plt.hlines(y=y_positions, xmin=or_plot_df["CI_lo"], xmax=or_plot_df["CI_hi"],
+↪
+linewidth=1.5)
+plt.plot(or_plot_df["OR"], y_positions, "o")
+plt.vlines(1, ymin=-1, ymax=len(or_plot_df), linestyles="dashed")
+plt.yticks(y_positions, or_plot_df.index)
+plt.xlabel("Odds ratio for respiratory symptom")
+plt.title("Adjusted ORs (95% CI)")
+plt.tight_layout()
+plt.show()
+
+16
+
+Adjusted ORs (95% CI)
+any_hypercap_icd
+abg_hypercap_threshold
+vbg_hypercap_threshold
+pco2_threshold_any
+
+1.0
+
+1.5 2.0 2.5 3.0 3.5
+Odds ratio for respiratory symptom
+
+4.0
+
+1.8 Export Verification
+expected_outputs = [
+definition_output_path,
+pivot_output_path,
+gas_source_output_path,
+gas_source_expanded_output_path,
+icd_gas_output_path,
+]
+verification_rows = []
+for output_path in expected_outputs:
+verification_rows.append(
+{
+"path": str(output_path),
+"exists": output_path.exists(),
+"size_bytes": output_path.stat().st_size if output_path.exists()
+↪
+else 0,
+}
+)
+
+17
+
+output_verification = pd.DataFrame(verification_rows)
+display(output_verification)
+
+0
+1
+2
+3
+4
+
+path
+
+exists
+
+size_bytes
+
+/Users/blocke/Box Sync/Residency Personal File...
+/Users/blocke/Box Sync/Residency Personal File...
+/Users/blocke/Box Sync/Residency Personal File...
+/Users/blocke/Box Sync/Residency Personal File...
+/Users/blocke/Box Sync/Residency Personal File...
+
+True
+True
+True
+True
+True
+
+6924
+5485
+5373
+5531
+5366
+
+18
+
+

@@ -409,6 +409,15 @@ qa_summary_path = WORK_DIR / "qa_summary.json"
 if qa_summary_path.exists():
     qa_summary_payload = json.loads(qa_summary_path.read_text())
     blood_gas_audit_paths = qa_summary_payload.get("blood_gas_audit_paths", {})
+    timing_integrity_audit = qa_summary_payload.get("timing_integrity_audit", [{}])
+    ventilation_timing_audit = qa_summary_payload.get("ventilation_timing_audit", [{}])
+    timing_row = timing_integrity_audit[0] if timing_integrity_audit else {}
+    vent_row = ventilation_timing_audit[0] if ventilation_timing_audit else {}
+    qualifying_gas_observed_rate = (
+        float(pd.to_numeric(df["qualifying_gas_observed"], errors="coerce").fillna(0).mean())
+        if "qualifying_gas_observed" in df.columns
+        else None
+    )
     qc_rows = [
         {
             "metric": "OTHER semantics",
@@ -447,6 +456,34 @@ if qa_summary_path.exists():
                 if qa_summary_payload.get("first_gas_anchor_audit")
                 else None
             ),
+        },
+        {
+            "metric": "qualifying_gas_observed_rate",
+            "value": qualifying_gas_observed_rate,
+        },
+        {
+            "metric": "hospital_los_negative_n",
+            "value": timing_row.get("hospital_los_negative_n"),
+        },
+        {
+            "metric": "admittime_before_ed_intime_n",
+            "value": timing_row.get("admittime_before_ed_intime_n"),
+        },
+        {
+            "metric": "imv_time_outside_window_n",
+            "value": vent_row.get("imv_time_outside_window_n"),
+        },
+        {
+            "metric": "niv_time_outside_window_n",
+            "value": vent_row.get("niv_time_outside_window_n"),
+        },
+        {
+            "metric": "poc_inclusion_enabled",
+            "value": qa_summary_payload.get("poc_inclusion_enabled"),
+        },
+        {
+            "metric": "poc_inclusion_reason",
+            "value": qa_summary_payload.get("poc_inclusion_reason"),
         },
         {
             "metric": "pco2_source_distribution_audit_path",

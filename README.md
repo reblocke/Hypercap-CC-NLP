@@ -315,6 +315,12 @@ Anthropometric timing policy:
 - OMR anthropometrics use a tiered fallback: pre-ED (within 365 days) first, then post-ED (within 365 days).
 - Charted fallback can fill remaining missing values with nearest-anytime records when enabled.
 - Output provenance columns indicate uncertainty: `anthro_timing_tier`, `anthro_days_offset`, `anthro_chartdate`, `anthro_timing_uncertain`, `anthro_source`, `anthro_obstime`, `anthro_hours_offset`, `anthro_timing_basis`.
+- Conservative model-cleaned anthropometric fields are exported as `bmi_closest_pre_ed_model`, `height_closest_pre_ed_model`, `weight_closest_pre_ed_model` with paired outlier flags.
+
+Hypercapnia timing + integrity policy:
+- Legacy boolean timing flags are retained for compatibility, and additive tri-state fields are exported: `qualifying_gas_observed`, `presenting_hypercapnia_tri`, `late_hypercapnia_tri`, `hypercap_timing_class`.
+- Timestamp integrity and ventilation-window sanitation are additive (`hospital_los_negative_flag`, `admittime_before_ed_intime_flag`, `dt_first_imv_hours_model`, `dt_first_niv_hours_model`, `imv_time_outside_window_flag`, `niv_time_outside_window_flag`).
+- Blood-gas provenance fields are exported for first-gas anchor auditability (`first_gas_specimen_type`, `first_gas_specimen_present`, `first_gas_pco2_itemid`, `first_gas_pco2_fluid`, `co2_other_is_blood_asserted`).
 
 Classifier CC missingness policy:
 - Pseudo-missing CC tokens (e.g., `-`, `--`, `N`, `UNKNOWN`, redaction underscores) are retained but flagged via `cc_pseudomissing_flag` and `cc_missing_flag`.
@@ -326,6 +332,8 @@ Annotation workbook curation remains an independent manual workflow.
 ## Methods summary (BigQuery pipeline)
 - Query MIMIC‑IV HOSP/ICU/ED in BigQuery and assemble an **ED‑stay** cohort anchored to the first ED visit per hospitalization.
 - Define hypercapnia via ICD codes and blood‑gas thresholds (ABG/VBG), then take the union.
+- Source assignment for enrollment thresholds is specimen-driven; `OTHER` is constrained to LAB blood-gas pCO2 with unknown specimen class.
+- POC inclusion is gated by manifest+QC (`poc_inclusion_enabled` / `poc_inclusion_reason`); when gates fail, POC remains audited but excluded from threshold union.
 - Join ED triage data and ED vitals; derive ED chief‑complaint subsets and time‑anchored features.
 - Manually annotate ED chief complaints to NHAMCS 17 top‑level RVC groups.
 - Quantify agreement with set‑based metrics and chance‑corrected scores (e.g., Gwet’s AC1).
@@ -355,9 +363,13 @@ ED vitals cleaning policy (cohort stage):
 | Gas source audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD gas_source_audit.json` |
 | Gas source overlap summary | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD gas_source_overlap_summary.csv` |
 | Blood-gas manifest itemid audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD blood_gas_itemid_manifest_audit.csv` |
+| pCO2 itemid QC audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD pco2_itemid_qc_audit.csv` |
 | pCO2 source distribution audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD pco2_source_distribution_audit.csv` |
 | OTHER-route quarantine audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD other_route_quarantine_audit.csv` |
 | First-gas anchor audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD first_gas_anchor_audit.csv` |
+| Timing integrity audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD timing_integrity_audit.csv` |
+| Ventilation timing audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD ventilation_timing_audit.csv` |
+| Anthropometric cleaning audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD anthropometric_cleaning_audit.csv` |
 | First other-pCO2 audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD first_other_pco2_audit.csv` |
 | ED vitals distribution audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD ed_vitals_distribution_summary.csv` |
 | ED vitals extremes audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD ed_vitals_extreme_examples.csv` |

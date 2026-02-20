@@ -65,8 +65,18 @@ def test_cohort_notebook_contains_ed_vitals_cleaning_helpers() -> None:
     assert "pco2_source_distribution_audit.csv" in cohort_text
     assert "other_route_quarantine_audit.csv" in cohort_text
     assert "first_gas_anchor_audit.csv" in cohort_text
+    assert "pco2_itemid_qc_audit.csv" in cohort_text
+    assert "timing_integrity_audit.csv" in cohort_text
+    assert "ventilation_timing_audit.csv" in cohort_text
+    assert "anthropometric_cleaning_audit.csv" in cohort_text
     assert "first_other_src_detail" in cohort_text
     assert "first_gas_anchor_has_pco2" in cohort_text
+    assert "poc_inclusion_enabled" in cohort_text
+    assert "poc_inclusion_reason" in cohort_text
+    assert "qualifying_gas_observed" in cohort_text
+    assert "presenting_hypercapnia_tri" in cohort_text
+    assert "late_hypercapnia_tri" in cohort_text
+    assert "hypercap_timing_class" in cohort_text
 
 
 def test_analysis_notebook_contains_requested_outputs() -> None:
@@ -77,6 +87,8 @@ def test_analysis_notebook_contains_requested_outputs() -> None:
     assert "Ascertainment_Overlap_UpSet.png" in analysis_text
     assert "from upsetplot import UpSet, from_indicators" in analysis_text
     assert "def select_preferred_vital_column(" in analysis_text
+    assert "qualifying_gas_observed_rate" in analysis_text
+    assert "poc_inclusion_enabled" in analysis_text
 
 
 def test_classifier_notebook_contains_spell_mode_comparison_and_audit() -> None:

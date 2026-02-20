@@ -25,9 +25,13 @@ COHORT_HCO3_WARN_MIN_COVERAGE = 0.20
 COHORT_FIRST_GAS_ANCHOR_TOLERANCE = 0
 COHORT_REQUIRED_AUDIT_SUFFIXES = (
     "blood_gas_itemid_manifest_audit.csv",
+    "pco2_itemid_qc_audit.csv",
     "pco2_source_distribution_audit.csv",
     "other_route_quarantine_audit.csv",
     "first_gas_anchor_audit.csv",
+    "timing_integrity_audit.csv",
+    "ventilation_timing_audit.csv",
+    "anthropometric_cleaning_audit.csv",
 )
 
 COHORT_REQUIRED_ED_VITALS_CLEAN_COLUMNS: dict[str, tuple[str, ...]] = {
@@ -82,6 +86,12 @@ COHORT_ED_VITALS_CLEAN_BOUNDS: dict[str, tuple[float, float]] = {
     "ed_first_o2sat_clean": (0.0, 100.0),
 }
 
+COHORT_ANTHRO_MODEL_BOUNDS: dict[str, tuple[float, float]] = {
+    "bmi_closest_pre_ed_model": (0.0, 100.0),
+    "height_closest_pre_ed_model": (100.0, 250.0),
+    "weight_closest_pre_ed_model": (0.0, 400.0),
+}
+
 
 def _utc_timestamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -106,6 +116,12 @@ def validate_cohort_contract(
 ) -> dict[str, Any]:
     """Validate deterministic cohort output contracts."""
     findings: list[dict[str, str]] = []
+    timing_tri_state_mismatch_n = 0
+    timing_tri_state_invalid_value_n = 0
+    hospital_los_negative_model_n = 0
+    dt_first_imv_model_negative_n = 0
+    dt_first_niv_model_negative_n = 0
+    anthro_model_invalid_counts: dict[str, int] = {}
 
     if "hadm_id" in df.columns:
         hadm_dup = int(df.duplicated(subset=["hadm_id"]).sum())
@@ -173,9 +189,15 @@ def validate_cohort_contract(
 
     if "first_gas_time" in df.columns:
         missing_anchor_columns = sorted(
-            {"first_gas_anchor_has_pco2", "first_gas_anchor_source_validated"}.difference(
-                df.columns
-            )
+            {
+                "first_gas_anchor_has_pco2",
+                "first_gas_anchor_source_validated",
+                "first_gas_specimen_type",
+                "first_gas_specimen_present",
+                "first_gas_pco2_itemid",
+                "first_gas_pco2_fluid",
+                "co2_other_is_blood_asserted",
+            }.difference(df.columns)
         )
         if missing_anchor_columns:
             findings.append(
@@ -223,6 +245,206 @@ def validate_cohort_contract(
                     }
                 )
 
+    tri_state_required = {
+        "qualifying_gas_observed",
+        "presenting_hypercapnia_tri",
+        "late_hypercapnia_tri",
+        "hypercap_timing_class",
+    }
+    if "dt_first_qualifying_gas_hours" in df.columns:
+        missing_timing_cols = sorted(tri_state_required.difference(df.columns))
+        if missing_timing_cols:
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": "missing_timing_tri_state_columns",
+                    "message": (
+                        "Timing tri-state columns missing despite dt_first_qualifying_gas_hours presence: "
+                        f"{missing_timing_cols}"
+                    ),
+                }
+            )
+    if tri_state_required.issubset(df.columns):
+        qualifying_observed = (
+            pd.to_numeric(df["qualifying_gas_observed"], errors="coerce")
+            .fillna(0)
+            .astype(int)
+            .eq(1)
+        )
+        presenting_tri = pd.to_numeric(
+            df["presenting_hypercapnia_tri"], errors="coerce"
+        )
+        late_tri = pd.to_numeric(df["late_hypercapnia_tri"], errors="coerce")
+        invalid_presenting = int(
+            (presenting_tri.notna() & ~presenting_tri.isin([0, 1])).sum()
+        )
+        invalid_late = int((late_tri.notna() & ~late_tri.isin([0, 1])).sum())
+        timing_tri_state_invalid_value_n = invalid_presenting + invalid_late
+        if timing_tri_state_invalid_value_n > 0:
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": "timing_tri_state_invalid_values",
+                    "message": (
+                        "Timing tri-state columns contain values outside {0,1,NA}: "
+                        f"{timing_tri_state_invalid_value_n} rows."
+                    ),
+                }
+            )
+
+        observed_missing_tri = int(
+            (qualifying_observed & (presenting_tri.isna() | late_tri.isna())).sum()
+        )
+        unobserved_with_tri = int(
+            ((~qualifying_observed) & (presenting_tri.notna() | late_tri.notna())).sum()
+        )
+        timing_tri_state_mismatch_n = observed_missing_tri + unobserved_with_tri
+        if timing_tri_state_mismatch_n > 0:
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": "timing_tri_state_inconsistent_with_observed_flag",
+                    "message": (
+                        "Tri-state timing fields are inconsistent with qualifying_gas_observed: "
+                        f"observed_missing={observed_missing_tri}, unobserved_with_values={unobserved_with_tri}."
+                    ),
+                }
+            )
+
+        timing_class = (
+            df["hypercap_timing_class"]
+            .astype("string")
+            .fillna("")
+            .str.strip()
+        )
+        allowed_timing_classes = {
+            "presenting_0_6h",
+            "late_6_24h",
+            "none_within_24h",
+            "icd_only_or_no_qualifying_gas",
+        }
+        invalid_class_n = int(
+            (~timing_class.isin(allowed_timing_classes)).sum()
+        )
+        if invalid_class_n > 0:
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": "timing_class_invalid_values",
+                    "message": (
+                        "hypercap_timing_class contains unsupported values: "
+                        f"{invalid_class_n} rows."
+                    ),
+                }
+            )
+
+    if "hospital_los_hours_model" in df.columns:
+        hospital_los_numeric = pd.to_numeric(
+            df["hospital_los_hours_model"], errors="coerce"
+        )
+        hospital_los_negative_model_n = int(
+            (hospital_los_numeric.notna() & hospital_los_numeric.lt(0)).sum()
+        )
+        if hospital_los_negative_model_n > 0:
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": "hospital_los_hours_model_negative",
+                    "message": (
+                        "hospital_los_hours_model contains negative non-null values: "
+                        f"{hospital_los_negative_model_n} rows."
+                    ),
+                }
+            )
+
+    for model_col, raw_col, flag_col, code in (
+        (
+            "dt_first_imv_hours_model",
+            "dt_first_imv_hours",
+            "imv_time_outside_window_flag",
+            "dt_first_imv_hours_model_invalid",
+        ),
+        (
+            "dt_first_niv_hours_model",
+            "dt_first_niv_hours",
+            "niv_time_outside_window_flag",
+            "dt_first_niv_hours_model_invalid",
+        ),
+    ):
+        if raw_col in df.columns and (model_col not in df.columns or flag_col not in df.columns):
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": "missing_vent_timing_model_columns",
+                    "message": (
+                        f"{raw_col} is present but {model_col} or {flag_col} is missing."
+                    ),
+                }
+            )
+            continue
+        if model_col not in df.columns:
+            continue
+        model_values = pd.to_numeric(df[model_col], errors="coerce")
+        negative_n = int((model_values.notna() & model_values.lt(0)).sum())
+        if model_col == "dt_first_imv_hours_model":
+            dt_first_imv_model_negative_n = negative_n
+        if model_col == "dt_first_niv_hours_model":
+            dt_first_niv_model_negative_n = negative_n
+        if negative_n > 0:
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": code,
+                    "message": f"{model_col} contains negative non-null values: {negative_n} rows.",
+                }
+            )
+
+    anthro_flag_map = {
+        "bmi_closest_pre_ed_model": "bmi_outlier_flag",
+        "height_closest_pre_ed_model": "height_outlier_flag",
+        "weight_closest_pre_ed_model": "weight_outlier_flag",
+    }
+    for model_col, bounds in COHORT_ANTHRO_MODEL_BOUNDS.items():
+        if model_col not in df.columns:
+            continue
+        lower_bound, upper_bound = bounds
+        numeric = pd.to_numeric(df[model_col], errors="coerce")
+        if model_col == "height_closest_pre_ed_model":
+            lower_invalid = numeric.lt(lower_bound)
+            bounds_label = f"[{lower_bound}, {upper_bound}]"
+        else:
+            lower_invalid = numeric.le(lower_bound)
+            bounds_label = f"({lower_bound}, {upper_bound}]"
+        invalid_n = int(
+            (
+                numeric.notna()
+                & (lower_invalid | numeric.gt(upper_bound))
+            ).sum()
+        )
+        anthro_model_invalid_counts[model_col] = invalid_n
+        if invalid_n > 0:
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": "anthro_model_out_of_bounds",
+                    "message": (
+                        f"{model_col} contains {invalid_n} non-null values outside "
+                        f"{bounds_label}."
+                    ),
+                }
+            )
+        flag_col = anthro_flag_map.get(model_col)
+        if flag_col and flag_col not in df.columns:
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": "missing_anthro_outlier_flag_column",
+                    "message": (
+                        f"{model_col} is present but required outlier flag column {flag_col} is missing."
+                    ),
+                }
+            )
+
     for raw_column, required_clean_columns in COHORT_REQUIRED_ED_VITALS_CLEAN_COLUMNS.items():
         if raw_column not in df.columns:
             continue
@@ -269,6 +491,44 @@ def validate_cohort_contract(
                         ),
                     }
                 )
+
+    if "poc_inclusion_enabled" in df.columns:
+        inclusion_values = (
+            df["poc_inclusion_enabled"].fillna(False).astype(bool).value_counts()
+        )
+        if len(inclusion_values) > 1:
+            findings.append(
+                {
+                    "severity": "warning",
+                    "code": "poc_inclusion_enabled_not_constant",
+                    "message": (
+                        "poc_inclusion_enabled varies within a single cohort export; "
+                        f"counts={inclusion_values.to_dict()}."
+                    ),
+                }
+            )
+    elif any(
+        column_name in df.columns
+        for column_name in ("poc_other_paco2", "poc_other_quarantined_hypercap_threshold")
+    ):
+        findings.append(
+            {
+                "severity": "error",
+                "code": "missing_poc_inclusion_status_columns",
+                "message": (
+                    "POC-derived columns are present but poc_inclusion_enabled is missing."
+                ),
+            }
+        )
+
+    if "poc_inclusion_enabled" in df.columns and "poc_inclusion_reason" not in df.columns:
+        findings.append(
+            {
+                "severity": "warning",
+                "code": "missing_poc_inclusion_reason",
+                "message": "Missing poc_inclusion_reason column in cohort export.",
+            }
+        )
 
     gas_source_other_rate = None
     if "gas_source_other_rate" in df.columns:
@@ -429,7 +689,13 @@ def validate_cohort_contract(
         "poc_other_pco2_count": poc_other_pco2_count,
         "first_other_poc_rows": first_other_poc_rows,
         "poc_other_quarantine_leak_n": poc_other_quarantine_leak_n,
+        "timing_tri_state_mismatch_n": timing_tri_state_mismatch_n,
+        "timing_tri_state_invalid_value_n": timing_tri_state_invalid_value_n,
+        "hospital_los_hours_model_negative_n": hospital_los_negative_model_n,
+        "dt_first_imv_hours_model_negative_n": dt_first_imv_model_negative_n,
+        "dt_first_niv_hours_model_negative_n": dt_first_niv_model_negative_n,
         "anthro_bmi_coverage_rate": bmi_coverage_rate,
+        "anthro_model_invalid_counts": anthro_model_invalid_counts,
         "first_hco3_coverage_rate": hco3_coverage_rate,
         "anthro_source_counts": anthro_source_counts,
         "findings": findings,

@@ -30,10 +30,32 @@ Key decisions:
 
 State:
 - Done: prior P0/P1/P2 remediation and Quarto migration are in place.
-- Now: user-confirmed SymSpell mode comparison + LAB-only OTHER + HCO3 prioritization implementation rerun completed.
-- Next: decide whether to expand LAB/ICU HCO3 itemid allowlists and whether to keep or relax current `first_hco3` coverage warning threshold.
+- Now: residual integrity + blood-gas alignment pass completed and validated on latest canonical `11,769`-row outputs.
+- Next: optional follow-up tuning for unresolved OTHER-route burden (`gas_source_other_rate_high`) and low HCO3 coverage warnings.
 
 Done:
+- Updated specimen-driven strictification in cohort core (`MIMICIV_hypercap_EXT_cohort.qmd`):
+  - removed ABG/VBG label fallback in `co2_thresholds_sql` and blood-gas pair SQL,
+  - kept source classification specimen-type-first with OTHER as unknown blood specimen class.
+- Added additive cohort fields and QA summary wiring:
+  - timing tri-state (`qualifying_gas_observed`, `presenting_hypercapnia_tri`, `late_hypercapnia_tri`, `hypercap_timing_class`),
+  - timestamp/vent model fields (`hospital_los_hours_model`, `dt_first_imv_hours_model`, `dt_first_niv_hours_model`) + integrity flags,
+  - conservative anthropometric model fields + outlier flags,
+  - first-gas provenance (`first_gas_specimen_*`, `first_gas_pco2_*`, `co2_other_is_blood_asserted`),
+  - POC inclusion state (`poc_inclusion_enabled`, `poc_inclusion_reason`),
+  - new audits (`pco2_itemid_qc_audit`, `timing_integrity_audit`, `ventilation_timing_audit`, `anthropometric_cleaning_audit`).
+- Updated contracts/tests/docs:
+  - `src/hypercap_cc_nlp/pipeline_contracts.py` checks tri-state consistency, vent/timestamp model integrity, anthro model bounds, POC inclusion status, and new required audit artifacts.
+  - `tests/test_pipeline_contracts.py` + `tests/test_notebook_output_contracts.py` updated for new contract semantics and notebook markers.
+  - `Hypercap CC NLP Analysis.qmd` now surfaces QC metrics for qualifying-gas observation, timing/vent anomalies, and POC inclusion state.
+  - `README.md` updated with new semantics/columns/artifacts.
+- Validation after implementation:
+  - `make lint` passed.
+  - `make test` passed (`92 passed`).
+  - `make contracts-check STAGE=all` passed with `status=warning` (only `gas_source_other_rate_high`, `first_hco3_coverage_low`).
+  - `make quarto-pipeline` completed under warning-mode run settings (`PIPELINE_CONTRACT_MODE=warn`, `COHORT_OTHER_RELATIVE_REDUCTION_MIN=0`) for this cycle.
+  - baseline refreshed: `artifacts/baselines/jupyter/20260220_152137_post_residual_integrity/`.
+  - `make quarto-parity-check BASELINE=latest` passed against refreshed baseline.
 - Added versioned blood-gas manifest: `specs/blood_gas_itemids.json`.
 - Refactored cohort core gas extraction in `MIMICIV_hypercap_EXT_cohort.qmd`:
   - strict LAB pCO2/pH/specimen itemid allowlists + blood-fluid guard,
@@ -203,13 +225,39 @@ Done:
   - `first_other_src`: only `LAB_BG_UNKNOWN` + null; `poc_other_paco2` non-null count `0`.
   - `flag_abg_hypercapnia_sum = 7,276`; `hypercap_by_abg_sum = 7,276`; BG union mismatch `0`.
   - abnormal-labs subset: `abnormal_loss_rows = 0`; top RFV1 remains `Abnormal test result`.
+- Verified latest PDF/data alignment claim:
+  - Root PDFs and `artifacts/reports/20260218_162048/*.pdf` contain `11,769` row-count traces and `EXPORT_SHAPE` lines matching canonical workbook hashes/counts.
+  - Root PDFs are byte-identical to run-dir PDFs (same SHA256 prefixes and mtimes).
+  - Older report dirs still contain legacy PDFs with `41,322` and some `115,179` traces (e.g., `artifacts/reports/20260216_222038/`), which explains external reviewer mismatch when those files are analyzed instead of latest run artifacts.
+- Generated reproducibility inventories for latest run:
+  - `debug/recheck/20260218_162048/run_inventory.tsv` (per-stage manifest outputs + report PDFs + root PDFs, with mtime/size/SHA256).
+  - `debug/recheck/20260218_162048/report_dir_rowcount_signatures.tsv` (quick signature matrix showing which report dirs contain 11,769 vs 41,322/115,179 text traces).
+- Verified current canonical classifier output for residual normalization corruption:
+  - `fall` raw encounters = `640`; `fall -> small` conversions = `0`.
+  - `head` raw encounters = `110`; `head -> heart` conversions = `0`.
+  - cleaned pre-2020 `covid` hallucinations = `0`.
+  - checks performed on both `cc_cleaned_str` and `cc_cleaned_canon_str` in `MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx`.
+  - conclusion: issue no longer active in current canonical workbook; prior reports likely reflected older artifacts.
+- Verified secondary residual-issue status on current canonical workbook (`11,769` rows):
+  - qualifying gas timing encoding issue remains active: `dt_first_qualifying_gas_hours` missing for `4,168`, and all such rows have `presenting_hypercapnia=0` and `late_hypercapnia=0`.
+  - timestamp integrity issues remain active: `hospital_los_hours<0` for `17`; `admittime<ed_intime` for `15`.
+  - ventilation timing integrity remains active: `dt_first_imv_hours<0` for `6`; `dt_first_niv_hours<0` for `1`; `dt_first_imv_hours>hospital_los_hours` for `74` (`57` even when LOS>=0); `dt_first_niv_hours>hospital_los_hours` for `33` (`29` with LOS>=0).
+  - anthropometric outliers remain active despite improved coverage:
+    - BMI non-null `7,245`; `BMI<=0`=`32`; `BMI>100`=`81`; max `537.67`.
+    - Height non-null `7,249`; `<100`=`32`; `>250`=`1`; max `419.1`.
+  - POC structural emptiness remains active by design:
+    - `16` `poc_*` columns total; `15` are all-null; only non-null one is `poc_other_quarantined_hypercap_threshold` (`11,769`, derived quarantine indicator), while core POC gas values (`poc_abg_paco2`, `poc_vbg_paco2`, `poc_other_paco2`, pH variants) are all `0` non-null.
+  - snapshot artifact written: `debug/recheck/20260218_162048/secondary_issue_check.json`.
 
 Now:
-- Remediation cycle complete; awaiting follow-up decisions on remaining warnings.
+- Residual-integrity implementation is in progress from interrupted state; cohort notebook changes are partially landed and need completion in QA summary/export contracts/tests.
 
 Next:
-- If requested, tune manifest allowlists and HCO3 extraction logic to raise `first_hco3` coverage while preserving blood-gas specificity.
-- If requested, recalibrate OTHER-rate reduction gate baseline/target to avoid strict rerun deadlocks after stable runs.
+- Complete remaining plan scope:
+  - propagate new timing/vent/anthro/provenance fields into contract checks and notebook output contracts,
+  - add analysis QC summary rows for timing/vent anomalies and POC inclusion status,
+  - refresh README for the new fields/audits/gating behavior,
+  - rerun `make quarto-pipeline`, `make contracts-check STAGE=all`, and `make quarto-parity-check BASELINE=latest`.
 
 Open questions (UNCONFIRMED if needed):
 - UNCONFIRMED: exact final allowlists for all blood-gas itemids beyond currently known high-confidence IDs.

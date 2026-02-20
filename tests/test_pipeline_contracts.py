@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 
 from hypercap_cc_nlp.pipeline_contracts import (
+    COHORT_REQUIRED_AUDIT_SUFFIXES,
     COHORT_POC_PCO2_MEDIAN_MAX,
     COHORT_POC_PCO2_MEDIAN_MIN,
     build_pipeline_contract_report,
@@ -190,6 +191,11 @@ def test_validate_cohort_contract_flags_first_gas_anchor_without_pco2() -> None:
             "first_gas_time": [pd.Timestamp("2026-01-01")],
             "first_gas_anchor_has_pco2": [False],
             "first_gas_anchor_source_validated": [True],
+            "first_gas_specimen_type": ["arterial blood"],
+            "first_gas_specimen_present": [True],
+            "first_gas_pco2_itemid": [50818],
+            "first_gas_pco2_fluid": ["blood"],
+            "co2_other_is_blood_asserted": [False],
         }
     )
     report = validate_cohort_contract(df)
@@ -325,12 +331,7 @@ def test_build_pipeline_contract_report_reads_canonical_outputs(tmp_path: Path) 
     (prior_runs_dir / "2026-02-16 classifier_cc_missing_audit.csv").write_text(
         "cc_missing_reason,row_count,examples\nvalid,1,shortness of breath\n"
     )
-    for suffix in (
-        "blood_gas_itemid_manifest_audit.csv",
-        "pco2_source_distribution_audit.csv",
-        "other_route_quarantine_audit.csv",
-        "first_gas_anchor_audit.csv",
-    ):
+    for suffix in COHORT_REQUIRED_AUDIT_SUFFIXES:
         (prior_runs_dir / f"2026-02-16 {suffix}").write_text("col\nvalue\n")
 
     report = build_pipeline_contract_report(tmp_path)
@@ -456,3 +457,92 @@ def test_validate_cohort_contract_flags_invalid_cleaned_vitals_ranges() -> None:
     assert report["status"] == "fail"
     assert "invalid_ed_vitals_clean_range" in codes
     assert "ed_temp_clean_contains_celsius_band_values" in codes
+
+
+def test_validate_cohort_contract_enforces_timing_tri_state_consistency() -> None:
+    df = pd.DataFrame(
+        {
+            "hadm_id": [1, 2],
+            "ed_stay_id": [11, 22],
+            "abg_hypercap_threshold": [1, 0],
+            "vbg_hypercap_threshold": [0, 1],
+            "other_hypercap_threshold": [0, 0],
+            "pco2_threshold_any": [1, 1],
+            "gas_source_other_rate": [0.1, 0.1],
+            "gas_source_inference_primary_tier": ["specimen_text", "specimen_text"],
+            "gas_source_hint_conflict_rate": [0.0, 0.0],
+            "gas_source_resolved_rate": [1.0, 1.0],
+            "bmi_closest_pre_ed": [30.0, 31.0],
+            "anthro_source": ["omr", "icu_charted"],
+            "dt_first_qualifying_gas_hours": [2.0, pd.NA],
+            "qualifying_gas_observed": [1, 0],
+            "presenting_hypercapnia_tri": [pd.NA, 1],
+            "late_hypercapnia_tri": [0, pd.NA],
+            "hypercap_timing_class": [
+                "presenting_0_6h",
+                "icd_only_or_no_qualifying_gas",
+            ],
+        }
+    )
+    report = validate_cohort_contract(df)
+    codes = {finding["code"] for finding in report["findings"]}
+    assert "timing_tri_state_inconsistent_with_observed_flag" in codes
+
+
+def test_validate_cohort_contract_flags_negative_model_deltas() -> None:
+    df = pd.DataFrame(
+        {
+            "hadm_id": [1],
+            "ed_stay_id": [11],
+            "abg_hypercap_threshold": [1],
+            "vbg_hypercap_threshold": [0],
+            "other_hypercap_threshold": [0],
+            "pco2_threshold_any": [1],
+            "gas_source_other_rate": [0.1],
+            "gas_source_inference_primary_tier": ["specimen_text"],
+            "gas_source_hint_conflict_rate": [0.0],
+            "gas_source_resolved_rate": [1.0],
+            "bmi_closest_pre_ed": [30.0],
+            "anthro_source": ["omr"],
+            "dt_first_imv_hours": [5.0],
+            "dt_first_imv_hours_model": [-1.0],
+            "imv_time_outside_window_flag": [True],
+            "dt_first_niv_hours": [4.0],
+            "dt_first_niv_hours_model": [-2.0],
+            "niv_time_outside_window_flag": [True],
+            "hospital_los_hours_model": [-5.0],
+        }
+    )
+    report = validate_cohort_contract(df)
+    codes = {finding["code"] for finding in report["findings"]}
+    assert "hospital_los_hours_model_negative" in codes
+    assert "dt_first_imv_hours_model_invalid" in codes
+    assert "dt_first_niv_hours_model_invalid" in codes
+
+
+def test_validate_cohort_contract_flags_anthro_model_out_of_bounds() -> None:
+    df = pd.DataFrame(
+        {
+            "hadm_id": [1],
+            "ed_stay_id": [11],
+            "abg_hypercap_threshold": [1],
+            "vbg_hypercap_threshold": [0],
+            "other_hypercap_threshold": [0],
+            "pco2_threshold_any": [1],
+            "gas_source_other_rate": [0.1],
+            "gas_source_inference_primary_tier": ["specimen_text"],
+            "gas_source_hint_conflict_rate": [0.0],
+            "gas_source_resolved_rate": [1.0],
+            "bmi_closest_pre_ed": [30.0],
+            "anthro_source": ["omr"],
+            "bmi_closest_pre_ed_model": [150.0],
+            "height_closest_pre_ed_model": [90.0],
+            "weight_closest_pre_ed_model": [500.0],
+            "bmi_outlier_flag": [True],
+            "height_outlier_flag": [True],
+            "weight_outlier_flag": [True],
+        }
+    )
+    report = validate_cohort_contract(df)
+    codes = {finding["code"] for finding in report["findings"]}
+    assert "anthro_model_out_of_bounds" in codes
