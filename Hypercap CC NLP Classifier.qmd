@@ -3062,8 +3062,8 @@ hypercap_flags_audit = pd.DataFrame(
             "unknown_hypercap_threshold_positive": int(
                 pd.to_numeric(df_out.get("unknown_hypercap_threshold", 0), errors="coerce").fillna(0).astype(int).sum()
             ),
-            "pco2_threshold_any_positive": int(
-                pd.to_numeric(df_out.get("pco2_threshold_any", 0), errors="coerce").fillna(0).astype(int).sum()
+            "pco2_threshold_0_24h_positive": int(
+                pd.to_numeric(df_out.get("pco2_threshold_0_24h", 0), errors="coerce").fillna(0).astype(int).sum()
             ),
             "threshold_union_mismatch_n": int(
                 (
@@ -3072,7 +3072,7 @@ hypercap_flags_audit = pd.DataFrame(
                         | pd.to_numeric(df_out.get("vbg_hypercap_threshold", 0), errors="coerce").fillna(0).astype(int)
                         | pd.to_numeric(df_out.get("unknown_hypercap_threshold", 0), errors="coerce").fillna(0).astype(int)
                     )
-                    != pd.to_numeric(df_out.get("pco2_threshold_any", 0), errors="coerce").fillna(0).astype(int)
+                    != pd.to_numeric(df_out.get("pco2_threshold_0_24h", 0), errors="coerce").fillna(0).astype(int)
                 ).sum()
             ),
         }

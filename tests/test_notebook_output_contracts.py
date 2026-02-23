@@ -63,6 +63,8 @@ def test_cohort_notebook_contains_ed_vitals_cleaning_helpers() -> None:
     assert "specs/blood_gas_itemids.json" in cohort_text
     assert "blood_gas_itemid_manifest_audit.csv" in cohort_text
     assert "pco2_source_distribution_audit.csv" in cohort_text
+    assert "ALL_CANDIDATE_PCO2_LAB_POC" in cohort_text
+    assert "pco2_window_max_contributor_audit.csv" in cohort_text
     assert "blood_gas_triplet_completeness_audit.csv" in cohort_text
     assert "qualifying_pco2_distribution_by_type_audit.csv" in cohort_text
     assert "other_route_quarantine_audit.csv" in cohort_text
@@ -82,8 +84,8 @@ def test_cohort_notebook_contains_ed_vitals_cleaning_helpers() -> None:
     assert "normalize_anthro_source(" in cohort_text
     assert "first_other_src_detail" in cohort_text
     assert "first_gas_anchor_has_pco2" in cohort_text
-    assert "poc_inclusion_enabled" in cohort_text
-    assert "poc_inclusion_reason" in cohort_text
+    assert "poc_itemid_qc_passed" in cohort_text
+    assert "poc_itemid_qc_reason" in cohort_text
     assert "pco2_threshold_0_24h" in cohort_text
     assert "qualifying_pco2_time" in cohort_text
     assert "qualifying_pco2_mmhg" in cohort_text
@@ -109,6 +111,8 @@ def test_cohort_notebook_contains_ed_vitals_cleaning_helpers() -> None:
     assert "contract_warning_codes" in cohort_text
     assert "contract_error_codes" in cohort_text
     assert "qa_status_final" in cohort_text
+    assert "max_pco2_0_24h_lt_qualifying_n" in cohort_text
+    assert "max_pco2_0_6h_lt_qualifying_n" in cohort_text
 
 
 def test_analysis_notebook_contains_requested_outputs() -> None:
@@ -121,7 +125,7 @@ def test_analysis_notebook_contains_requested_outputs() -> None:
     assert "from upsetplot import UpSet, from_indicators" in analysis_text
     assert "def select_preferred_vital_column(" in analysis_text
     assert "qualifying_gas_time_observed_rate" in analysis_text
-    assert "poc_inclusion_enabled" in analysis_text
+    assert "poc_itemid_qc_passed" in analysis_text
     assert "UNKNOWN semantics" in analysis_text
     assert "panel_unknown_rate" in analysis_text
     assert "encounter_unknown_rate" in analysis_text

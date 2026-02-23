@@ -28,6 +28,7 @@ COHORT_REQUIRED_AUDIT_SUFFIXES = (
     "blood_gas_itemid_manifest_audit.csv",
     "pco2_itemid_qc_audit.csv",
     "pco2_source_distribution_audit.csv",
+    "pco2_window_max_contributor_audit.csv",
     "blood_gas_triplet_completeness_audit.csv",
     "qualifying_pco2_distribution_by_type_audit.csv",
     "other_route_quarantine_audit.csv",
@@ -135,6 +136,8 @@ def validate_cohort_contract(
     hospital_los_negative_model_n = 0
     dt_first_imv_model_negative_n = 0
     dt_first_niv_model_negative_n = 0
+    max_pco2_0_24h_lt_qualifying_n = 0
+    max_pco2_0_6h_lt_qualifying_n = 0
     anthro_model_invalid_counts: dict[str, int] = {}
     po2_triplet_coverage_by_site: dict[str, float] = {}
 
@@ -164,21 +167,114 @@ def validate_cohort_contract(
         "abg_hypercap_threshold",
         "vbg_hypercap_threshold",
         "unknown_hypercap_threshold",
-        "pco2_threshold_any",
     }
-    if required.issubset(df.columns):
+    threshold_union_col: str | None = None
+    if "pco2_threshold_0_24h" in df.columns:
+        threshold_union_col = "pco2_threshold_0_24h"
+    elif "pco2_threshold_any" in df.columns:
+        threshold_union_col = "pco2_threshold_any"
+        findings.append(
+            {
+                "severity": "warning",
+                "code": "pco2_threshold_any_deprecated_alias",
+                "message": (
+                    "Using deprecated alias column pco2_threshold_any; "
+                    "prefer pco2_threshold_0_24h."
+                ),
+            }
+        )
+
+    if required.issubset(df.columns) and threshold_union_col is not None:
         abg = pd.to_numeric(df["abg_hypercap_threshold"], errors="coerce").fillna(0).astype(int)
         vbg = pd.to_numeric(df["vbg_hypercap_threshold"], errors="coerce").fillna(0).astype(int)
         unknown = pd.to_numeric(df["unknown_hypercap_threshold"], errors="coerce").fillna(0).astype(int)
-        any_reported = pd.to_numeric(df["pco2_threshold_any"], errors="coerce").fillna(0).astype(int)
+        any_reported = pd.to_numeric(df[threshold_union_col], errors="coerce").fillna(0).astype(int)
         any_expected = (abg | vbg | unknown).astype(int)
         mismatch = int((any_expected != any_reported).sum())
         if mismatch:
             findings.append(
                 {
                     "severity": "error",
-                    "code": "pco2_threshold_any_mismatch",
-                    "message": f"pco2_threshold_any mismatch in {mismatch} rows.",
+                    "code": f"{threshold_union_col}_mismatch",
+                    "message": f"{threshold_union_col} mismatch in {mismatch} rows.",
+                }
+            )
+    elif required.issubset(df.columns) and threshold_union_col is None:
+        findings.append(
+            {
+                "severity": "error",
+                "code": "pco2_threshold_0_24h_missing",
+                "message": "Missing pco2 threshold union column (expected pco2_threshold_0_24h).",
+            }
+        )
+
+    if {"pco2_threshold_0_24h", "qualifying_pco2_mmhg", "max_pco2_0_24h"}.issubset(df.columns):
+        gas_positive = (
+            pd.to_numeric(df["pco2_threshold_0_24h"], errors="coerce")
+            .fillna(0)
+            .astype(int)
+            .eq(1)
+        )
+        qualifying_values = pd.to_numeric(df["qualifying_pco2_mmhg"], errors="coerce")
+        max_values_24h = pd.to_numeric(df["max_pco2_0_24h"], errors="coerce")
+        max_pco2_0_24h_lt_qualifying_n = int(
+            (
+                gas_positive
+                & (
+                    qualifying_values.isna()
+                    | max_values_24h.isna()
+                    | max_values_24h.lt(qualifying_values)
+                )
+            ).sum()
+        )
+        if max_pco2_0_24h_lt_qualifying_n > 0:
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": "max_pco2_0_24h_below_qualifying",
+                    "message": (
+                        "For gas-positive rows, max_pco2_0_24h must be present and >= qualifying_pco2_mmhg. "
+                        f"Violations: {max_pco2_0_24h_lt_qualifying_n}."
+                    ),
+                }
+            )
+
+    if {
+        "pco2_threshold_0_24h",
+        "dt_qualifying_hypercapnia_hours",
+        "qualifying_pco2_mmhg",
+        "max_pco2_0_6h",
+    }.issubset(df.columns):
+        gas_positive = (
+            pd.to_numeric(df["pco2_threshold_0_24h"], errors="coerce")
+            .fillna(0)
+            .astype(int)
+            .eq(1)
+        )
+        dt_hours = pd.to_numeric(df["dt_qualifying_hypercapnia_hours"], errors="coerce")
+        qualifying_values = pd.to_numeric(df["qualifying_pco2_mmhg"], errors="coerce")
+        max_values_6h = pd.to_numeric(df["max_pco2_0_6h"], errors="coerce")
+        qualifies_6h_mask = gas_positive & dt_hours.notna() & dt_hours.le(6.0)
+        max_pco2_0_6h_lt_qualifying_n = int(
+            (
+                qualifies_6h_mask
+                & (
+                    qualifying_values.isna()
+                    | max_values_6h.isna()
+                    | max_values_6h.lt(qualifying_values)
+                )
+            ).sum()
+        )
+        if max_pco2_0_6h_lt_qualifying_n > 0:
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": "max_pco2_0_6h_below_qualifying_when_dt_le_6h",
+                    "message": (
+                        "For gas-positive rows with dt_qualifying_hypercapnia_hours <= 6, "
+                        "max_pco2_0_6h must be present and >= qualifying_pco2_mmhg. "
+                        f"Violations: {max_pco2_0_6h_lt_qualifying_n}."
+                    ),
                 }
             )
 
@@ -491,48 +587,6 @@ def validate_cohort_contract(
                         ),
                     }
                 )
-
-    if "poc_inclusion_enabled" in df.columns:
-        inclusion_values = (
-            df["poc_inclusion_enabled"].fillna(False).astype(bool).value_counts()
-        )
-        if len(inclusion_values) > 1:
-            findings.append(
-                {
-                    "severity": "warning",
-                    "code": "poc_inclusion_enabled_not_constant",
-                    "message": (
-                        "poc_inclusion_enabled varies within a single cohort export; "
-                        f"counts={inclusion_values.to_dict()}."
-                    ),
-                }
-            )
-    elif any(
-        column_name in df.columns
-        for column_name in (
-            "poc_abg_paco2",
-            "poc_vbg_paco2",
-            "poc_other_paco2",
-        )
-    ):
-        findings.append(
-            {
-                "severity": "error",
-                "code": "missing_poc_inclusion_status_columns",
-                "message": (
-                    "POC-derived columns are present but poc_inclusion_enabled is missing."
-                ),
-            }
-        )
-
-    if "poc_inclusion_enabled" in df.columns and "poc_inclusion_reason" not in df.columns:
-        findings.append(
-            {
-                "severity": "warning",
-                "code": "missing_poc_inclusion_reason",
-                "message": "Missing poc_inclusion_reason column in cohort export.",
-            }
-        )
 
     gas_source_other_rate = None
     if "gas_source_other_rate" in df.columns or "gas_source_unknown_rate" in df.columns:
@@ -865,6 +919,8 @@ def validate_cohort_contract(
         "hospital_los_hours_model_negative_n": hospital_los_negative_model_n,
         "dt_first_imv_hours_model_negative_n": dt_first_imv_model_negative_n,
         "dt_first_niv_hours_model_negative_n": dt_first_niv_model_negative_n,
+        "max_pco2_0_24h_lt_qualifying_n": max_pco2_0_24h_lt_qualifying_n,
+        "max_pco2_0_6h_lt_qualifying_n": max_pco2_0_6h_lt_qualifying_n,
         "anthro_bmi_coverage_rate": bmi_coverage_rate,
         "anthro_model_invalid_counts": anthro_model_invalid_counts,
         "first_hco3_coverage_rate": hco3_coverage_rate,

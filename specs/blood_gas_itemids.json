@@ -85,7 +85,8 @@
       "median_min": 45,
       "median_max": 80,
       "label_must_include_tokens": [
-        "pco2"
+        "pco2",
+        "co2 pressure"
       ],
       "label_must_exclude_tokens": [
         "po2",

@@ -3299,6 +3299,58 @@ qualifying_candidates AS (
     OR (site IN ('venous', 'unknown') AND pco2_mmhg >= 50.0)
   )
 ),
+windowed_extrema AS (
+  SELECT
+    hadm_id,
+    MAX(IF(dt_hours BETWEEN 0 AND 6, pco2_mmhg, NULL)) AS max_pco2_0_6h,
+    MAX(IF(dt_hours BETWEEN 0 AND 24, pco2_mmhg, NULL)) AS max_pco2_0_24h
+  FROM windowed_pco2
+  GROUP BY hadm_id
+),
+ranked_window_6h AS (
+  SELECT
+    hadm_id,
+    source_branch,
+    ROW_NUMBER() OVER (
+      PARTITION BY hadm_id
+      ORDER BY
+        pco2_mmhg DESC,
+        charttime,
+        CASE source_branch WHEN 'LAB' THEN 0 WHEN 'POC' THEN 1 ELSE 2 END,
+        CAST(COALESCE(itemid, -1) AS INT64)
+    ) AS rn
+  FROM windowed_pco2
+  WHERE dt_hours BETWEEN 0 AND 6
+),
+max_source_6h AS (
+  SELECT
+    hadm_id,
+    source_branch AS max_pco2_0_6h_source_branch
+  FROM ranked_window_6h
+  WHERE rn = 1
+),
+ranked_window_24h AS (
+  SELECT
+    hadm_id,
+    source_branch,
+    ROW_NUMBER() OVER (
+      PARTITION BY hadm_id
+      ORDER BY
+        pco2_mmhg DESC,
+        charttime,
+        CASE source_branch WHEN 'LAB' THEN 0 WHEN 'POC' THEN 1 ELSE 2 END,
+        CAST(COALESCE(itemid, -1) AS INT64)
+    ) AS rn
+  FROM windowed_pco2
+  WHERE dt_hours BETWEEN 0 AND 24
+),
+max_source_24h AS (
+  SELECT
+    hadm_id,
+    source_branch AS max_pco2_0_24h_source_branch
+  FROM ranked_window_24h
+  WHERE rn = 1
+),
 qualifying_flags AS (
   SELECT
     hadm_id,
@@ -3410,7 +3462,6 @@ first_other AS (
 SELECT
   q.hadm_id,
   1 AS pco2_threshold_0_24h,
-  1 AS pco2_threshold_any,
   f.abg_hypercap_threshold,
   f.vbg_hypercap_threshold,
   f.unknown_hypercap_threshold,
@@ -3421,6 +3472,10 @@ SELECT
   q.qualifying_threshold_mmhg,
   q.dt_qualifying_hypercapnia_hours,
   q.qualifying_pco2_itemid,
+  e.max_pco2_0_6h,
+  e.max_pco2_0_24h,
+  s6.max_pco2_0_6h_source_branch,
+  s24.max_pco2_0_24h_source_branch,
   a.first_abg_hypercap_time_0_24h,
   a.first_abg_hypercap_pco2_mmhg,
   a.first_abg_hypercap_source_branch,
@@ -3436,6 +3491,12 @@ SELECT
 FROM qualifying_first q
 JOIN qualifying_flags f
   ON f.hadm_id = q.hadm_id
+LEFT JOIN windowed_extrema e
+  ON e.hadm_id = q.hadm_id
+LEFT JOIN max_source_6h s6
+  ON s6.hadm_id = q.hadm_id
+LEFT JOIN max_source_24h s24
+  ON s24.hadm_id = q.hadm_id
 LEFT JOIN first_abg a
   ON a.hadm_id = q.hadm_id
 LEFT JOIN first_vbg v
@@ -3470,7 +3531,6 @@ for c in [
     "abg_hypercap_threshold",
     "vbg_hypercap_threshold",
     "pco2_threshold_0_24h",
-    "pco2_threshold_any",
     "unknown_hypercap_threshold",
 ]:
     if c in cohort_any.columns:
@@ -3491,6 +3551,8 @@ for c in [
     "qualifying_pco2_mmhg",
     "qualifying_threshold_mmhg",
     "dt_qualifying_hypercapnia_hours",
+    "max_pco2_0_6h",
+    "max_pco2_0_24h",
     "first_abg_hypercap_pco2_mmhg",
     "first_vbg_hypercap_pco2_mmhg",
     "first_other_hypercap_pco2_mmhg",
@@ -3500,6 +3562,8 @@ for c in [
 for c in [
     "qualifying_site",
     "qualifying_source_branch",
+    "max_pco2_0_6h_source_branch",
+    "max_pco2_0_24h_source_branch",
     "first_abg_hypercap_source_branch",
     "first_vbg_hypercap_source_branch",
     "first_other_hypercap_source_branch",
@@ -3514,7 +3578,6 @@ if "pco2_threshold_0_24h" not in cohort_any.columns:
         | (cohort_any["vbg_hypercap_threshold"] == 1)
         | (cohort_any["unknown_hypercap_threshold"] == 1)
     ).astype(int)
-cohort_any["pco2_threshold_any"] = cohort_any["pco2_threshold_0_24h"].astype(int)
 if "any_hypercap_icd" not in cohort_any.columns:
     cohort_any["any_hypercap_icd"] = 0
 cohort_any["any_hypercap_icd"] = (
@@ -4606,7 +4669,6 @@ if "pco2_threshold_0_24h" in df.columns:
         .fillna(0)
         .astype("Int64")
     )
-    df["pco2_threshold_any"] = df["pco2_threshold_0_24h"].astype("Int64")
     df["abg_hypercap_threshold"] = (
         pd.to_numeric(df.get("abg_hypercap_threshold"), errors="coerce").fillna(0).astype("Int64")
     )
@@ -4637,7 +4699,6 @@ else:
         | (df["vbg_hypercap_threshold"] == 1)
         | (df["unknown_hypercap_threshold"] == 1)
     ).astype("Int64")
-    df["pco2_threshold_any"] = df["pco2_threshold_0_24h"].astype("Int64")
 
 for time_col in [
     "first_abg_hypercap_time_0_24h",
@@ -4647,6 +4708,8 @@ for time_col in [
     if time_col in df.columns:
         df[time_col] = pd.to_datetime(df[time_col], errors="coerce")
 for value_col in [
+    "max_pco2_0_6h",
+    "max_pco2_0_24h",
     "first_abg_hypercap_pco2_mmhg",
     "first_vbg_hypercap_pco2_mmhg",
     "first_other_hypercap_pco2_mmhg",
@@ -4654,6 +4717,8 @@ for value_col in [
     if value_col in df.columns:
         df[value_col] = pd.to_numeric(df[value_col], errors="coerce")
 for source_col in [
+    "max_pco2_0_6h_source_branch",
+    "max_pco2_0_24h_source_branch",
     "first_abg_hypercap_source_branch",
     "first_vbg_hypercap_source_branch",
     "first_other_hypercap_source_branch",
@@ -4841,7 +4906,18 @@ any_bg = int(df[co2_cols].notna().any(axis=1).sum()) if co2_cols else None
 
 # Hypercapnia thresholds and ICD
 icd_count = int((df["any_hypercap_icd"] == 1).sum()) if "any_hypercap_icd" in df.columns else None
-threshold_count = int((df["pco2_threshold_any"] == 1).sum()) if "pco2_threshold_any" in df.columns else None
+threshold_count = (
+    int(
+        (
+            pd.to_numeric(df["pco2_threshold_0_24h"], errors="coerce")
+            .fillna(0)
+            .astype(int)
+            == 1
+        ).sum()
+    )
+    if "pco2_threshold_0_24h" in df.columns
+    else None
+)
 
 # ED chief complaint missing / present (within cohort)
 if "ed_triage_cc" in df.columns:
@@ -4901,8 +4977,9 @@ vbg = pd.to_numeric(df["vbg_hypercap_threshold"], errors="coerce").fillna(0).ast
 unknown = pd.to_numeric(df["unknown_hypercap_threshold"], errors="coerce").fillna(0).astype(int)
 
 gas_any = (
-    pd.to_numeric(df.get("pco2_threshold_any", None), errors="coerce")
-    if "pco2_threshold_any" in df.columns else (abg | vbg | unknown)
+    pd.to_numeric(df.get("pco2_threshold_0_24h", None), errors="coerce")
+    if "pco2_threshold_0_24h" in df.columns
+    else (abg | vbg | unknown)
 )
 if hasattr(gas_any, "fillna"):
     gas_any = gas_any.fillna(0).astype(int)
@@ -5307,7 +5384,7 @@ TARGET_RAW_FIELDS = {
         "first_other_hypercap_time_0_24h","first_other_hypercap_pco2_mmhg","first_other_hypercap_source_branch","first_other_hypercap_itemid",
         "pco2_threshold_0_24h",
         "max_pco2_0_6h","min_ph_0_6h","max_pco2_0_24h","min_ph_0_24h",
-        "gas_source_unknown_rate","gas_source_other_rate","poc_inclusion_enabled","poc_inclusion_reason",
+        "gas_source_unknown_rate","gas_source_other_rate",
         "first_gas_specimen_type","first_gas_specimen_present","first_gas_pco2_itemid","first_gas_pco2_fluid",
         "co2_other_is_blood_asserted","first_gas_anchor_has_pco2","first_gas_anchor_source_validated",
         "dt_first_imv_hours","dt_first_niv_hours","first_other_time",
@@ -6946,7 +7023,7 @@ else:
     poc_inclusion_reason = "icu_inclusion_mode_disabled"
 
 print(
-    "POC inclusion status:",
+    "POC itemid QC status:",
     {"enabled": int(poc_inclusion_enabled), "reason": poc_inclusion_reason},
 )
 
@@ -6975,9 +7052,6 @@ poc_hypercap_0_24h_edstay_n = (
 poc_hypercap_0_24h_edstay_rate = float(
     poc_hypercap_0_24h_edstay_n / max(int(ed_df["ed_stay_id"].nunique()), 1)
 )
-
-ed_df["poc_inclusion_enabled"] = bool(poc_inclusion_enabled)
-ed_df["poc_inclusion_reason"] = str(poc_inclusion_reason)
 
 # Optional fallback for first_hco3 from ICU POC only when explicit manifest itemids are provided.
 if ICU_HCO3_ITEMIDS and len(panel_poc) > 0:
@@ -7761,6 +7835,10 @@ qualifying_hadm_cols = [
     "qualifying_source_branch",
     "qualifying_threshold_mmhg",
     "dt_qualifying_hypercapnia_hours",
+    "max_pco2_0_6h",
+    "max_pco2_0_24h",
+    "max_pco2_0_6h_source_branch",
+    "max_pco2_0_24h_source_branch",
     "first_abg_hypercap_time_0_24h",
     "first_abg_hypercap_pco2_mmhg",
     "first_abg_hypercap_source_branch",
@@ -7975,7 +8053,6 @@ if "df" in globals() and "hadm_id" in ed_df.columns and "hadm_id" in df.columns:
             existing = pd.to_numeric(ed_df[col], errors="coerce") if col in ed_df.columns else pd.Series(np.nan, index=ed_df.index)
             ed_df[col] = existing.fillna(mapped).fillna(0).astype("Int64")
 
-ed_df["pco2_threshold_any"] = ed_df["pco2_threshold_0_24h"].astype("Int64")
 if "any_hypercap_icd" not in ed_df.columns:
     ed_df["any_hypercap_icd"] = 0
 ed_df["any_hypercap_icd"] = (
@@ -7997,6 +8074,8 @@ ed_df["enrollment_route"] = np.select(
 )
 
 # QC invariants for enrolled rows.
+max_pco2_0_24h_lt_qualifying_n = 0
+max_pco2_0_6h_lt_qualifying_n = 0
 enrolled_mask = pd.to_numeric(ed_df["pco2_threshold_0_24h"], errors="coerce").fillna(0).astype(int).eq(1)
 if enrolled_mask.any():
     qualifying_time_missing_n = int(
@@ -8018,6 +8097,51 @@ if enrolled_mask.any():
         raise ValueError(
             f"Found {out_of_window_n} enrolled rows with dt_qualifying_hypercapnia_hours outside [0, 24]."
         )
+
+    if {"max_pco2_0_24h", "qualifying_pco2_mmhg"}.issubset(ed_df.columns):
+        qualifying_values_24h = pd.to_numeric(
+            ed_df.loc[enrolled_mask, "qualifying_pco2_mmhg"], errors="coerce"
+        )
+        max_values_24h = pd.to_numeric(
+            ed_df.loc[enrolled_mask, "max_pco2_0_24h"], errors="coerce"
+        )
+        max_pco2_0_24h_lt_qualifying_n = int(
+            (max_values_24h.lt(qualifying_values_24h) | max_values_24h.isna()).sum()
+        )
+        print(
+            "QA: enrolled rows with max_pco2_0_24h < qualifying_pco2_mmhg (or missing max):",
+            max_pco2_0_24h_lt_qualifying_n,
+        )
+        if max_pco2_0_24h_lt_qualifying_n > 0:
+            raise ValueError(
+                "max_pco2_0_24h invariant failed: enrolled rows must satisfy "
+                "max_pco2_0_24h >= qualifying_pco2_mmhg."
+            )
+
+    if {"max_pco2_0_6h", "qualifying_pco2_mmhg", "dt_qualifying_hypercapnia_hours"}.issubset(ed_df.columns):
+        qualifying_in_6h_mask = enrolled_mask & pd.to_numeric(
+            ed_df["dt_qualifying_hypercapnia_hours"], errors="coerce"
+        ).le(6.0)
+        if qualifying_in_6h_mask.any():
+            qualifying_values_6h = pd.to_numeric(
+                ed_df.loc[qualifying_in_6h_mask, "qualifying_pco2_mmhg"],
+                errors="coerce",
+            )
+            max_values_6h = pd.to_numeric(
+                ed_df.loc[qualifying_in_6h_mask, "max_pco2_0_6h"], errors="coerce"
+            )
+            max_pco2_0_6h_lt_qualifying_n = int(
+                (max_values_6h.lt(qualifying_values_6h) | max_values_6h.isna()).sum()
+            )
+            print(
+                "QA: enrolled dt<=6h rows with max_pco2_0_6h < qualifying_pco2_mmhg (or missing max):",
+                max_pco2_0_6h_lt_qualifying_n,
+            )
+            if max_pco2_0_6h_lt_qualifying_n > 0:
+                raise ValueError(
+                    "max_pco2_0_6h invariant failed: enrolled rows with dt_qualifying_hypercapnia_hours<=6 "
+                    "must satisfy max_pco2_0_6h >= qualifying_pco2_mmhg."
+                )
 
     route_sum = (
         pd.to_numeric(ed_df.loc[enrolled_mask, "abg_hypercap_threshold"], errors="coerce").fillna(0).astype(int)
@@ -8399,7 +8523,7 @@ def _append_distribution_rows(source_branch: str, source: str, values: pd.Series
         return
     pco2_source_distribution_rows.append(
         {
-            "scope": "ALL_CANDIDATE_PCO2",
+            "scope": "ALL_CANDIDATE_PCO2_LAB_POC",
             "source_branch": source_branch,
             "source": source,
             "n": int(numeric.shape[0]),
@@ -8444,6 +8568,53 @@ pco2_source_distribution_audit = pco2_source_distribution_audit[PCC_DIST_COLUMNS
 pco2_source_distribution_audit_path = prior_runs_dir / f"{out_date} pco2_source_distribution_audit.csv"
 pco2_source_distribution_audit.to_csv(pco2_source_distribution_audit_path, index=False)
 print("Wrote:", pco2_source_distribution_audit_path)
+
+# Max-window pCO2 contributor source audit (branch responsible for hadm-level max values).
+max_contributor_rows: list[dict[str, Any]] = []
+for window_name, max_col, source_col in [
+    ("0_6h", "max_pco2_0_6h", "max_pco2_0_6h_source_branch"),
+    ("0_24h", "max_pco2_0_24h", "max_pco2_0_24h_source_branch"),
+]:
+    max_values = pd.to_numeric(ed_df.get(max_col), errors="coerce")
+    source_values = (
+        ed_df.get(source_col, pd.Series(pd.NA, index=ed_df.index))
+        .astype("string")
+        .fillna("UNKNOWN")
+        .str.upper()
+    )
+    present_mask = max_values.notna()
+    present_n = int(present_mask.sum())
+    if present_n == 0:
+        max_contributor_rows.append(
+            {
+                "window": window_name,
+                "source_branch": "NONE",
+                "max_value_rows": 0,
+                "source_branch_rows": 0,
+                "source_branch_rate": 0.0,
+            }
+        )
+        continue
+    branch_counts = source_values.loc[present_mask].value_counts(dropna=False)
+    for branch, count in branch_counts.items():
+        max_contributor_rows.append(
+            {
+                "window": window_name,
+                "source_branch": str(branch),
+                "max_value_rows": present_n,
+                "source_branch_rows": int(count),
+                "source_branch_rate": float(count / present_n),
+            }
+        )
+
+pco2_window_max_contributor_audit = pd.DataFrame(max_contributor_rows)
+pco2_window_max_contributor_audit_path = (
+    prior_runs_dir / f"{out_date} pco2_window_max_contributor_audit.csv"
+)
+pco2_window_max_contributor_audit.to_csv(
+    pco2_window_max_contributor_audit_path, index=False
+)
+print("Wrote:", pco2_window_max_contributor_audit_path)
 
 # Blood-gas triplet completeness audit (pCO2+pH+pO2) by branch/site.
 triplet_rows: list[dict[str, Any]] = []
@@ -8696,6 +8867,9 @@ gas_overlap_summary_records = json.loads(gas_overlap_summary.to_json(orient="rec
 pco2_source_distribution_audit_records = json.loads(
     pco2_source_distribution_audit.to_json(orient="records")
 )
+pco2_window_max_contributor_audit_records = json.loads(
+    pco2_window_max_contributor_audit.to_json(orient="records")
+)
 blood_gas_triplet_completeness_audit_records = json.loads(
     blood_gas_triplet_completeness_audit.to_json(orient="records")
 )
@@ -8751,6 +8925,8 @@ qa_summary = {
     "pct_any_gas_0_24h": pct_any_24h,
     "pco2_threshold_0_24h_n": int(pd.to_numeric(ed_df.get("pco2_threshold_0_24h"), errors="coerce").fillna(0).astype(int).sum()),
     "pco2_threshold_0_24h_rate": float(pd.to_numeric(ed_df.get("pco2_threshold_0_24h"), errors="coerce").fillna(0).astype(int).mean()),
+    "max_pco2_0_24h_lt_qualifying_n": int(max_pco2_0_24h_lt_qualifying_n),
+    "max_pco2_0_6h_lt_qualifying_n": int(max_pco2_0_6h_lt_qualifying_n),
     "enrolled_any_n": int(pd.to_numeric(ed_df.get("enrolled_any"), errors="coerce").fillna(0).astype(int).sum()),
     "enrolled_any_rate": float(pd.to_numeric(ed_df.get("enrolled_any"), errors="coerce").fillna(0).astype(int).mean()),
     "enrollment_route_counts": (
@@ -8773,13 +8949,15 @@ qa_summary = {
     },
     "blood_gas_itemid_manifest_audit": blood_gas_itemid_manifest_audit_records,
     "pco2_source_distribution_audit": pco2_source_distribution_audit_records,
+    "pco2_source_distribution_scope": "ALL_CANDIDATE_PCO2_LAB_POC",
+    "pco2_window_max_contributor_audit": pco2_window_max_contributor_audit_records,
     "blood_gas_triplet_completeness_audit": blood_gas_triplet_completeness_audit_records,
     "qualifying_pco2_distribution_by_type_audit": qualifying_pco2_distribution_audit_records,
     "other_route_quarantine_audit": other_route_quarantine_audit_records,
     "first_gas_anchor_audit": first_gas_anchor_audit_records,
     "pco2_itemid_qc_audit": pco2_itemid_qc_audit_records,
-    "poc_inclusion_enabled": bool(poc_inclusion_enabled),
-    "poc_inclusion_reason": str(poc_inclusion_reason),
+    "poc_itemid_qc_passed": bool(poc_inclusion_enabled),
+    "poc_itemid_qc_reason": str(poc_inclusion_reason),
     "poc_hypercap_0_24h_edstay_n": int(globals().get("poc_hypercap_0_24h_edstay_n", 0)),
     "poc_hypercap_0_24h_edstay_rate": float(globals().get("poc_hypercap_0_24h_edstay_rate", 0.0)),
     "qualifying_source_branch_counts": (
@@ -8827,6 +9005,7 @@ qa_summary = {
         if "pco2_itemid_qc_audit_path" in globals()
         else None,
         "pco2_source_distribution": str(pco2_source_distribution_audit_path),
+        "pco2_window_max_contributor": str(pco2_window_max_contributor_audit_path),
         "blood_gas_triplet_completeness": str(
             blood_gas_triplet_completeness_audit_path
         ),
@@ -9114,6 +9293,8 @@ if cohort_contract["status"] == "fail" and contract_mode == "fail":
 cohort_export_drop_columns = [
     "enrolled_any",
     "enrolled_any_icd_union_secondary",
+    "poc_inclusion_enabled",
+    "poc_inclusion_reason",
     "race_hosp_raw",
     "race_ed_raw",
     "gas_source_unknown_rate",
@@ -9132,6 +9313,8 @@ cohort_export_drop_columns = [
     "poc_abg_po2",
     "poc_vbg_po2",
     "poc_other_po2",
+    "max_pco2_0_6h_source_branch",
+    "max_pco2_0_24h_source_branch",
 ]
 cohort_export_drop_existing = [
     column for column in cohort_export_drop_columns if column in final_cc.columns
@@ -9185,6 +9368,11 @@ cohort_manifest["outputs"] = {
     "gas_source_overlap_summary_path": str(gas_overlap_summary_path) if "gas_overlap_summary_path" in globals() else None,
     "pco2_source_distribution_audit_path": str(pco2_source_distribution_audit_path)
     if "pco2_source_distribution_audit_path" in globals()
+    else None,
+    "pco2_window_max_contributor_audit_path": str(
+        pco2_window_max_contributor_audit_path
+    )
+    if "pco2_window_max_contributor_audit_path" in globals()
     else None,
     "qualifying_pco2_distribution_by_type_audit_path": str(
         qualifying_pco2_distribution_audit_path

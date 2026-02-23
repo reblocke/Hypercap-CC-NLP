@@ -154,6 +154,8 @@ Blood-gas item selection is versioned in `specs/blood_gas_itemids.json`:
 - LAB + POC definitive pCO2 extraction uses manifest allowlists and explicit exclusions.
 - Source classes are ABG/VBG/UNKNOWN; UNKNOWN means definitive pCO2 with unresolved sample type.
 - UNKNOWN remains cohort-eligible for pCO2-threshold inclusion.
+- POC can qualify encounters through physiologic threshold logic (including as earliest qualifying source in `qualifying_source_branch`).
+- POC itemid QC status is QA-only (`poc_itemid_qc_passed`, `poc_itemid_qc_reason` in `qa_summary.json`), not a final-workbook gating column.
 - ICU HCO3 fallback is explicit-itemid only (no regex fallback).
 - Blood-gas triplet capture now pairs `pCO2 + pH + pO2` from the same draw context:
   - LAB uses specimen/panel context.

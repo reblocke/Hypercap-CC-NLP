@@ -1,0 +1,362 @@
+diff --git a/.DS_Store b/.DS_Store
+index be62f23ebea4154cc6957a2ea16b80ad07a7d3f3..0ab1a5eddfa44be8a2efe88746d947ef18c351f2 100644
+GIT binary patch
+delta 1093
+zcmb`FTWB0r7{|~5BrP)@YtANXlT5d1H8$6!CfIu=*QVy4G;Z!UXERefxS8GTY&MOG
+zOG}?x^<_Xs5e01p#aKw2(rT$fEWJR*kkaI(6~Tvq2muX5!FYCO8c=-fJe)J<`{w(;
+z`JdnaROD3T{BRZy+dpph%4`$s>h9_7>$la?EPE(@ERh*E^oh1e%m|xSmmammF3VF-
+zWc!}lQS$7r{S~$K&F%9U+>@E*WvtK8bTeigHS}obgrUWb^{Up0Zfb`4a(CRYj9^F)
+znChtRNfS*{RXMqe(lZ`3#>S1<B+r+mRCH^e!Ui-orne-*TC$zSFG^0q(|L;0pG?(8
+zb+Kx0MM0s$0+#Wr&Q<rrQa@vXR}53*mOHDgoGG0lHK>QUCOd<6?_o-J+>ynb+~9$O
+zOz9a3kB$m03Cjb&8?UTVl%eG4X4Q(dMRZgA)~q}KP@SUmS;y3<-Zo+CQGUaXH;DK!
+z&q!sGWp$bn3rF2#i_p@WY*?*nDJ7ZQlc97d0g2B^!<-vt++Ok*C!DKrZz8{{jHDi~
+zv#qZn64^@1NDXNuLnJ~b$r<tv`G{N~7s(9yp4=ge<N;YC%VdSDl0V5`NXI5*fWrd?
+zg(yY|O0f%7s74K%(2fqghyVr?2ttF7qX=Uh6F81ZoWyCoiMQ}J-o?lG1fSw8rf?P4
+z@GZW>E!@RDEMO5o<9Gal6|7O2K1Lb!(kE#)&7q~#Pj}M_`T`BmK}Q0GD`j9^QtE}m
+zwAXTr9uHaZNH7!*5<<UzXx93M#-`?$hi3KupIPnY^eoia_jhzsw#}~a=GZL-Ue2D8
+zgbDbDd11gUzCvb?6>O<t<-X@+VIZEC3NycNuPkvmhXd?+Sy+juJI6{^EhlZviPPec
+z@36#Y?b`+09tp0SWR5J5pUAHQ*WXBkglud_5q4r9Do`l^)uIlqXu}bKNkGC7UV@4d
+zgfxr_P!UA&8eYd6NZ^Ekbw=Py!g>$y;{$w%bNCFO;|qL=8C=3;T){U2-*x;Tu>FGH
+Y{)43T-$<~QBr^R~ZtKQrwtY4GAH`@2d;kCd
+
+delta 860
+zcmZ`%T}TvB81>xD?&#EBHFZ>UT@|-n6|K~MEH$&TG(}xpQ(SkQF^6<kcSfy{*2<TN
+zC>!b_s#g;WB1!rqgNQ6hsDui7=%F4f=q(89&aOUsAMWLxkMDe!bH0heiNSl`MC>-7
+z=cf~~-TarBWOhaOnm$*e;8A-5T8ny0F}t%pAsdTNkW!^|%5tb@*sl%^tH#MCixo4a
+zEP*|sowCnR8UnJ~t15E1B4tXsly+ErO;F)?gchCBW`X%=tIowE5(Q$Bz;vPYxT-C;
+zmWW#^lLdFb&#&|^*+SO%GI2X)hlREgC8(<bEiz-HSV09(Phem`(F{GpRZ7*AEzmA&
+za=lMC8V40^<xiDTEu}~GK3`C29MzQIN=F@~US<pPR!gm{8iD0vrqtk~wB1sxmSrxK
+zz~XI<O_JngOw~qI!)NgCwD4zGXYZ-`HZQ}RN?IQ)<Wv<$g^%edOu~#=UYHR|LJA}}
+zkPjCMQG{LChg$4MGdj?TE_fkh02&4{gb{==j<Yz2^SA;NS8)xuFooNg#(g}&Q#`{w
+z7V#0E@EPCm13&SLfW(qGB9dfcCtJuiQcB85IjJIbq?vfl`CJE7^IhsDb1^v%b3FN!
+zm;(pv4vF=vr2jQ~Eac|7C@0*bs%-SN`}7_~lU40l+lZ>G{(gn6i${S#m!#CRbVs&m
+zXKQ(K5t!%XFouT~fvy6(oe{n)5m;Pe7ug!V3PQNIw17h_gB?3Xkwx>Ruxea*PX@<P
+zVU(7>w}$Ij5wGsG&6%N;p@KVm1Wjl`E8N`OZurp?b~wQO4MN8lPIHgXaF;LOA}--F
+zCUG4%a5L=mG-hxIcQJ>Dc!bAzftPrN1-!-^e83lc$8U4e>A+v^X#VVcYJJS)_=efI
+ItUoFL0o+XC-2eap
+
+diff --git a/CONTINUITY.md b/CONTINUITY.md
+index 155b977..0d149e3 100644
+--- a/CONTINUITY.md
++++ b/CONTINUITY.md
+@@ -1,9 +1,9 @@
+ Goal (incl. success criteria):
+-- Create a one-time zip containing outputs from the most recent run.
++- Resolve contradictory POC inclusion semantics in cohort outputs.
+ - Success criteria:
+-  - dated zip exists in repo root,
+-  - zip contains canonical workbook plus run diagnostics/manifests/pdf from latest classifier run,
+-  - zip content listing verified.
++  - final workbook no longer exports stale `poc_inclusion_enabled`/`poc_inclusion_reason`,
++  - POC qualification remains active via qualifying gas logic (`qualifying_source_branch='POC'` when applicable),
++  - QA/audit payloads retain explicit POC itemid QC status with non-contradictory naming.
+ 
+ Constraints/Assumptions:
+ - Core phase logic remains embedded in `.qmd` notebooks.
+@@ -17,11 +17,12 @@ Key decisions:
+ - `cc_missing_flag` and `cc_pseudomissing_flag` remain internal/diagnostic only and are removed from final classifier export.
+ - `cc_missing_reason` remains in final classifier export.
+ - Most recent run interpreted as latest classifier stage run (`classifier_20260223_075133`) and its immediately-following classifier contract check.
++- For POC inclusion semantics, keep enrollment behavior unchanged (POC can qualify), move POC QC status to QA-only outputs, and remove stale export columns from final workbook.
+ 
+ State:
+ - Done: validated candidate LAB/ICU pH/pO2 itemids from BigQuery dictionaries.
+-- Now: output bundle created and verified.
+-- Next: await user follow-up.
++- Now: implementing POC inclusion semantics cleanup across cohort notebook/contracts/tests/docs.
++- Next: rerun cohort validation and confirm workbook + QA consistency.
+ 
+ Done:
+ - Removed `qualifying_gas_observed`, `presenting_hypercapnia_tri`, `late_hypercapnia_tri` from cohort notebook timing derivation/export.
+@@ -59,18 +60,29 @@ Done:
+   - zip: `outputs20260223_075423.zip`
+   - includes canonical classifier workbook, classifier run manifest/audits, classifier render PDF, run-manifest git diff, and latest classifier contract report.
+   - bundle staging files recorded under `debug/output_bundle_20260223_075423/`.
++- Root cause analysis completed for POC contradiction:
++  - `co2_thresholds_sql` already includes POC and drives qualifying enrollment.
++  - exported `poc_inclusion_enabled`/`reason` came from a separate QC gate and became stale/misleading.
++  - current manifest label include token (`pco2`) does not match labels like `Arterial CO2 Pressure`, causing QC false negatives.
+ 
+ Now:
+-- Await user review.
++- Apply notebook/code/test/doc updates to decouple QA-only POC itemid QC from final export semantics.
+ 
+ Next:
+-- None.
++- Re-render cohort stage and run contract checks to verify no regression.
+ 
+ Open questions (UNCONFIRMED if needed):
+ - None.
+ 
+ Working set (files/ids/commands):
+ - Files:
++  - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMICIV_hypercap_EXT_cohort.qmd`
++  - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/specs/blood_gas_itemids.json`
++  - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/src/hypercap_cc_nlp/pipeline_contracts.py`
++  - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/tests/test_pipeline_contracts.py`
++  - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/tests/test_notebook_output_contracts.py`
++  - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Hypercap CC NLP Analysis.qmd`
++  - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/README.md`
+   - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMICIV_hypercap_EXT_cohort.qmd`
+   - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Hypercap CC NLP Analysis.qmd`
+   - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/src/hypercap_cc_nlp/pipeline_contracts.py`
+@@ -81,10 +93,6 @@ Working set (files/ids/commands):
+   - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/tests/test_classifier_quality.py`
+ - Commands:
+   - `make lint`
+-  - `uv run pytest -q tests/test_pipeline_contracts.py tests/test_notebook_output_contracts.py tests/test_workflow_contracts.py`
++  - `uv run pytest -q tests/test_pipeline_contracts.py tests/test_notebook_output_contracts.py`
+   - `COHORT_OTHER_RELATIVE_REDUCTION_MIN=0 make quarto-cohort`
+-  - `make quarto-classifier`
+-  - `make quarto-analysis`
+   - `make contracts-check STAGE=cohort`
+-  - `make quarto-classifier`
+-  - `make contracts-check STAGE=classifier`
+diff --git a/Hypercap CC NLP Analysis.qmd b/Hypercap CC NLP Analysis.qmd
+index 7f5ee0e..750d491 100644
+--- a/Hypercap CC NLP Analysis.qmd	
++++ b/Hypercap CC NLP Analysis.qmd	
+@@ -493,12 +493,12 @@ if qa_summary_path.exists():
+             "value": vent_row.get("niv_time_outside_window_n"),
+         },
+         {
+-            "metric": "poc_inclusion_enabled",
+-            "value": qa_summary_payload.get("poc_inclusion_enabled"),
++            "metric": "poc_itemid_qc_passed",
++            "value": qa_summary_payload.get("poc_itemid_qc_passed"),
+         },
+         {
+-            "metric": "poc_inclusion_reason",
+-            "value": qa_summary_payload.get("poc_inclusion_reason"),
++            "metric": "poc_itemid_qc_reason",
++            "value": qa_summary_payload.get("poc_itemid_qc_reason"),
+         },
+         {
+             "metric": "pco2_source_distribution_audit_path",
+diff --git a/MIMICIV_hypercap_EXT_cohort.qmd b/MIMICIV_hypercap_EXT_cohort.qmd
+index e4af95e..22440a9 100644
+--- a/MIMICIV_hypercap_EXT_cohort.qmd
++++ b/MIMICIV_hypercap_EXT_cohort.qmd
+@@ -5307,7 +5307,7 @@ TARGET_RAW_FIELDS = {
+         "first_other_hypercap_time_0_24h","first_other_hypercap_pco2_mmhg","first_other_hypercap_source_branch","first_other_hypercap_itemid",
+         "pco2_threshold_0_24h",
+         "max_pco2_0_6h","min_ph_0_6h","max_pco2_0_24h","min_ph_0_24h",
+-        "gas_source_unknown_rate","gas_source_other_rate","poc_inclusion_enabled","poc_inclusion_reason",
++        "gas_source_unknown_rate","gas_source_other_rate",
+         "first_gas_specimen_type","first_gas_specimen_present","first_gas_pco2_itemid","first_gas_pco2_fluid",
+         "co2_other_is_blood_asserted","first_gas_anchor_has_pco2","first_gas_anchor_source_validated",
+         "dt_first_imv_hours","dt_first_niv_hours","first_other_time",
+@@ -6946,7 +6946,7 @@ else:
+     poc_inclusion_reason = "icu_inclusion_mode_disabled"
+ 
+ print(
+-    "POC inclusion status:",
++    "POC itemid QC status:",
+     {"enabled": int(poc_inclusion_enabled), "reason": poc_inclusion_reason},
+ )
+ 
+@@ -6976,9 +6976,6 @@ poc_hypercap_0_24h_edstay_rate = float(
+     poc_hypercap_0_24h_edstay_n / max(int(ed_df["ed_stay_id"].nunique()), 1)
+ )
+ 
+-ed_df["poc_inclusion_enabled"] = bool(poc_inclusion_enabled)
+-ed_df["poc_inclusion_reason"] = str(poc_inclusion_reason)
+-
+ # Optional fallback for first_hco3 from ICU POC only when explicit manifest itemids are provided.
+ if ICU_HCO3_ITEMIDS and len(panel_poc) > 0:
+     poc_hco3_candidates = panel_poc.loc[
+@@ -8778,8 +8775,8 @@ qa_summary = {
+     "other_route_quarantine_audit": other_route_quarantine_audit_records,
+     "first_gas_anchor_audit": first_gas_anchor_audit_records,
+     "pco2_itemid_qc_audit": pco2_itemid_qc_audit_records,
+-    "poc_inclusion_enabled": bool(poc_inclusion_enabled),
+-    "poc_inclusion_reason": str(poc_inclusion_reason),
++    "poc_itemid_qc_passed": bool(poc_inclusion_enabled),
++    "poc_itemid_qc_reason": str(poc_inclusion_reason),
+     "poc_hypercap_0_24h_edstay_n": int(globals().get("poc_hypercap_0_24h_edstay_n", 0)),
+     "poc_hypercap_0_24h_edstay_rate": float(globals().get("poc_hypercap_0_24h_edstay_rate", 0.0)),
+     "qualifying_source_branch_counts": (
+@@ -9114,6 +9111,8 @@ if cohort_contract["status"] == "fail" and contract_mode == "fail":
+ cohort_export_drop_columns = [
+     "enrolled_any",
+     "enrolled_any_icd_union_secondary",
++    "poc_inclusion_enabled",
++    "poc_inclusion_reason",
+     "race_hosp_raw",
+     "race_ed_raw",
+     "gas_source_unknown_rate",
+diff --git a/README.md b/README.md
+index e80788e..44dc4a1 100644
+--- a/README.md
++++ b/README.md
+@@ -154,6 +154,8 @@ Blood-gas item selection is versioned in `specs/blood_gas_itemids.json`:
+ - LAB + POC definitive pCO2 extraction uses manifest allowlists and explicit exclusions.
+ - Source classes are ABG/VBG/UNKNOWN; UNKNOWN means definitive pCO2 with unresolved sample type.
+ - UNKNOWN remains cohort-eligible for pCO2-threshold inclusion.
++- POC can qualify encounters through physiologic threshold logic (including as earliest qualifying source in `qualifying_source_branch`).
++- POC itemid QC status is QA-only (`poc_itemid_qc_passed`, `poc_itemid_qc_reason` in `qa_summary.json`), not a final-workbook gating column.
+ - ICU HCO3 fallback is explicit-itemid only (no regex fallback).
+ - Blood-gas triplet capture now pairs `pCO2 + pH + pO2` from the same draw context:
+   - LAB uses specimen/panel context.
+diff --git a/qa_summary.json b/qa_summary.json
+index 1ab91e1..73bb7df 100644
+--- a/qa_summary.json
++++ b/qa_summary.json
+@@ -501,8 +501,8 @@
+       "poc_unknown_hadm_n": 0,
+       "unknown_hypercap_threshold_hadm_n": 398,
+       "unknown_from_poc_detail_hadm_n": 0,
+-      "poc_hypercap_0_24h_edstay_n": 0,
+-      "poc_hypercap_0_24h_edstay_rate": 0.0
++      "poc_hypercap_0_24h_edstay_n": 3723,
++      "poc_hypercap_0_24h_edstay_rate": 0.5195367011
+     }
+   ],
+   "first_gas_anchor_audit": [
+@@ -527,11 +527,11 @@
+       "p50_mmhg": 45.0,
+       "p95_mmhg": 75.0,
+       "max_mmhg": 181.0,
+-      "label_include_ok": false,
++      "label_include_ok": true,
+       "label_exclude_hit": false,
+       "unit_ok": true,
+       "median_in_expected_range": true,
+-      "contamination_flag": true,
++      "contamination_flag": false,
+       "manifest_whitelisted": 1
+     },
+     {
+@@ -546,18 +546,18 @@
+       "p50_mmhg": 53.0,
+       "p95_mmhg": 88.0,
+       "max_mmhg": 999998.0,
+-      "label_include_ok": false,
++      "label_include_ok": true,
+       "label_exclude_hit": false,
+       "unit_ok": true,
+       "median_in_expected_range": true,
+-      "contamination_flag": true,
++      "contamination_flag": false,
+       "manifest_whitelisted": 1
+     }
+   ],
+-  "poc_inclusion_enabled": false,
+-  "poc_inclusion_reason": "validated_itemids_failed_qc",
+-  "poc_hypercap_0_24h_edstay_n": 0,
+-  "poc_hypercap_0_24h_edstay_rate": 0.0,
++  "poc_itemid_qc_passed": true,
++  "poc_itemid_qc_reason": "validated_itemids_passed_qc",
++  "poc_hypercap_0_24h_edstay_n": 3723,
++  "poc_hypercap_0_24h_edstay_rate": 0.5195367010884734,
+   "qualifying_source_branch_counts": {
+     "LAB": 5392,
+     "POC": 864
+@@ -2147,7 +2147,7 @@
+     "gas_source_other_rate_high"
+   ],
+   "run_metadata": {
+-    "run_utc": "2026-02-23T13:45:15.119413+00:00",
++    "run_utc": "2026-02-23T16:17:24.598523+00:00",
+     "work_project": "mimic-hypercapnia",
+     "physionet_project": "physionet-data",
+     "datasets": {
+@@ -2171,5 +2171,5 @@
+   ],
+   "contract_error_codes": [],
+   "qa_status_final": "warning",
+-  "cohort_contract_report_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/debug/contracts/20260223_134725/contract_report.json"
++  "cohort_contract_report_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/debug/contracts/20260223_162124/contract_report.json"
+ }
+\ No newline at end of file
+diff --git a/specs/blood_gas_itemids.json b/specs/blood_gas_itemids.json
+index eea74b2..1912a6e 100644
+--- a/specs/blood_gas_itemids.json
++++ b/specs/blood_gas_itemids.json
+@@ -85,7 +85,8 @@
+       "median_min": 45,
+       "median_max": 80,
+       "label_must_include_tokens": [
+-        "pco2"
++        "pco2",
++        "co2 pressure"
+       ],
+       "label_must_exclude_tokens": [
+         "po2",
+diff --git a/src/hypercap_cc_nlp/pipeline_contracts.py b/src/hypercap_cc_nlp/pipeline_contracts.py
+index 5fd3c21..b323c8d 100644
+--- a/src/hypercap_cc_nlp/pipeline_contracts.py
++++ b/src/hypercap_cc_nlp/pipeline_contracts.py
+@@ -492,48 +492,6 @@ def validate_cohort_contract(
+                     }
+                 )
+ 
+-    if "poc_inclusion_enabled" in df.columns:
+-        inclusion_values = (
+-            df["poc_inclusion_enabled"].fillna(False).astype(bool).value_counts()
+-        )
+-        if len(inclusion_values) > 1:
+-            findings.append(
+-                {
+-                    "severity": "warning",
+-                    "code": "poc_inclusion_enabled_not_constant",
+-                    "message": (
+-                        "poc_inclusion_enabled varies within a single cohort export; "
+-                        f"counts={inclusion_values.to_dict()}."
+-                    ),
+-                }
+-            )
+-    elif any(
+-        column_name in df.columns
+-        for column_name in (
+-            "poc_abg_paco2",
+-            "poc_vbg_paco2",
+-            "poc_other_paco2",
+-        )
+-    ):
+-        findings.append(
+-            {
+-                "severity": "error",
+-                "code": "missing_poc_inclusion_status_columns",
+-                "message": (
+-                    "POC-derived columns are present but poc_inclusion_enabled is missing."
+-                ),
+-            }
+-        )
+-
+-    if "poc_inclusion_enabled" in df.columns and "poc_inclusion_reason" not in df.columns:
+-        findings.append(
+-            {
+-                "severity": "warning",
+-                "code": "missing_poc_inclusion_reason",
+-                "message": "Missing poc_inclusion_reason column in cohort export.",
+-            }
+-        )
+-
+     gas_source_other_rate = None
+     if "gas_source_other_rate" in df.columns or "gas_source_unknown_rate" in df.columns:
+         rate_col = (
+diff --git a/tests/test_notebook_output_contracts.py b/tests/test_notebook_output_contracts.py
+index c957a21..213245e 100644
+--- a/tests/test_notebook_output_contracts.py
++++ b/tests/test_notebook_output_contracts.py
+@@ -82,8 +82,8 @@ def test_cohort_notebook_contains_ed_vitals_cleaning_helpers() -> None:
+     assert "normalize_anthro_source(" in cohort_text
+     assert "first_other_src_detail" in cohort_text
+     assert "first_gas_anchor_has_pco2" in cohort_text
+-    assert "poc_inclusion_enabled" in cohort_text
+-    assert "poc_inclusion_reason" in cohort_text
++    assert "poc_itemid_qc_passed" in cohort_text
++    assert "poc_itemid_qc_reason" in cohort_text
+     assert "pco2_threshold_0_24h" in cohort_text
+     assert "qualifying_pco2_time" in cohort_text
+     assert "qualifying_pco2_mmhg" in cohort_text
+@@ -121,7 +121,7 @@ def test_analysis_notebook_contains_requested_outputs() -> None:
+     assert "from upsetplot import UpSet, from_indicators" in analysis_text
+     assert "def select_preferred_vital_column(" in analysis_text
+     assert "qualifying_gas_time_observed_rate" in analysis_text
+-    assert "poc_inclusion_enabled" in analysis_text
++    assert "poc_itemid_qc_passed" in analysis_text
+     assert "UNKNOWN semantics" in analysis_text
+     assert "panel_unknown_rate" in analysis_text
+     assert "encounter_unknown_rate" in analysis_text

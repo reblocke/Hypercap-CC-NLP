@@ -29,7 +29,7 @@ def test_validate_cohort_contract_detects_threshold_mismatch() -> None:
             "abg_hypercap_threshold": [1, 0],
             "vbg_hypercap_threshold": [0, 0],
             "unknown_hypercap_threshold": [0, 1],
-            "pco2_threshold_any": [1, 0],
+            "pco2_threshold_0_24h": [1, 0],
             "gas_source_other_rate": [0.9, 0.8],
             "gas_source_inference_primary_tier": ["fallback_other", "fallback_other"],
             "gas_source_hint_conflict_rate": [0.0, 0.0],
@@ -40,8 +40,31 @@ def test_validate_cohort_contract_detects_threshold_mismatch() -> None:
     codes = {finding["code"] for finding in report["findings"]}
 
     assert report["status"] == "fail"
-    assert "pco2_threshold_any_mismatch" in codes
+    assert "pco2_threshold_0_24h_mismatch" in codes
     assert "gas_source_other_rate_high" in codes
+
+
+def test_validate_cohort_contract_warns_on_deprecated_threshold_alias() -> None:
+    df = pd.DataFrame(
+        {
+            "hadm_id": [1],
+            "ed_stay_id": [11],
+            "abg_hypercap_threshold": [1],
+            "vbg_hypercap_threshold": [0],
+            "unknown_hypercap_threshold": [0],
+            "pco2_threshold_any": [1],
+            "gas_source_other_rate": [0.1],
+            "gas_source_inference_primary_tier": ["specimen_text"],
+            "gas_source_hint_conflict_rate": [0.0],
+            "gas_source_resolved_rate": [1.0],
+            "bmi_closest_pre_ed": [29.0],
+            "anthro_source": ["ED"],
+        }
+    )
+    report = validate_cohort_contract(df)
+    codes = {finding["code"] for finding in report["findings"]}
+    assert report["status"] == "warning"
+    assert "pco2_threshold_any_deprecated_alias" in codes
 
 
 def test_validate_cohort_contract_warns_when_source_diagnostic_columns_absent() -> None:
@@ -52,7 +75,7 @@ def test_validate_cohort_contract_warns_when_source_diagnostic_columns_absent() 
             "abg_hypercap_threshold": [1],
             "vbg_hypercap_threshold": [0],
             "unknown_hypercap_threshold": [0],
-            "pco2_threshold_any": [1],
+            "pco2_threshold_0_24h": [1],
             "gas_source_other_rate": [0.1],
             "bmi_closest_pre_ed": [30.0],
             "anthro_source": ["HOSPITAL"],
@@ -72,7 +95,7 @@ def test_validate_cohort_contract_applies_other_fail_threshold() -> None:
             "abg_hypercap_threshold": [0],
             "vbg_hypercap_threshold": [1],
             "unknown_hypercap_threshold": [1],
-            "pco2_threshold_any": [1],
+            "pco2_threshold_0_24h": [1],
             "gas_source_other_rate": [0.85],
             "gas_source_inference_primary_tier": ["label_fluid"],
             "gas_source_hint_conflict_rate": [0.0],
@@ -99,7 +122,7 @@ def test_validate_cohort_contract_enforces_min_bmi_coverage() -> None:
             "abg_hypercap_threshold": [0, 0, 0],
             "vbg_hypercap_threshold": [1, 1, 1],
             "unknown_hypercap_threshold": [0, 0, 0],
-            "pco2_threshold_any": [1, 1, 1],
+            "pco2_threshold_0_24h": [1, 1, 1],
             "gas_source_other_rate": [0.2, 0.2, 0.2],
             "gas_source_inference_primary_tier": [
                 "specimen_text",
@@ -126,7 +149,7 @@ def test_validate_cohort_contract_fails_when_poc_other_pco2_median_out_of_bounds
             "abg_hypercap_threshold": [0, 0, 0],
             "vbg_hypercap_threshold": [1, 1, 1],
             "unknown_hypercap_threshold": [1, 1, 1],
-            "pco2_threshold_any": [1, 1, 1],
+            "pco2_threshold_0_24h": [1, 1, 1],
             "gas_source_other_rate": [0.2, 0.2, 0.2],
             "gas_source_inference_primary_tier": [
                 "specimen_text",
@@ -157,7 +180,7 @@ def test_validate_cohort_contract_flags_poc_quarantine_leakage() -> None:
             "abg_hypercap_threshold": [0, 0],
             "vbg_hypercap_threshold": [1, 1],
             "unknown_hypercap_threshold": [1, 0],
-            "pco2_threshold_any": [1, 1],
+            "pco2_threshold_0_24h": [1, 1],
             "gas_source_other_rate": [0.2, 0.2],
             "gas_source_inference_primary_tier": ["specimen_text", "specimen_text"],
             "gas_source_hint_conflict_rate": [0.0, 0.0],
@@ -187,7 +210,7 @@ def test_validate_cohort_contract_flags_first_gas_anchor_without_pco2() -> None:
             "abg_hypercap_threshold": [1],
             "vbg_hypercap_threshold": [0],
             "unknown_hypercap_threshold": [0],
-            "pco2_threshold_any": [1],
+            "pco2_threshold_0_24h": [1],
             "gas_source_other_rate": [0.1],
             "gas_source_inference_primary_tier": ["specimen_text"],
             "gas_source_hint_conflict_rate": [0.0],
@@ -219,7 +242,7 @@ def test_validate_cohort_contract_accepts_poc_other_pco2_median_within_bounds() 
             "abg_hypercap_threshold": [1, 0, 1],
             "vbg_hypercap_threshold": [0, 1, 0],
             "unknown_hypercap_threshold": [1, 1, 0],
-            "pco2_threshold_any": [1, 1, 1],
+            "pco2_threshold_0_24h": [1, 1, 1],
             "gas_source_other_rate": [0.2, 0.2, 0.2],
             "gas_source_inference_primary_tier": [
                 "specimen_text",
@@ -249,7 +272,7 @@ def test_validate_cohort_contract_flags_first_other_src_poc_rows() -> None:
             "abg_hypercap_threshold": [1, 0],
             "vbg_hypercap_threshold": [0, 1],
             "unknown_hypercap_threshold": [0, 1],
-            "pco2_threshold_any": [1, 1],
+            "pco2_threshold_0_24h": [1, 1],
             "gas_source_other_rate": [0.2, 0.2],
             "gas_source_inference_primary_tier": ["specimen_text", "specimen_text"],
             "gas_source_hint_conflict_rate": [0.0, 0.0],
@@ -280,7 +303,7 @@ def test_validate_cohort_contract_warns_on_low_first_hco3_coverage() -> None:
             "abg_hypercap_threshold": [1, 0, 1, 0, 1, 0],
             "vbg_hypercap_threshold": [0, 1, 0, 1, 0, 1],
             "unknown_hypercap_threshold": [0, 0, 1, 0, 0, 0],
-            "pco2_threshold_any": [1, 1, 1, 1, 1, 1],
+            "pco2_threshold_0_24h": [1, 1, 1, 1, 1, 1],
             "gas_source_other_rate": [0.2, 0.2, 0.2, 0.2, 0.2, 0.2],
             "gas_source_inference_primary_tier": [
                 "specimen_text",
@@ -310,7 +333,7 @@ def test_validate_cohort_contract_warns_on_low_first_po2_triplet_coverage() -> N
             "abg_hypercap_threshold": [1, 1, 1],
             "vbg_hypercap_threshold": [0, 0, 0],
             "unknown_hypercap_threshold": [0, 0, 0],
-            "pco2_threshold_any": [1, 1, 1],
+            "pco2_threshold_0_24h": [1, 1, 1],
             "gas_source_other_rate": [0.1, 0.1, 0.1],
             "gas_source_inference_primary_tier": [
                 "specimen_text",
@@ -328,6 +351,60 @@ def test_validate_cohort_contract_warns_on_low_first_po2_triplet_coverage() -> N
     assert "po2_triplet_coverage_low" in codes
 
 
+def test_validate_cohort_contract_fails_when_max_pco2_24h_below_qualifying() -> None:
+    df = pd.DataFrame(
+        {
+            "hadm_id": [1, 2],
+            "ed_stay_id": [11, 22],
+            "abg_hypercap_threshold": [1, 0],
+            "vbg_hypercap_threshold": [0, 1],
+            "unknown_hypercap_threshold": [0, 0],
+            "pco2_threshold_0_24h": [1, 1],
+            "qualifying_pco2_mmhg": [60.0, 55.0],
+            "max_pco2_0_24h": [59.0, 70.0],
+            "dt_qualifying_hypercapnia_hours": [4.0, 12.0],
+            "max_pco2_0_6h": [60.0, 56.0],
+            "gas_source_other_rate": [0.1, 0.1],
+            "gas_source_inference_primary_tier": ["specimen_text", "specimen_text"],
+            "gas_source_hint_conflict_rate": [0.0, 0.0],
+            "gas_source_resolved_rate": [1.0, 1.0],
+            "bmi_closest_pre_ed": [30.0, 31.0],
+            "anthro_source": ["HOSPITAL", "ICU"],
+        }
+    )
+    report = validate_cohort_contract(df)
+    codes = {finding["code"] for finding in report["findings"]}
+    assert report["status"] == "fail"
+    assert "max_pco2_0_24h_below_qualifying" in codes
+
+
+def test_validate_cohort_contract_fails_when_max_pco2_6h_below_qualifying_for_early_rows() -> None:
+    df = pd.DataFrame(
+        {
+            "hadm_id": [1, 2],
+            "ed_stay_id": [11, 22],
+            "abg_hypercap_threshold": [1, 0],
+            "vbg_hypercap_threshold": [0, 1],
+            "unknown_hypercap_threshold": [0, 0],
+            "pco2_threshold_0_24h": [1, 1],
+            "qualifying_pco2_mmhg": [60.0, 55.0],
+            "max_pco2_0_24h": [65.0, 58.0],
+            "dt_qualifying_hypercapnia_hours": [2.0, 8.0],
+            "max_pco2_0_6h": [59.0, 54.0],
+            "gas_source_other_rate": [0.1, 0.1],
+            "gas_source_inference_primary_tier": ["specimen_text", "specimen_text"],
+            "gas_source_hint_conflict_rate": [0.0, 0.0],
+            "gas_source_resolved_rate": [1.0, 1.0],
+            "bmi_closest_pre_ed": [30.0, 31.0],
+            "anthro_source": ["HOSPITAL", "ICU"],
+        }
+    )
+    report = validate_cohort_contract(df)
+    codes = {finding["code"] for finding in report["findings"]}
+    assert report["status"] == "fail"
+    assert "max_pco2_0_6h_below_qualifying_when_dt_le_6h" in codes
+
+
 def test_build_pipeline_contract_report_reads_canonical_outputs(tmp_path: Path) -> None:
     data_dir = tmp_path / DATA_DIRNAME
     data_dir.mkdir(parents=True)
@@ -340,7 +417,7 @@ def test_build_pipeline_contract_report_reads_canonical_outputs(tmp_path: Path) 
             "abg_hypercap_threshold": [1],
             "vbg_hypercap_threshold": [0],
             "unknown_hypercap_threshold": [0],
-            "pco2_threshold_any": [1],
+            "pco2_threshold_0_24h": [1],
             "gas_source_other_rate": [0.1],
             "gas_source_inference_primary_tier": ["specimen_text"],
             "gas_source_hint_conflict_rate": [0.0],
@@ -404,7 +481,7 @@ def test_build_pipeline_contract_report_fails_when_cc_missing_audit_absent(tmp_p
             "abg_hypercap_threshold": [1],
             "vbg_hypercap_threshold": [0],
             "unknown_hypercap_threshold": [0],
-            "pco2_threshold_any": [1],
+            "pco2_threshold_0_24h": [1],
             "gas_source_other_rate": [0.1],
             "gas_source_inference_primary_tier": ["specimen_text"],
             "gas_source_hint_conflict_rate": [0.0],
@@ -441,7 +518,7 @@ def test_validate_cohort_contract_requires_cleaned_vitals_when_raw_present() -> 
             "abg_hypercap_threshold": [1],
             "vbg_hypercap_threshold": [0],
             "unknown_hypercap_threshold": [0],
-            "pco2_threshold_any": [1],
+            "pco2_threshold_0_24h": [1],
             "gas_source_other_rate": [0.1],
             "gas_source_inference_primary_tier": ["specimen_text"],
             "gas_source_hint_conflict_rate": [0.0],
@@ -466,7 +543,7 @@ def test_validate_cohort_contract_flags_invalid_cleaned_vitals_ranges() -> None:
             "abg_hypercap_threshold": [1],
             "vbg_hypercap_threshold": [0],
             "unknown_hypercap_threshold": [0],
-            "pco2_threshold_any": [1],
+            "pco2_threshold_0_24h": [1],
             "gas_source_other_rate": [0.1],
             "gas_source_inference_primary_tier": ["specimen_text"],
             "gas_source_hint_conflict_rate": [0.0],
@@ -500,7 +577,7 @@ def test_validate_cohort_contract_warns_when_timing_usable_missing() -> None:
             "abg_hypercap_threshold": [1],
             "vbg_hypercap_threshold": [0],
             "unknown_hypercap_threshold": [0],
-            "pco2_threshold_any": [1],
+            "pco2_threshold_0_24h": [1],
             "gas_source_other_rate": [0.1],
             "gas_source_inference_primary_tier": ["specimen_text"],
             "gas_source_hint_conflict_rate": [0.0],
@@ -523,7 +600,7 @@ def test_validate_cohort_contract_flags_timing_usable_mismatch() -> None:
             "abg_hypercap_threshold": [1, 0],
             "vbg_hypercap_threshold": [0, 1],
             "unknown_hypercap_threshold": [0, 0],
-            "pco2_threshold_any": [1, 1],
+            "pco2_threshold_0_24h": [1, 1],
             "gas_source_other_rate": [0.1, 0.1],
             "gas_source_inference_primary_tier": ["specimen_text", "specimen_text"],
             "gas_source_hint_conflict_rate": [0.0, 0.0],
@@ -547,7 +624,7 @@ def test_validate_cohort_contract_flags_negative_model_deltas() -> None:
             "abg_hypercap_threshold": [1],
             "vbg_hypercap_threshold": [0],
             "unknown_hypercap_threshold": [0],
-            "pco2_threshold_any": [1],
+            "pco2_threshold_0_24h": [1],
             "gas_source_other_rate": [0.1],
             "gas_source_inference_primary_tier": ["specimen_text"],
             "gas_source_hint_conflict_rate": [0.0],
@@ -578,7 +655,7 @@ def test_validate_cohort_contract_flags_anthro_model_out_of_bounds() -> None:
             "abg_hypercap_threshold": [1],
             "vbg_hypercap_threshold": [0],
             "unknown_hypercap_threshold": [0],
-            "pco2_threshold_any": [1],
+            "pco2_threshold_0_24h": [1],
             "gas_source_other_rate": [0.1],
             "gas_source_inference_primary_tier": ["specimen_text"],
             "gas_source_hint_conflict_rate": [0.0],
@@ -606,7 +683,7 @@ def test_validate_cohort_contract_flags_invalid_anthro_source_values() -> None:
             "abg_hypercap_threshold": [1],
             "vbg_hypercap_threshold": [0],
             "unknown_hypercap_threshold": [0],
-            "pco2_threshold_any": [1],
+            "pco2_threshold_0_24h": [1],
             "gas_source_other_rate": [0.1],
             "gas_source_inference_primary_tier": ["specimen_text"],
             "gas_source_hint_conflict_rate": [0.0],
@@ -628,7 +705,7 @@ def test_validate_cohort_contract_flags_noncanonical_anthro_units_when_enabled()
             "abg_hypercap_threshold": [1],
             "vbg_hypercap_threshold": [0],
             "unknown_hypercap_threshold": [0],
-            "pco2_threshold_any": [1],
+            "pco2_threshold_0_24h": [1],
             "gas_source_other_rate": [0.1],
             "gas_source_inference_primary_tier": ["specimen_text"],
             "gas_source_hint_conflict_rate": [0.0],
@@ -658,7 +735,7 @@ def test_validate_cohort_contract_flags_duplicate_anthro_alias_columns() -> None
             "abg_hypercap_threshold": [1],
             "vbg_hypercap_threshold": [0],
             "unknown_hypercap_threshold": [0],
-            "pco2_threshold_any": [1],
+            "pco2_threshold_0_24h": [1],
             "gas_source_other_rate": [0.1],
             "gas_source_inference_primary_tier": ["specimen_text"],
             "gas_source_hint_conflict_rate": [0.0],

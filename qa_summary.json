@@ -9,6 +9,8 @@
   "pct_any_gas_0_24h": 0.9832542562098799,
   "pco2_threshold_0_24h_n": 6256,
   "pco2_threshold_0_24h_rate": 0.8730114429249233,
+  "max_pco2_0_24h_lt_qualifying_n": 0,
+  "max_pco2_0_6h_lt_qualifying_n": 0,
   "enrolled_any_n": 7166,
   "enrolled_any_rate": 1.0,
   "enrollment_route_counts": {
@@ -331,7 +333,7 @@
   ],
   "pco2_source_distribution_audit": [
     {
-      "scope": "ALL_CANDIDATE_PCO2",
+      "scope": "ALL_CANDIDATE_PCO2_LAB_POC",
       "source_branch": "LAB",
       "source": "arterial",
       "n": 12264,
@@ -341,7 +343,7 @@
       "pct_ge_50": 0.3119699935
     },
     {
-      "scope": "ALL_CANDIDATE_PCO2",
+      "scope": "ALL_CANDIDATE_PCO2_LAB_POC",
       "source_branch": "LAB",
       "source": "unknown",
       "n": 770,
@@ -351,7 +353,7 @@
       "pct_ge_50": 0.5753246753
     },
     {
-      "scope": "ALL_CANDIDATE_PCO2",
+      "scope": "ALL_CANDIDATE_PCO2_LAB_POC",
       "source_branch": "LAB",
       "source": "venous",
       "n": 6916,
@@ -361,7 +363,7 @@
       "pct_ge_50": 0.6862348178
     },
     {
-      "scope": "ALL_CANDIDATE_PCO2",
+      "scope": "ALL_CANDIDATE_PCO2_LAB_POC",
       "source_branch": "POC",
       "source": "arterial",
       "n": 4097,
@@ -371,7 +373,7 @@
       "pct_ge_50": 0.4556992922
     },
     {
-      "scope": "ALL_CANDIDATE_PCO2",
+      "scope": "ALL_CANDIDATE_PCO2_LAB_POC",
       "source_branch": "POC",
       "source": "venous",
       "n": 3561,
@@ -379,6 +381,37 @@
       "p95": 88.0,
       "max": 189.0,
       "pct_ge_50": 0.7099129458
+    }
+  ],
+  "pco2_source_distribution_scope": "ALL_CANDIDATE_PCO2_LAB_POC",
+  "pco2_window_max_contributor_audit": [
+    {
+      "window": "0_6h",
+      "source_branch": "LAB",
+      "max_value_rows": 3162,
+      "source_branch_rows": 2375,
+      "source_branch_rate": 0.7511068944
+    },
+    {
+      "window": "0_6h",
+      "source_branch": "POC",
+      "max_value_rows": 3162,
+      "source_branch_rows": 787,
+      "source_branch_rate": 0.2488931056
+    },
+    {
+      "window": "0_24h",
+      "source_branch": "LAB",
+      "max_value_rows": 6256,
+      "source_branch_rows": 5646,
+      "source_branch_rate": 0.9024936061
+    },
+    {
+      "window": "0_24h",
+      "source_branch": "POC",
+      "max_value_rows": 6256,
+      "source_branch_rows": 610,
+      "source_branch_rate": 0.0975063939
     }
   ],
   "blood_gas_triplet_completeness_audit": [
@@ -501,8 +534,8 @@
       "poc_unknown_hadm_n": 0,
       "unknown_hypercap_threshold_hadm_n": 398,
       "unknown_from_poc_detail_hadm_n": 0,
-      "poc_hypercap_0_24h_edstay_n": 0,
-      "poc_hypercap_0_24h_edstay_rate": 0.0
+      "poc_hypercap_0_24h_edstay_n": 3723,
+      "poc_hypercap_0_24h_edstay_rate": 0.5195367011
     }
   ],
   "first_gas_anchor_audit": [
@@ -527,11 +560,11 @@
       "p50_mmhg": 45.0,
       "p95_mmhg": 75.0,
       "max_mmhg": 181.0,
-      "label_include_ok": false,
+      "label_include_ok": true,
       "label_exclude_hit": false,
       "unit_ok": true,
       "median_in_expected_range": true,
-      "contamination_flag": true,
+      "contamination_flag": false,
       "manifest_whitelisted": 1
     },
     {
@@ -546,18 +579,18 @@
       "p50_mmhg": 53.0,
       "p95_mmhg": 88.0,
       "max_mmhg": 999998.0,
-      "label_include_ok": false,
+      "label_include_ok": true,
       "label_exclude_hit": false,
       "unit_ok": true,
       "median_in_expected_range": true,
-      "contamination_flag": true,
+      "contamination_flag": false,
       "manifest_whitelisted": 1
     }
   ],
-  "poc_inclusion_enabled": false,
-  "poc_inclusion_reason": "validated_itemids_failed_qc",
-  "poc_hypercap_0_24h_edstay_n": 0,
-  "poc_hypercap_0_24h_edstay_rate": 0.0,
+  "poc_itemid_qc_passed": true,
+  "poc_itemid_qc_reason": "validated_itemids_passed_qc",
+  "poc_hypercap_0_24h_edstay_n": 3723,
+  "poc_hypercap_0_24h_edstay_rate": 0.5195367010884734,
   "qualifying_source_branch_counts": {
     "LAB": 5392,
     "POC": 864
@@ -2132,6 +2165,7 @@
     "manifest_itemids": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-23 blood_gas_itemid_manifest_audit.csv",
     "pco2_itemid_qc": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-23 pco2_itemid_qc_audit.csv",
     "pco2_source_distribution": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-23 pco2_source_distribution_audit.csv",
+    "pco2_window_max_contributor": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-23 pco2_window_max_contributor_audit.csv",
     "blood_gas_triplet_completeness": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-23 blood_gas_triplet_completeness_audit.csv",
     "qualifying_pco2_distribution_by_type": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-23 qualifying_pco2_distribution_by_type_audit.csv",
     "other_route_quarantine": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-23 other_route_quarantine_audit.csv",
@@ -2147,7 +2181,7 @@
     "gas_source_other_rate_high"
   ],
   "run_metadata": {
-    "run_utc": "2026-02-23T13:45:15.119413+00:00",
+    "run_utc": "2026-02-23T17:31:25.181151+00:00",
     "work_project": "mimic-hypercapnia",
     "physionet_project": "physionet-data",
     "datasets": {
@@ -2171,5 +2205,5 @@
   ],
   "contract_error_codes": [],
   "qa_status_final": "warning",
-  "cohort_contract_report_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/debug/contracts/20260223_134725/contract_report.json"
+  "cohort_contract_report_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/debug/contracts/20260223_173528/contract_report.json"
 }

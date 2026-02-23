@@ -1,16 +1,16 @@
 {
-  "run_id": "rater_20260222_094110",
-  "generated_utc": "2026-02-22T16:41:10.985138+00:00",
+  "run_id": "rater_20260223_103819",
+  "generated_utc": "2026-02-23T17:38:19.295012+00:00",
   "work_dir": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP",
   "python_version": "3.11.10 (main, Oct 16 2024, 08:56:36) [Clang 18.1.8 ]",
   "uv_version": "uv 0.9.28 (Homebrew 2026-01-29)",
   "git": {
     "branch": "main",
-    "commit": "c729db5955905697a0ce43ac8ba711735c762ee9",
+    "commit": "ff4e91d0c5f24ce305428ed96d43959e0d08ca98",
     "dirty": true,
-    "dirty_diff_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/debug/run_manifests/rater_20260222_094110_git.diff",
-    "dirty_diff_sha256": "38531a9f0c6bfca2090a8c4bfd08042d7dff89427eb424e907f209ea2f701843",
-    "dirty_diff_line_count": 60958,
+    "dirty_diff_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/debug/run_manifests/rater_20260223_103819_git.diff",
+    "dirty_diff_sha256": "46ffa4acda7414f030cdd19bc5806b4652809fbdce646ec726aac77402368a22",
+    "dirty_diff_line_count": 16651,
     "require_clean_git": false
   },
   "config_hash_sha256": "20da4c15df0b80016eaf9391f0210a2e520c2837634628dd1012812475ce618c",
