@@ -8,6 +8,7 @@ import os
 import re
 import subprocess
 import sys
+import hashlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from importlib.metadata import PackageNotFoundError, version
@@ -78,6 +79,7 @@ ENV_KNOBS: tuple[str, ...] = (
     "COHORT_ALLOW_EMPTY_OMR",
     "COHORT_ANTHRO_MIN_BMI_COVERAGE",
     "RUN_MANIFEST_STAGE_SCOPE",
+    "RUN_MANIFEST_REQUIRE_CLEAN_GIT",
     "GOOGLE_APPLICATION_CREDENTIALS",
     "HF_TOKEN",
 )
@@ -170,6 +172,7 @@ def collect_run_manifest(
     selected_env_vars: Iterable[str] = ENV_KNOBS,
 ) -> dict[str, Any]:
     """Collect immutable runtime metadata for reproducibility."""
+    selected_env_vars = tuple(selected_env_vars)
     package_names = ("pandas", "numpy", "spacy", "torch", "sentence-transformers")
     package_versions: dict[str, str] = {}
     for package_name in package_names:
@@ -181,6 +184,40 @@ def collect_run_manifest(
     branch = _run_text_command(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=work_dir)
     commit = _run_text_command(["git", "rev-parse", "HEAD"], cwd=work_dir)
     dirty = bool(_run_text_command(["git", "status", "--porcelain"], cwd=work_dir))
+    config_fingerprint = hashlib.sha256(
+        json.dumps(
+            {key: os.getenv(key, "") for key in selected_env_vars},
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
+
+    dirty_diff_path: str | None = None
+    dirty_diff_sha256: str | None = None
+    dirty_diff_line_count = 0
+    if dirty:
+        diff_completed = subprocess.run(
+            ["git", "diff", "--binary"],
+            cwd=str(work_dir),
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if diff_completed.returncode == 0 and diff_completed.stdout:
+            diff_dir = (work_dir / "debug" / "run_manifests").resolve()
+            diff_dir.mkdir(parents=True, exist_ok=True)
+            diff_file = diff_dir / f"{run_id}_git.diff"
+            diff_file.write_text(diff_completed.stdout)
+            dirty_diff_path = str(diff_file)
+            dirty_diff_sha256 = hashlib.sha256(
+                diff_completed.stdout.encode("utf-8")
+            ).hexdigest()
+            dirty_diff_line_count = int(diff_completed.stdout.count("\n"))
+
+    require_clean_git = os.getenv("RUN_MANIFEST_REQUIRE_CLEAN_GIT", "0").strip() == "1"
+    if dirty and require_clean_git:
+        raise RuntimeError(
+            "Repository has uncommitted changes and RUN_MANIFEST_REQUIRE_CLEAN_GIT=1."
+        )
 
     return {
         "run_id": run_id,
@@ -192,7 +229,12 @@ def collect_run_manifest(
             "branch": branch,
             "commit": commit,
             "dirty": dirty,
+            "dirty_diff_path": dirty_diff_path,
+            "dirty_diff_sha256": dirty_diff_sha256,
+            "dirty_diff_line_count": dirty_diff_line_count,
+            "require_clean_git": require_clean_git,
         },
+        "config_hash_sha256": config_fingerprint,
         "package_versions": package_versions,
         "env_knobs": {
             key: _safe_env_value(key, os.getenv(key))

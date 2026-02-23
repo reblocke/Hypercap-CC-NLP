@@ -1,5 +1,5 @@
 {
-  "version": "2026-02-17",
+  "version": "2026-02-20.1",
   "lab": {
     "pco2_itemids": [
       50818
@@ -7,6 +7,13 @@
     "excluded_pco2_itemids": [
       50830,
       52040
+    ],
+    "po2_itemids": [
+      50821
+    ],
+    "excluded_po2_itemids": [
+      50832,
+      52042
     ],
     "ph_itemids": [
       50820
@@ -22,8 +29,48 @@
     ]
   },
   "icu": {
-    "pco2_itemids": [],
-    "ph_itemids": [],
+    "pco2_itemids": [
+      220235,
+      226062
+    ],
+    "pco2_abg_itemids": [
+      220235
+    ],
+    "pco2_vbg_itemids": [
+      226062
+    ],
+    "excluded_pco2_itemids": [
+      220245,
+      223679,
+      225698,
+      227036,
+      227038,
+      228640,
+      228641,
+      228878
+    ],
+    "po2_itemids": [
+      220224,
+      226063
+    ],
+    "po2_abg_itemids": [
+      220224
+    ],
+    "po2_vbg_itemids": [
+      226063
+    ],
+    "excluded_po2_itemids": [
+      220227,
+      225674,
+      226541,
+      227516,
+      227685,
+      227686
+    ],
+    "ph_itemids": [
+      220274,
+      223830
+    ],
     "hco3_itemids": [],
     "specimen_type_itemids": [],
     "allow_pattern_fallback": false,

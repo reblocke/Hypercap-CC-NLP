@@ -1,0 +1,4 @@
+raw_column,model_column,lower_bound_exclusive,upper_bound_inclusive,raw_non_missing_n,outlier_n,model_non_missing_n
+bmi_closest_pre_ed,bmi_closest_pre_ed_model,0.0,100.0,7400,116,7284
+height_closest_pre_ed,height_closest_pre_ed_model,100.0,250.0,7405,38,7367
+weight_closest_pre_ed,weight_closest_pre_ed_model,0.0,400.0,10470,81,10389

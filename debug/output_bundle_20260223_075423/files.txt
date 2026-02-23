@@ -1,0 +1,12 @@
+MIMIC tabular data/prior runs/2026-02-23 classifier_run_manifest.json
+MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx
+MIMIC tabular data/prior runs/2026-02-23 classifier_cc_missing_audit.csv
+MIMIC tabular data/prior runs/2026-02-23 classifier_phrase_audit.csv
+MIMIC tabular data/prior runs/2026-02-23 classifier_spellfix_guardrail_audit.csv
+MIMIC tabular data/prior runs/2026-02-23 classifier_spell_mode_comparison.csv
+MIMIC tabular data/prior runs/2026-02-23 classifier_spellfix_log.csv
+MIMIC tabular data/prior runs/2026-02-23 classifier_hypercap_flags_audit.csv
+MIMIC tabular data/prior runs/2026-02-23 classifier_contract_report.json
+debug/run_manifests/classifier_20260223_075133_git.diff
+artifacts/reports/20260223_074942/Hypercap CC NLP Classifier.pdf
+debug/contracts/20260223_145213/contract_report.json

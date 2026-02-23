@@ -1,0 +1,7 @@
+source_branch,analyte,itemid,label,category,fluid,cohort_row_count,manifest_version,present_in_dictionary
+LAB,gas_pco2,50818,pCO2,Blood Gas,Blood,495853,2026-02-20.1,1
+LAB,gas_ph,50820,pH,Blood Gas,Blood,524869,2026-02-20.1,1
+LAB,gas_hco3,50803,"Calculated Bicarbonate, Whole Blood",Blood Gas,Blood,5435,2026-02-20.1,1
+LAB,gas_specimen,52033,Specimen Type,Blood Gas,Blood,562910,2026-02-20.1,1
+ICU,pco2,220235,Arterial CO2 Pressure,Labs,,14130,2026-02-20.1,1
+ICU,pco2,226062,Venous CO2 Pressure,Labs,,6402,2026-02-20.1,1

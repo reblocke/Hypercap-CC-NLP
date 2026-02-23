@@ -1,18 +1,18 @@
-category,N,percent_agreement,cohen_kappa,gwet_ac1,category_name
-0,160,0.9875,0.9526066350710902,0.9830238726790451,Injuries & adverse effects
-1,160,0.99375,0.9819004524886878,0.9904537454133229,Symptom – Respiratory
-2,160,0.96875,0.8106060606060606,0.9625827272514674,Symptom – Circulatory
-3,160,0.93125,0.7882579403272378,0.8983393501805055,Symptom – Nervous
-4,160,0.9875,0.9554565701559021,0.9826256922575741,Symptom – Digestive
-5,160,0.99375,0.7969543147208128,0.993551637279597,Symptom – Genitourinary
-6,160,0.9875,0.9024390243902443,0.985664366992205,Symptom – Musculoskeletal
-7,160,0.96875,-0.01010101010100807,0.9677581863979848,Symptom – Skin/Hair/Nails
-8,160,1.0,,1.0,Symptom – Eye/Ear
-9,160,0.9375,0.6348699224098584,0.9247058823529412,Symptom – General
-10,160,1.0,,1.0,Symptom – Psychological
-11,160,0.9625,0.8581560283687945,0.9490716180371354,Diseases (patient–stated diagnosis)
-12,160,0.98125,0.8473282442748087,0.9786291489503796,Abnormal test result
-13,160,1.0,,1.0,Diagnostic/Screening/Preventive
-14,160,0.98125,0.3939393939393937,0.9806549118387908,Treatment/Medication
-15,160,1.0,1.0,1.0,Administrative
-16,160,1.0,1.0,1.0,Uncodable/Unknown
+category,N,percent_agreement,cohen_kappa,gwet_ac1,category_code,category_name
+0,160,1.0,,1.0,RVC-INJ,Injuries & adverse effects
+1,160,1.0,,1.0,RVC-SYM-RESP,Symptom – Respiratory
+2,160,1.0,,1.0,RVC-SYM-CIRC,Symptom – Circulatory
+3,160,1.0,,1.0,RVC-SYM-NERV,Symptom – Nervous
+4,160,1.0,,1.0,RVC-SYM-DIG,Symptom – Digestive
+5,160,1.0,,1.0,RVC-SYM-GU,Symptom – Genitourinary
+6,160,1.0,,1.0,RVC-SYM-MSK,Symptom – Musculoskeletal
+7,160,1.0,,1.0,RVC-SYM-SKIN,Symptom – Skin/Hair/Nails
+8,160,1.0,,1.0,RVC-SYM-EYE,Symptom – Eye/Ear
+9,160,1.0,,1.0,RVC-SYM-GEN,Symptom – General
+10,160,1.0,,1.0,RVC-SYM-PSY,Symptom – Psychological
+11,160,1.0,,1.0,RVC-DIS,Diseases (patient-stated)
+12,160,1.0,,1.0,RVC-TEST,Abnormal test result
+13,160,1.0,,1.0,RVC-DIAG,Diagnostic/Screening/Preventive
+14,160,1.0,,1.0,RVC-TREAT,Treatment/Medication
+15,160,1.0,,1.0,RVC-ADMIN,Administrative
+16,160,1.0,,1.0,RVC-UNCL,Uncodable/Unknown

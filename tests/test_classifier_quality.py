@@ -6,7 +6,6 @@ from pathlib import Path
 import pandas as pd
 
 from hypercap_cc_nlp.classifier_quality import (
-    add_hypercapnia_flags,
     annotate_cc_missingness,
     apply_blank_primary_uncodable_policy,
     apply_pseudomissing_uncodable_policy,
@@ -14,40 +13,6 @@ from hypercap_cc_nlp.classifier_quality import (
     validate_classifier_contract,
     verify_classifier_resources,
 )
-
-
-def test_add_hypercapnia_flags_uses_schema_correct_defaults() -> None:
-    df = pd.DataFrame(
-        {
-            "poc_abg_paco2": [46, 44, None],
-            "poc_abg_paco2_uom": ["mmhg", "mmhg", "mmhg"],
-            "poc_vbg_paco2": [None, 50, 6.7],
-            "poc_vbg_paco2_uom": [None, "mmhg", "kpa"],
-        }
-    )
-    out = add_hypercapnia_flags(df)
-
-    assert out["hypercap_by_abg"].tolist() == [1, 0, 0]
-    assert out["hypercap_by_vbg"].tolist() == [0, 1, 1]
-    assert out["hypercap_by_bg"].tolist() == [1, 1, 1]
-
-
-def test_add_hypercapnia_flags_prefers_authoritative_flags_over_numeric_inputs() -> None:
-    df = pd.DataFrame(
-        {
-            "flag_abg_hypercapnia": [0, 1],
-            "flag_vbg_hypercapnia": [1, 0],
-            "first_abg_pco2": [80, 20],
-            "first_vbg_pco2": [20, 80],
-            "poc_abg_paco2": [80, 20],
-            "poc_vbg_paco2": [20, 80],
-        }
-    )
-    out = add_hypercapnia_flags(df)
-
-    assert out["hypercap_by_abg"].tolist() == [0, 1]
-    assert out["hypercap_by_vbg"].tolist() == [1, 0]
-    assert out["hypercap_by_bg"].tolist() == [1, 1]
 
 
 def test_annotate_cc_missingness_labels_pseudo_and_true_missing() -> None:
@@ -133,7 +98,7 @@ def test_build_cc_missing_audit_summarizes_examples() -> None:
     assert "cough" in str(got.loc["valid", "examples"])
 
 
-def test_validate_classifier_contract_reports_union_mismatch_and_blank_policy() -> None:
+def test_validate_classifier_contract_reports_blank_policy() -> None:
     df = pd.DataFrame(
         {
             "hadm_id": [1, 2],
@@ -142,38 +107,44 @@ def test_validate_classifier_contract_reports_union_mismatch_and_blank_policy() 
             "cc_missing_reason": ["true_missing", "valid"],
             "cc_pseudomissing_flag": [False, False],
             "cc_missing_flag": [True, False],
-            "hypercap_by_abg": [1, 0],
-            "hypercap_by_vbg": [0, 0],
-            "hypercap_by_bg": [0, 0],
         }
     )
     report = validate_classifier_contract(df)
     codes = {item["code"] for item in report["findings"]}
 
     assert report["status"] == "fail"
-    assert "bg_union_mismatch" in codes
     assert "unexpected_blank_rfv1" in codes
 
 
-def test_validate_classifier_contract_detects_authoritative_disagreement() -> None:
+def test_validate_classifier_contract_passes_without_hypercap_duplicate_columns() -> None:
     df = pd.DataFrame(
         {
             "hadm_id": [1, 2],
             "segment_preds": ["[]", "[]"],
             "RFV1_name": ["Symptom – Respiratory", "Symptom – Respiratory"],
             "cc_missing_reason": ["valid", "valid"],
-            "cc_pseudomissing_flag": [False, False],
-            "cc_missing_flag": [False, False],
-            "hypercap_by_abg": [0, 0],
-            "hypercap_by_vbg": [0, 0],
-            "hypercap_by_bg": [0, 0],
-            "flag_abg_hypercapnia": [1, 0],
         }
     )
     report = validate_classifier_contract(df)
-    codes = {item["code"] for item in report["findings"]}
-    assert "abg_authoritative_disagreement" in codes
-    assert "abg_all_zero_with_authoritative_positive" in codes
+    assert report["status"] == "pass"
+
+
+def test_validate_classifier_contract_derives_pseudo_count_without_optional_flags() -> None:
+    df = pd.DataFrame(
+        {
+            "hadm_id": [1, 2, 3],
+            "segment_preds": ["[]", "[]", "[]"],
+            "RFV1_name": [
+                "Symptom – Respiratory",
+                "Uncodable/Unknown",
+                "Symptom – Respiratory",
+            ],
+            "cc_missing_reason": ["valid", "pseudo_missing_token", "valid"],
+        }
+    )
+    report = validate_classifier_contract(df)
+    assert report["status"] == "pass"
+    assert report["pseudo_missing_rows"] == 1
 
 
 def test_verify_classifier_resources_checks_required_and_optional_hash(tmp_path: Path) -> None:

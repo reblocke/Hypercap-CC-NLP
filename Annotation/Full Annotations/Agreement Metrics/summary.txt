@@ -45,26 +45,26 @@ none_rate         0.01250
 
 === Chance-corrected (binary per category) ===
 R1 vs R2:
-macro_cohen_kappa          0.734781
-macro_gwet_ac1             0.972273
-macro_percent_agreement    0.977941
-micro_percent_agreement    0.977941
+macro_cohen_kappa          NaN
+macro_gwet_ac1             1.0
+macro_percent_agreement    1.0
+micro_percent_agreement    1.0
 
 R1 vs R3:
-macro_cohen_kappa          0.801703
-macro_gwet_ac1             0.976768
-macro_percent_agreement    0.981985
-micro_percent_agreement    0.981985
+macro_cohen_kappa          NaN
+macro_gwet_ac1             1.0
+macro_percent_agreement    1.0
+micro_percent_agreement    1.0
 
 R2 vs R3:
-macro_cohen_kappa          0.779458
-macro_gwet_ac1             0.976298
-macro_percent_agreement    0.981250
-micro_percent_agreement    0.981250
+macro_cohen_kappa          NaN
+macro_gwet_ac1             1.0
+macro_percent_agreement    1.0
+micro_percent_agreement    1.0
 
 === Multi-rater AC1 (3 raters) ===
-macro_gwet_ac1=0.9751
-macro_percent_agreement=0.9804
+macro_gwet_ac1=1.0000
+macro_percent_agreement=1.0000
 
 === Adjudication (R3) for R1≠R2 ===
 N_disagreements                31.000000

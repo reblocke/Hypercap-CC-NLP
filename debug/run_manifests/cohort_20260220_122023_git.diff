@@ -1,0 +1,3895 @@
+diff --git a/CONTINUITY.md b/CONTINUITY.md
+index 28b5df3..369aa55 100644
+--- a/CONTINUITY.md
++++ b/CONTINUITY.md
+@@ -1,283 +1,53 @@
+ Goal (incl. success criteria):
+-- Implement blood-gas source integrity remediation in the Quarto-first pipeline, with specimen-driven extraction and explicit quarantine of unreliable OTHER routes.
++- Implement the “Fix QA issues in outputs20260220_082724.zip” ticket end-to-end.
+ - Success criteria:
+-  - curated versioned blood-gas itemid manifest is introduced and used by cohort core logic,
+-  - OTHER thresholding is LAB blood-gas unknown-specimen only (POC-other quarantined from enrollment thresholds),
+-  - first gas anchor is pCO2-qualified and auditable,
+-  - classifier ABG-derived hypercap flags fail fast on authoritative-flag inconsistencies,
+-  - contracts/tests and stage renders pass with new audit artifacts present.
++  - LAB + POC definitive pCO2 extraction is active and auditable.
++  - Gas sample typing uses ABG/VBG/UNKNOWN semantics; UNKNOWN remains cohort-eligible.
++  - `first_hco3` source/value mismatch is eliminated and coverage is improved or explicitly contracted.
++  - CC spell-correction no longer allows clinically unsafe substitutions.
++  - Timing anomalies are flagged and model-duration fields are non-negative.
++  - Audit CSVs are always parseable (header present even when empty).
++  - Reproducibility manifests no longer silently rely on dirty git state.
+ 
+ Constraints/Assumptions:
+-- Core phase logic must reside in `.qmd` notebooks.
+-- Standalone `.py` allowed only for QA/contracts/audit/scripts/tests.
+-- No physiologic-value inference for ABG/VBG source classification.
+-- Missing symptom values treated as No for primary symptom table policy.
+-- Dependency addition `upsetplot` is approved.
++- Core phase logic for cohort/classifier/rater/analysis remains embedded in the 4 `.qmd` notebooks.
++- Standalone `.py` allowed only for QA/contracts/audit/parity/scripts/tests.
++- No physiologic-value guessing for ABG/VBG source assignment.
++- Keep cohort estimand thresholds unchanged unless explicitly requested.
++- Use `uv`, Ruff, and repo Make targets for validation.
+ 
+ Key decisions:
+-- Keep `OTHER` in enrollment and report explicitly.
+-- Hybrid denominator policy in analysis tables.
+-- Use `longtable` + `landscape` for wide PDF tables.
+-- Keep `pco2_threshold_any` and add explicit `other_hypercap_threshold` in first table.
+-- Hard-code POC sanity QA thresholds:
+-  - `COHORT_POC_PCO2_MEDIAN_MIN = 45`
+-  - `COHORT_POC_PCO2_MEDIAN_MAX = 80`
+-  - `COHORT_POC_PCO2_FAIL_ENABLED = 1`
+-- Apply the above thresholds in external QA/contracts only (not notebook execution path).
+-- CC normalization remediation decision: implement dual-mode spell correction (`disabled` vs strict-gated), compare both in-notebook, and select lower-risk mode automatically (`CC_SPELL_CORRECTION_MODE=auto` default).
+-- CO2 OTHER policy remains LAB-only blood-gas unknown route with hard-fail on any POC leakage.
+-- HCO3 policy: prioritize LAB blood-gas bicarbonate itemids; allow ICU POC fallback only when explicit ICU HCO3 itemids are configured.
++- Keep UNKNOWN gas source as a valid stratum and cohort-eligible when pCO2 is definitive.
++- Keep hard-coded POC pCO2 sanity thresholds in QA/contracts (not runtime env knobs):
++  - min=45, max=80, fail-enabled=true.
++- Preserve backward compatibility columns where possible, with additive provenance/audit fields.
+ 
+ State:
+-- Done: prior P0/P1/P2 remediation and Quarto migration are in place.
+-- Now: residual integrity + blood-gas alignment pass completed and validated on latest canonical `11,769`-row outputs.
+-- Next: optional follow-up tuning for unresolved OTHER-route burden (`gas_source_other_rate_high`) and low HCO3 coverage warnings.
++- Done: prior specimen-driven hardening, ED-vitals cleaning, Quarto pipeline migration, and baseline refresh are in place.
++- Now: implementing residual QA ticket items A–I (manifest/POC capture, UNKNOWN semantics, HCO3 integrity, spellfix guardrails, timing integrity, audit robustness, reproducibility).
++- Next: run lint/tests + stage renders + contract checks and report deltas from latest outputs.
+ 
+ Done:
+-- Updated specimen-driven strictification in cohort core (`MIMICIV_hypercap_EXT_cohort.qmd`):
+-  - removed ABG/VBG label fallback in `co2_thresholds_sql` and blood-gas pair SQL,
+-  - kept source classification specimen-type-first with OTHER as unknown blood specimen class.
+-- Added additive cohort fields and QA summary wiring:
+-  - timing tri-state (`qualifying_gas_observed`, `presenting_hypercapnia_tri`, `late_hypercapnia_tri`, `hypercap_timing_class`),
+-  - timestamp/vent model fields (`hospital_los_hours_model`, `dt_first_imv_hours_model`, `dt_first_niv_hours_model`) + integrity flags,
+-  - conservative anthropometric model fields + outlier flags,
+-  - first-gas provenance (`first_gas_specimen_*`, `first_gas_pco2_*`, `co2_other_is_blood_asserted`),
+-  - POC inclusion state (`poc_inclusion_enabled`, `poc_inclusion_reason`),
+-  - new audits (`pco2_itemid_qc_audit`, `timing_integrity_audit`, `ventilation_timing_audit`, `anthropometric_cleaning_audit`).
+-- Updated contracts/tests/docs:
+-  - `src/hypercap_cc_nlp/pipeline_contracts.py` checks tri-state consistency, vent/timestamp model integrity, anthro model bounds, POC inclusion status, and new required audit artifacts.
+-  - `tests/test_pipeline_contracts.py` + `tests/test_notebook_output_contracts.py` updated for new contract semantics and notebook markers.
+-  - `Hypercap CC NLP Analysis.qmd` now surfaces QC metrics for qualifying-gas observation, timing/vent anomalies, and POC inclusion state.
+-  - `README.md` updated with new semantics/columns/artifacts.
+-- Validation after implementation:
+-  - `make lint` passed.
+-  - `make test` passed (`92 passed`).
+-  - `make contracts-check STAGE=all` passed with `status=warning` (only `gas_source_other_rate_high`, `first_hco3_coverage_low`).
+-  - `make quarto-pipeline` completed under warning-mode run settings (`PIPELINE_CONTRACT_MODE=warn`, `COHORT_OTHER_RELATIVE_REDUCTION_MIN=0`) for this cycle.
+-  - baseline refreshed: `artifacts/baselines/jupyter/20260220_152137_post_residual_integrity/`.
+-  - `make quarto-parity-check BASELINE=latest` passed against refreshed baseline.
+-- Added versioned blood-gas manifest: `specs/blood_gas_itemids.json`.
+-- Refactored cohort core gas extraction in `MIMICIV_hypercap_EXT_cohort.qmd`:
+-  - strict LAB pCO2/pH/specimen itemid allowlists + blood-fluid guard,
+-  - specimen-first site assignment with metadata fallback,
+-  - POC OTHER quarantine from enrollment thresholds (`other_hypercap_threshold` now LAB-only OTHER),
+-  - `first_gas_time` anchor now requires pCO2-qualified panel.
+-- Added cohort provenance/audit outputs:
+-  - `YYYY-MM-DD blood_gas_itemid_manifest_audit.csv`
+-  - `YYYY-MM-DD pco2_source_distribution_audit.csv`
+-  - `YYYY-MM-DD other_route_quarantine_audit.csv`
+-  - `YYYY-MM-DD first_gas_anchor_audit.csv`
+-  - plus new QA summary keys under `qa_summary.json`.
+-- Added cohort columns:
+-  - `first_other_src_detail`
+-  - `first_gas_anchor_has_pco2`
+-  - `first_gas_anchor_source_validated`
+-- Tightened classifier safeguards in `Hypercap CC NLP Classifier.qmd`:
+-  - hard fail when authoritative ABG positives exist but `hypercap_by_abg` is all-zero,
+-  - added `classifier_hypercap_flags_audit.csv`.
+-- Updated contracts/tests:
+-  - `src/hypercap_cc_nlp/pipeline_contracts.py` now checks first-gas anchor integrity, POC-other leakage, required new audit artifacts.
+-  - `src/hypercap_cc_nlp/classifier_quality.py` now errors on `abg_all_zero_with_authoritative_positive`.
+-  - Updated tests in `tests/test_pipeline_contracts.py`, `tests/test_classifier_quality.py`, `tests/test_notebook_output_contracts.py`.
+-- Updated docs:
+-  - `README.md` now documents manifest-based blood-gas extraction and new audit artifacts.
+-- Validation completed:
+-  - `make lint` passed.
+-  - `make test` passed (`85 passed`).
+-  - `make quarto-cohort` passed.
+-  - `make quarto-classifier` passed.
+-  - `make quarto-analysis` passed.
+-  - `make contracts-check STAGE=all` passed with `status=warning` (only `gas_source_other_rate_high`).
+-  - `make quarto-parity-check BASELINE=latest` returned `fail` due expected intentional cohort/ID drift vs older baseline.
+-- Post-rerun spot checks from canonical workbooks:
+-  - cohort rows `11,769`; classifier rows `11,769`
+-  - `first_other_src`: only `LAB_BG_UNKNOWN` (no POC contribution)
+-  - `first_other_pco2` median (`LAB_BG_UNKNOWN`) = `48.0` (n=`2,499`)
+-  - `poc_other_paco2` non-null count = `0`
+-  - `poc_leak_other_threshold_n` = `0`
+-  - `first_gas_without_pco2_anchor_n` = `0`
+-  - `flag_abg_hypercapnia_sum` = `7,276`; `hypercap_by_abg_sum` = `7,276`; union mismatch = `0`
+-  - `abnormal_loss_rows` = `0` in abnormal-lab phrase subset.
+-- Implemented notebook-embedded ED vitals cleaning in `MIMICIV_hypercap_EXT_cohort.qmd`:
+-  - Celsius-like temperature normalization to Fahrenheit (`20–50` -> `°F` conversion),
+-  - pain sentinel `13` handling + range validation,
+-  - conservative BP/SpO2 range validation with additive flag columns,
+-  - backward-compatible `*_model` aliases mapped to cleaned fields.
+-- Added ED vitals audit artifacts:
+-  - `MIMIC tabular data/prior runs/YYYY-MM-DD ed_vitals_distribution_summary.csv`
+-  - `MIMIC tabular data/prior runs/YYYY-MM-DD ed_vitals_extreme_examples.csv`
+-  - `MIMIC tabular data/prior runs/YYYY-MM-DD ed_vitals_model_delta.csv`
+-- Added cleaned-vitals cohort contract checks in `src/hypercap_cc_nlp/pipeline_contracts.py`.
+-- Updated `Hypercap CC NLP Analysis.qmd` with cleaned-vitals preference selector and QC summary section.
+-- Added QA tests:
+-  - `tests/test_ed_vitals_cleaning.py`
+-  - updates in `tests/test_notebook_output_contracts.py`
+-  - updates in `tests/test_pipeline_contracts.py`
+-- Verification completed:
+-  - `uv run pytest -q tests/test_ed_vitals_cleaning.py tests/test_notebook_output_contracts.py tests/test_pipeline_contracts.py` passed (`20 passed`)
+-  - `uv run --with ruff ruff check src tests` passed
+-  - `make quarto-cohort` completed (with `COHORT_OTHER_RELATIVE_REDUCTION_MIN=0`, `COHORT_ALLOW_OMR_QUERY_FAILURE=1`, `BQ_QUERY_TIMEOUT_SECS=600`, `PIPELINE_CONTRACT_MODE=warn`)
+-  - `make quarto-analysis` completed
+-  - `make contracts-check STAGE=cohort` completed with `status=warning` (only `gas_source_other_rate_high`)
+-- Canonical cohort workbook now includes requested ED-vitals cleaned/flag columns; cleaned bounds spot-checks passed (`bad=0` for SpO2/SBP/DBP bounds, no cleaned temp values remaining in 20–50 band).
+-- Updated `AGENTS.md` with notebook-embedded-core non-negotiable policy.
+-- Inlined core phase logic into:
+-  - `MIMICIV_hypercap_EXT_cohort.qmd`
+-  - `Hypercap CC NLP Classifier.qmd`
+-  - `Rater Agreement Analysis.qmd`
+-  - `Hypercap CC NLP Analysis.qmd`
+-- Added requested analysis outputs (OTHER row, ICD+ subset table, ICD performance table, UpSet outputs).
+-- Added notebook-local longtable helpers and LaTeX support for full PDF table visibility.
+-- Added/updated tests for notebook-output contract + parity/audit handling and ran lint/tests/check-resources successfully.
+-- Re-ran staged Quarto notebooks successfully after fixing encountered runtime issues.
+-- Verified no residual long-running audit/parity processes after interruption; repository state preserved.
+-- Re-ran standard checks successfully:
+-  - `make lint` passed
+-  - `make test` passed (`74 passed`)
+-  - `make check-resources` passed
+-- Re-ran parity successfully:
+-  - `make quarto-parity-check BASELINE=latest` => `status=warning`, `P0=0`, `P1=0`, `P2-only` expected drift/new-output findings.
+-- Re-ran contracts successfully:
+-  - `uv run python scripts/run_contract_checks.py --mode fail --stage all` => `status=warning` with only `gas_source_other_rate_high`.
+-- Confirmed requested artifacts exist (4 root PDFs, canonical workbooks, ICD performance files, UpSet outputs).
+-- Executed strict rerun attempt:
+-  - `make quarto-pipeline` failed at cohort gas-source reduction gate (`COHORT_OTHER_RELATIVE_REDUCTION_MIN=0.10` not met; observed reduction `0.0000`).
+-- Executed full rerun in warning mode:
+-  - `PIPELINE_CONTRACT_MODE=warn make quarto-pipeline` completed all 4 stages and produced refreshed PDFs/artifacts under `artifacts/reports/20260217_012510/`.
+-- Refreshed post-rerun checks:
+-  - `uv run python scripts/run_contract_checks.py --mode fail --stage all` => `status=warning` (only `gas_source_other_rate_high`).
+-  - `make quarto-parity-check BASELINE=latest` => `status=warning`, `P0=0`, `P1=0`, `P2=11`.
+-- Workbook spot-checks before this implementation pass:
+-  - `hypercap_by_abg` sum = `11023` (non-zero) and union mismatch = `0`
+-  - pseudo-missing RFV blank leakage not reproduced in current canonical workbook
+-  - "abnormal labs" normalization issue reproduced via `segment_preds` (`abnormal loss`)
+-  - ICU/POC `first_other_pco2` issue reproduced (`POC median ~90`, `%>=50 ~96.5%`)
+-- Implemented P0 ICU/POC extraction tightening in `MIMICIV_hypercap_EXT_cohort.qmd`:
+-  - removed unit-only ICU pCO2 candidacy in cohort SQL paths,
+-  - added explicit PO2/O2 exclusion patterns,
+-  - added ICU itemid prefilter CTEs for BigQuery performance and precision.
+-- Added ICU itemid audit artifacts:
+-  - `MIMIC tabular data/prior runs/YYYY-MM-DD icu_poc_itemid_map.csv`
+-  - `MIMIC tabular data/prior runs/YYYY-MM-DD icu_poc_itemid_usage.csv`
+-- Implemented P0 classifier text normalization fix in `Hypercap CC NLP Classifier.qmd`:
+-  - protected `lab/labs` spell tokens,
+-  - explicit `abnormal labs?` rule to `RVC-TEST`,
+-  - added `classifier_phrase_audit.csv` and fail-fast assertion on `abnormal loss`.
+-- Implemented hard-coded external QA thresholds in `pipeline_contracts.py`:
+-  - `COHORT_POC_PCO2_MEDIAN_MIN = 45`
+-  - `COHORT_POC_PCO2_MEDIAN_MAX = 80`
+-  - `COHORT_POC_PCO2_FAIL_ENABLED = 1`
+-- Updated `Makefile` and `README.md` so Quarto stage/pipeline targets do not auto-run contract checks; QA runs explicitly via dedicated commands.
+-- Validation commands:
+-  - `make lint` passed
+-  - `make test` passed (`76 passed`)
+-  - `make check-resources` passed
+-- Stage reruns completed (same report run id):
+-  - `make quarto-cohort REPORT_RUN_ID=20260217_071617`
+-  - `make quarto-classifier REPORT_RUN_ID=20260217_071617`
+-  - `make quarto-rater REPORT_RUN_ID=20260217_071617`
+-  - `make quarto-analysis REPORT_RUN_ID=20260217_071617`
+-- Post-rerun checks:
+-  - `make contracts-check STAGE=all` => `status=warning` (only `gas_source_other_rate_high`)
+-  - `make quarto-parity-check BASELINE=latest` => `status=fail` (expected major cohort/ID drift vs pre-migration baseline)
+-  - `make quarto-pipeline-audit BASELINE=latest` was attempted; stalled at cohort stage and terminated.
+-- Post-rerun workbook spot checks:
+-  - rows reduced to `27,975` (from `41,322` baseline run),
+-  - `first_other_pco2` now LAB-only (`POC n=0`),
+-  - `abnormal loss` rows in abnormal-labs subset: `0`,
+-  - `RFV1` abnormal-test dominance in abnormal-labs subset improved (`432/940` top category),
+-  - `hypercap_by_abg` sum `5,242`, union mismatch `0`,
+-  - pseudo-missing blank-RFV leakage `0`.
+-- Captured refreshed baseline snapshot:
+-  - `artifacts/baselines/jupyter/20260218_144053_post_specimen_contract_refresh/`
+-- Parity check vs refreshed baseline:
+-  - `uv run python scripts/compare_pipeline_baseline.py --baseline latest`
+-  - `status=pass`
+-  - report: `debug/pipeline_parity/20260218_144137/parity_report.json`
+-- Contract check after baseline refresh:
+-  - `make contracts-check STAGE=all`
+-  - `status=warning` (only `gas_source_other_rate_high`, no fail-severity findings).
+-- Full 4-stage rerun for abnormality assessment:
+-  - Initial strict run (`RUN_ID=20260218_075533`) failed at cohort stage due OTHER-rate reduction gate (target `0.10` not met; reduction `0.0000`).
+-  - Completed rerun with diagnostic override (`COHORT_OTHER_RELATIVE_REDUCTION_MIN=0`, `RUN_ID=20260218_075804`) and captured per-stage logs in `debug/recheck/20260218_075804/logs/`.
+-- Post-rerun checks:
+-  - `make contracts-check STAGE=all` => `status=warning` (only `gas_source_other_rate_high`; no fail-severity findings).
+-  - `make quarto-parity-check BASELINE=latest` => `status=warning`, `P0=0`, `P1=0`, `P2=1` (`rater_match_count_delta`, baseline matched rows `150` vs current `60`).
+-- PDF parse check performed for all four rendered PDFs via `pdftotext` under `debug/recheck/20260218_075804/pdf_text/`:
+-  - expected key sections/tables are present (OTHER threshold row, sensitivity/PPV table, UpSet section, cohort Data Generation + QA sections),
+-  - no render/parse evidence of LaTeX execution errors.
+-- Revalidated current implementation after latest user confirmation:
+-  - `make lint` passed.
+-  - `uv run pytest -q tests/test_pipeline_contracts.py tests/test_notebook_output_contracts.py tests/test_classifier_quality.py` passed (`31 passed`).
+-- Executed classifier rerun (`artifacts/reports/20260218_161249/Hypercap-CC-NLP-Classifier.pdf`) with dual-mode comparison active:
+-  - `classifier_spell_mode_comparison.csv` shows `strict` and `disabled` both at `integrity_violation_total=0`.
+-  - `strict` selected (`cc_spell_mode_selected='strict'` for all rows) due tie-breaker preference.
+-- Executed full pipeline rerun with gate override:
+-  - default `make quarto-pipeline` failed as expected at OTHER relative-reduction gate (`target=0.10`, observed `0.0000`).
+-  - `COHORT_OTHER_RELATIVE_REDUCTION_MIN=0 make quarto-pipeline` completed successfully (run dir `artifacts/reports/20260218_162048/`).
+-- Post-rerun QA:
+-  - `make contracts-check STAGE=all` => `status=warning` with findings:
+-    - `gas_source_other_rate_high` (`0.5357`)
+-    - `first_hco3_coverage_low` (`0.0115`)
+-  - `make quarto-parity-check BASELINE=latest` => `status=warning` (no P0/P1).
+-- Post-rerun workbook spot checks:
+-  - cohort rows `11,769`; classifier rows `11,769`.
+-  - `first_other_src`: only `LAB_BG_UNKNOWN` + null; `poc_other_paco2` non-null count `0`.
+-  - `flag_abg_hypercapnia_sum = 7,276`; `hypercap_by_abg_sum = 7,276`; BG union mismatch `0`.
+-  - abnormal-labs subset: `abnormal_loss_rows = 0`; top RFV1 remains `Abnormal test result`.
+-- Verified latest PDF/data alignment claim:
+-  - Root PDFs and `artifacts/reports/20260218_162048/*.pdf` contain `11,769` row-count traces and `EXPORT_SHAPE` lines matching canonical workbook hashes/counts.
+-  - Root PDFs are byte-identical to run-dir PDFs (same SHA256 prefixes and mtimes).
+-  - Older report dirs still contain legacy PDFs with `41,322` and some `115,179` traces (e.g., `artifacts/reports/20260216_222038/`), which explains external reviewer mismatch when those files are analyzed instead of latest run artifacts.
+-- Generated reproducibility inventories for latest run:
+-  - `debug/recheck/20260218_162048/run_inventory.tsv` (per-stage manifest outputs + report PDFs + root PDFs, with mtime/size/SHA256).
+-  - `debug/recheck/20260218_162048/report_dir_rowcount_signatures.tsv` (quick signature matrix showing which report dirs contain 11,769 vs 41,322/115,179 text traces).
+-- Verified current canonical classifier output for residual normalization corruption:
+-  - `fall` raw encounters = `640`; `fall -> small` conversions = `0`.
+-  - `head` raw encounters = `110`; `head -> heart` conversions = `0`.
+-  - cleaned pre-2020 `covid` hallucinations = `0`.
+-  - checks performed on both `cc_cleaned_str` and `cc_cleaned_canon_str` in `MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx`.
+-  - conclusion: issue no longer active in current canonical workbook; prior reports likely reflected older artifacts.
+-- Verified secondary residual-issue status on current canonical workbook (`11,769` rows):
+-  - qualifying gas timing encoding issue remains active: `dt_first_qualifying_gas_hours` missing for `4,168`, and all such rows have `presenting_hypercapnia=0` and `late_hypercapnia=0`.
+-  - timestamp integrity issues remain active: `hospital_los_hours<0` for `17`; `admittime<ed_intime` for `15`.
+-  - ventilation timing integrity remains active: `dt_first_imv_hours<0` for `6`; `dt_first_niv_hours<0` for `1`; `dt_first_imv_hours>hospital_los_hours` for `74` (`57` even when LOS>=0); `dt_first_niv_hours>hospital_los_hours` for `33` (`29` with LOS>=0).
+-  - anthropometric outliers remain active despite improved coverage:
+-    - BMI non-null `7,245`; `BMI<=0`=`32`; `BMI>100`=`81`; max `537.67`.
+-    - Height non-null `7,249`; `<100`=`32`; `>250`=`1`; max `419.1`.
+-  - POC structural emptiness remains active by design:
+-    - `16` `poc_*` columns total; `15` are all-null; only non-null one is `poc_other_quarantined_hypercap_threshold` (`11,769`, derived quarantine indicator), while core POC gas values (`poc_abg_paco2`, `poc_vbg_paco2`, `poc_other_paco2`, pH variants) are all `0` non-null.
+-  - snapshot artifact written: `debug/recheck/20260218_162048/secondary_issue_check.json`.
++- Baseline pipeline currently renders and contracts pass at warning level.
++- Existing audits and manifests are generated per stage.
++- Current code already includes strict spell-correction mode, POC inclusion gates, and timing/anthro model fields.
+ 
+ Now:
+-- Residual-integrity implementation is in progress from interrupted state; cohort notebook changes are partially landed and need completion in QA summary/export contracts/tests.
++- Update blood-gas manifest + cohort extraction for explicit POC pCO2 intake.
++- Replace “other” source semantics with UNKNOWN-compatible labeling while preserving compatibility outputs.
++- Fix `first_hco3` source/value synchronization and add explicit integrity audit.
++- Harden spellfix substitutions with blacklist/protected lexicon checks and audits.
++- Enforce parseable empty-audit CSV behavior.
++- Add git-dirty reproducibility policy (fail or diff capture) to manifests/contracts.
+ 
+ Next:
+-- Complete remaining plan scope:
+-  - propagate new timing/vent/anthro/provenance fields into contract checks and notebook output contracts,
+-  - add analysis QC summary rows for timing/vent anomalies and POC inclusion status,
+-  - refresh README for the new fields/audits/gating behavior,
+-  - rerun `make quarto-pipeline`, `make contracts-check STAGE=all`, and `make quarto-parity-check BASELINE=latest`.
++- Execute: `make lint`, targeted `pytest`, `make quarto-cohort`, `make quarto-classifier`, `make contracts-check STAGE=all`.
++- If green, run full `make quarto-pipeline` and summarize artifact/metric changes.
+ 
+ Open questions (UNCONFIRMED if needed):
+-- UNCONFIRMED: exact final allowlists for all blood-gas itemids beyond currently known high-confidence IDs.
++- UNCONFIRMED: exact ICU POC pCO2 itemid allowlist beyond known high-confidence candidates in this environment.
++- UNCONFIRMED: preferred reproducibility policy default (`fail on dirty git` vs `capture diff artifact`) for routine non-release runs.
+ 
+ Working set (files/ids/commands):
+-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/AGENTS.md`
+-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMICIV_hypercap_EXT_cohort.qmd`
+-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Hypercap CC NLP Classifier.qmd`
+-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Rater Agreement Analysis.qmd`
+-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Hypercap CC NLP Analysis.qmd`
+-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/_quarto.yml`
+-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/quarto-pdf-header.tex`
+-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/README.md`
+-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/pyproject.toml`
+-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/uv.lock`
+-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/src/hypercap_cc_nlp/pipeline_contracts.py`
+-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/tests/test_ed_vitals_cleaning.py`
+-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/tests/test_pipeline_contracts.py`
+-- Commands:
+-  - `make quarto-pipeline`
+-  - `uv run python scripts/run_contract_checks.py --mode fail --stage all`
+-  - `make quarto-parity-check BASELINE=latest`
+-  - `uv run python scripts/run_pipeline_audit.py --pipeline-mode quarto --baseline latest --strictness fail_on_key_anomalies` (best-effort)
++- Files: `MIMICIV_hypercap_EXT_cohort.qmd`, `Hypercap CC NLP Classifier.qmd`, `Hypercap CC NLP Analysis.qmd`, `specs/blood_gas_itemids.json`, `src/hypercap_cc_nlp/pipeline_contracts.py`, `src/hypercap_cc_nlp/pipeline_audit.py`, `README.md`, `tests/test_pipeline_contracts.py`, `tests/test_notebook_output_contracts.py`.
++- Commands: `rg`, `sed`, `uv run pytest`, `uv run --with ruff ruff check`, `make quarto-*`, `make contracts-check`.
+diff --git a/MIMICIV_hypercap_EXT_cohort.qmd b/MIMICIV_hypercap_EXT_cohort.qmd
+index aaafe70..d94c191 100644
+--- a/MIMICIV_hypercap_EXT_cohort.qmd
++++ b/MIMICIV_hypercap_EXT_cohort.qmd
+@@ -269,12 +269,37 @@ def load_blood_gas_itemid_manifest(path: Path) -> dict[str, Any]:
+         blood_fluid_terms = ["blood"]
+ 
+     icu_pco2 = _coerce_itemid_list(icu.get("pco2_itemids", []), key_name="icu.pco2_itemids")
++    icu_pco2_abg = _coerce_itemid_list(
++        icu.get("pco2_abg_itemids", []),
++        key_name="icu.pco2_abg_itemids",
++    )
++    icu_pco2_vbg = _coerce_itemid_list(
++        icu.get("pco2_vbg_itemids", []),
++        key_name="icu.pco2_vbg_itemids",
++    )
++    icu_pco2_excluded = _coerce_itemid_list(
++        icu.get("excluded_pco2_itemids", []),
++        key_name="icu.excluded_pco2_itemids",
++    )
+     icu_ph = _coerce_itemid_list(icu.get("ph_itemids", []), key_name="icu.ph_itemids")
+     icu_hco3 = _coerce_itemid_list(icu.get("hco3_itemids", []), key_name="icu.hco3_itemids")
+     icu_spec = _coerce_itemid_list(
+         icu.get("specimen_type_itemids", []),
+         key_name="icu.specimen_type_itemids",
+     )
++    if icu_pco2_excluded:
++        excluded_set = set(icu_pco2_excluded)
++        icu_pco2 = sorted(set(icu_pco2).difference(excluded_set))
++        icu_pco2_abg = sorted(set(icu_pco2_abg).difference(excluded_set))
++        icu_pco2_vbg = sorted(set(icu_pco2_vbg).difference(excluded_set))
++    if icu_pco2_abg and not set(icu_pco2_abg).issubset(set(icu_pco2)):
++        raise ValueError(
++            "Blood-gas manifest icu.pco2_abg_itemids must be a subset of icu.pco2_itemids."
++        )
++    if icu_pco2_vbg and not set(icu_pco2_vbg).issubset(set(icu_pco2)):
++        raise ValueError(
++            "Blood-gas manifest icu.pco2_vbg_itemids must be a subset of icu.pco2_itemids."
++        )
+ 
+     deny_tokens = [
+         str(token).strip().lower()
+@@ -335,6 +360,9 @@ def load_blood_gas_itemid_manifest(path: Path) -> dict[str, Any]:
+         },
+         "icu": {
+             "pco2_itemids": icu_pco2,
++            "pco2_abg_itemids": icu_pco2_abg,
++            "pco2_vbg_itemids": icu_pco2_vbg,
++            "excluded_pco2_itemids": icu_pco2_excluded,
+             "ph_itemids": icu_ph,
+             "hco3_itemids": icu_hco3,
+             "specimen_type_itemids": icu_spec,
+@@ -371,6 +399,9 @@ LAB_HCO3_ITEMIDS = BLOOD_GAS_MANIFEST["lab"]["hco3_itemids"]
+ LAB_SPECIMEN_TYPE_ITEMIDS = BLOOD_GAS_MANIFEST["lab"]["specimen_type_itemids"]
+ LAB_BLOOD_FLUID_TERMS = BLOOD_GAS_MANIFEST["lab"]["blood_fluid_terms"]
+ ICU_PCO2_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["pco2_itemids"]
++ICU_PCO2_ABG_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["pco2_abg_itemids"]
++ICU_PCO2_VBG_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["pco2_vbg_itemids"]
++ICU_EXCLUDED_PCO2_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["excluded_pco2_itemids"]
+ ICU_PH_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["ph_itemids"]
+ ICU_HCO3_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["hco3_itemids"]
+ ICU_SPECIMEN_TYPE_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["specimen_type_itemids"]
+@@ -397,6 +428,8 @@ LAB_PH_SQL_ARRAY = _sql_int_array(LAB_PH_ITEMIDS)
+ LAB_HCO3_SQL_ARRAY = _sql_int_array(LAB_HCO3_ITEMIDS)
+ LAB_SPECIMEN_SQL_ARRAY = _sql_int_array(LAB_SPECIMEN_TYPE_ITEMIDS)
+ ICU_PCO2_SQL_ARRAY = _sql_int_array(ICU_PCO2_ITEMIDS)
++ICU_PCO2_ABG_SQL_ARRAY = _sql_int_array(ICU_PCO2_ABG_ITEMIDS)
++ICU_PCO2_VBG_SQL_ARRAY = _sql_int_array(ICU_PCO2_VBG_ITEMIDS)
+ ICU_PH_SQL_ARRAY = _sql_int_array(ICU_PH_ITEMIDS)
+ ICU_HCO3_SQL_ARRAY = _sql_int_array(ICU_HCO3_ITEMIDS)
+ ICU_SPECIMEN_SQL_ARRAY = _sql_int_array(ICU_SPECIMEN_TYPE_ITEMIDS)
+@@ -823,8 +856,8 @@ def assign_panel_source_from_specimen(
+ 
+     key_cols = ["ed_stay_id", "specimen_id"]
+     panel = panel_df.copy()
+-    panel["source"] = "other"
+-    panel["source_inference_tier"] = "fallback_other"
++    panel["source"] = "unknown"
++    panel["source_inference_tier"] = "fallback_unknown"
+     panel["source_hint_conflict"] = False
+     panel["source_hint_count"] = pd.Series(0, index=panel.index, dtype="Int64")
+     panel["source_hint_specimen_text"] = pd.Series(pd.NA, index=panel.index, dtype="string")
+@@ -898,8 +931,8 @@ def assign_panel_source_from_specimen(
+             {
+                 "ed_stay_id": grouped_row["ed_stay_id"],
+                 "specimen_id": grouped_row["specimen_id"],
+-                "source": source if source is not None else "other",
+-                "source_inference_tier": "specimen_text" if source is not None else "fallback_other",
++                "source": source if source is not None else "unknown",
++                "source_inference_tier": "specimen_text" if source is not None else "fallback_unknown",
+                 "source_hint_conflict": bool(conflict),
+                 "source_hint_count": int(hint_count),
+                 "source_hint_specimen_text": specimen_text,
+@@ -913,13 +946,13 @@ def assign_panel_source_from_specimen(
+             panel.get("source_specimen")
+             .fillna(panel["source"])
+             .astype("string")
+-            .fillna("other")
++            .fillna("unknown")
+         )
+         panel["source_inference_tier"] = (
+             panel.get("source_inference_tier_specimen")
+             .fillna(panel["source_inference_tier"])
+             .astype("string")
+-            .fillna("fallback_other")
++            .fillna("fallback_unknown")
+         )
+         panel["source_hint_conflict"] = (
+             panel.get("source_hint_conflict_specimen")
+@@ -950,7 +983,7 @@ def assign_panel_source_from_specimen(
+         )
+ 
+     diagnostics = summarize_gas_source(panel)
+-    unresolved = panel.loc[panel["source"].eq("other"), key_cols].drop_duplicates()
++    unresolved = panel.loc[panel["source"].eq("unknown"), key_cols].drop_duplicates()
+     diagnostics.update(
+         {
+             "mode": "specimen_only",
+@@ -986,7 +1019,7 @@ def infer_panel_gas_source_metadata(
+       1. Specimen/source row text (``value_text`` from specimen/source itemids),
+       2. ``d_labitems`` label/fluid hints,
+       3. Panel co-occurrence hints (pCO2-labeled rows + free-text),
+-      4. Fallback ``other``.
++      4. Fallback ``unknown``.
+     """
+     if mode != "metadata_only":
+         raise ValueError(
+@@ -1018,7 +1051,7 @@ def infer_panel_gas_source_metadata(
+     key_cols = ["ed_stay_id", "specimen_id"]
+     panel = panel_df.copy()
+     panel["source"] = pd.Series(pd.NA, index=panel.index, dtype="string")
+-    panel["source_inference_tier"] = "fallback_other"
++    panel["source_inference_tier"] = "fallback_unknown"
+     panel["source_hint_conflict"] = pd.Series(False, index=panel.index, dtype="boolean")
+     panel["source_hint_count"] = pd.Series(pd.NA, index=panel.index, dtype="Int64")
+ 
+@@ -1029,7 +1062,7 @@ def infer_panel_gas_source_metadata(
+     )
+     labs = labs.loc[labs["itemid"].notna() & labs["specimen_id"].notna()].copy()
+     if labs.empty:
+-        panel["source"] = "other"
++        panel["source"] = "unknown"
+         diagnostics = summarize_gas_source(panel)
+         diagnostics.update(
+             {
+@@ -1241,11 +1274,10 @@ def infer_panel_gas_source_metadata(
+             columns=["tier_source", "tier_conflict", "tier_hint_count", "tier_name"]
+         )
+ 
+-    panel["source"] = panel["source"].fillna("other").astype("string")
+-    panel["source"] = panel["source"].replace({"unknown": "other"})
+-    panel.loc[panel["source"].eq("other"), "source_inference_tier"] = panel.loc[
+-        panel["source"].eq("other"), "source_inference_tier"
+-    ].replace({"": "fallback_other"}).fillna("fallback_other")
++    panel["source"] = panel["source"].fillna("unknown").astype("string")
++    panel.loc[panel["source"].eq("unknown"), "source_inference_tier"] = panel.loc[
++        panel["source"].eq("unknown"), "source_inference_tier"
++    ].replace({"": "fallback_unknown"}).fillna("fallback_unknown")
+     panel["source_inference_tier"] = panel["source_inference_tier"].astype("string")
+     panel["source_hint_conflict"] = (
+         panel["source_hint_conflict"].fillna(False).astype("boolean")
+@@ -1259,7 +1291,7 @@ def infer_panel_gas_source_metadata(
+     )
+     diagnostics["resolved_rate"] = float(diagnostics["resolved_rows"] / total)
+ 
+-    unresolved = panel.loc[panel["source"].eq("other"), key_cols].drop_duplicates()
++    unresolved = panel.loc[panel["source"].eq("unknown"), key_cols].drop_duplicates()
+     diagnostics["unresolved_specimen_id_count"] = int(unresolved["specimen_id"].nunique())
+     diagnostics["unresolved_specimen_id_examples"] = (
+         unresolved["specimen_id"].dropna().astype(int).head(20).tolist()
+@@ -1325,14 +1357,12 @@ def summarize_gas_source(panel_df: pd.DataFrame) -> dict[str, Any]:
+         .astype(str)
+         .str.strip()
+         .str.lower()
+-        .replace({"": "other", "nan": "other", "none": "other"})
+-        .fillna("other")
++        .replace({"": "unknown", "nan": "unknown", "none": "unknown", "other": "unknown"})
++        .fillna("unknown")
+     )
+     source_counts = {str(key): int(value) for key, value in source.value_counts(dropna=False).items()}
+     source_rates = {key: float(value / total_rows) for key, value in source_counts.items()}
+-    all_other_or_unknown = bool(
+-        total_rows > 0 and set(source_counts.keys()).issubset({"other", "unknown"})
+-    )
++    all_other_or_unknown = bool(total_rows > 0 and set(source_counts.keys()).issubset({"unknown"}))
+     tier_counts: dict[str, int] = {}
+     tier_rates: dict[str, float] = {}
+     if "source_inference_tier" in panel_df.columns:
+@@ -2725,7 +2755,7 @@ hosp_pco2_clean AS (
+     CASE
+       WHEN REGEXP_CONTAINS(COALESCE(s.specimen_type_text, ''), r'arter|\\bart\\b') THEN 'arterial'
+       WHEN REGEXP_CONTAINS(COALESCE(s.specimen_type_text, ''), r'ven|central|mixed') THEN 'venous'
+-      ELSE 'other'
++      ELSE 'unknown'
+     END AS site,
+     r.charttime,
+     CASE WHEN r.uom_nospace = 'kpa' THEN r.val * 7.50062 ELSE r.val END AS pco2_mmhg,
+@@ -2744,9 +2774,15 @@ icu_pco2_raw AS (
+   SELECT
+     ie.hadm_id,
+     ce.stay_id,
++    ce.itemid,
+     ce.charttime,
+     di.lbl,
+     LOWER(REPLACE(COALESCE(ce.valueuom, ''), ' ', '')) AS uom_nospace,
++    CASE
++      WHEN ce.itemid IN UNNEST({ICU_PCO2_ABG_SQL_ARRAY}) THEN 'arterial'
++      WHEN ce.itemid IN UNNEST({ICU_PCO2_VBG_SQL_ARRAY}) THEN 'venous'
++      ELSE 'unknown'
++    END AS site_from_itemid,
+     COALESCE(
+       CAST(ce.valuenum AS FLOAT64),
+       SAFE_CAST(REGEXP_EXTRACT(LOWER(ce.value), r'(-?\d+(?:\.\d+)?)') AS FLOAT64)
+@@ -2786,7 +2822,8 @@ icu_pco2_clean AS (
+     CASE
+       WHEN REGEXP_CONTAINS(COALESCE(specimen_type_text, ''), r'arter|\\bart\\b') THEN 'arterial'
+       WHEN REGEXP_CONTAINS(COALESCE(specimen_type_text, ''), r'ven|central|mixed') THEN 'venous'
+-      ELSE 'other'
++      WHEN site_from_itemid IN ('arterial', 'venous') THEN site_from_itemid
++      ELSE 'unknown'
+     END AS site,
+     charttime,
+     CASE WHEN uom_nospace = 'kpa' THEN val * 7.50062 ELSE val END AS pco2_mmhg,
+@@ -2806,8 +2843,8 @@ thresh AS (
+     hadm_id,
+     MAX(IF(site = 'arterial' AND pco2_mmhg >= 45.0, 1, 0)) AS abg_hypercap_threshold,
+     MAX(IF(site = 'venous'   AND pco2_mmhg >= 50.0, 1, 0)) AS vbg_hypercap_threshold,
+-    MAX(IF(site = 'other'    AND source_branch = 'LAB' AND pco2_mmhg >= 50.0, 1, 0)) AS other_hypercap_threshold,
+-    MAX(IF(site = 'other'    AND source_branch = 'POC' AND pco2_mmhg >= 50.0, 1, 0)) AS poc_other_quarantined_hypercap_threshold
++    MAX(IF(site = 'unknown'  AND pco2_mmhg >= 50.0, 1, 0)) AS unknown_hypercap_threshold,
++    MAX(IF(site = 'unknown'  AND source_branch = 'POC' AND pco2_mmhg >= 50.0, 1, 0)) AS poc_unknown_hypercap_threshold
+   FROM all_pco2
+   GROUP BY hadm_id
+ )
+@@ -2839,24 +2876,33 @@ for c in icd_cols:
+ for c in [
+     "abg_hypercap_threshold",
+     "vbg_hypercap_threshold",
+-    "other_hypercap_threshold",
+-    "poc_other_quarantined_hypercap_threshold",
++    "unknown_hypercap_threshold",
++    "poc_unknown_hypercap_threshold",
+ ]:
+     if c in cohort_any.columns:
+         cohort_any[c] = cohort_any[c].fillna(0).astype(int)
+ 
++if "unknown_hypercap_threshold" in cohort_any.columns and "other_hypercap_threshold" not in cohort_any.columns:
++    cohort_any["other_hypercap_threshold"] = cohort_any["unknown_hypercap_threshold"].astype(int)
++if "poc_unknown_hypercap_threshold" in cohort_any.columns and "poc_other_quarantined_hypercap_threshold" not in cohort_any.columns:
++    cohort_any["poc_other_quarantined_hypercap_threshold"] = cohort_any["poc_unknown_hypercap_threshold"].astype(int)
++
+ # Final enrollment flag
+-cohort_any["pco2_threshold_any"] = ((cohort_any["abg_hypercap_threshold"]==1) | (cohort_any["vbg_hypercap_threshold"]==1) | (cohort_any["other_hypercap_threshold"]==1)).astype(int)
++cohort_any["pco2_threshold_any"] = (
++    (cohort_any["abg_hypercap_threshold"] == 1)
++    | (cohort_any["vbg_hypercap_threshold"] == 1)
++    | (cohort_any["unknown_hypercap_threshold"] == 1)
++).astype(int)
+ cohort_any["enrolled_any"] = ((cohort_any["any_hypercap_icd"]==1) | (cohort_any["pco2_threshold_any"]==1)).astype(int)
+ 
+ print("ICD-only admissions        :", int((cohort_any["any_hypercap_icd"]==1).sum()))
+ print("Threshold-only admissions  :", int(((cohort_any["pco2_threshold_any"]==1) & (cohort_any["any_hypercap_icd"]==0)).sum()))
+ print("Both ICD and threshold     :", int(((cohort_any["pco2_threshold_any"]==1) & (cohort_any["any_hypercap_icd"]==1)).sum()))
+ print("Total enrolled (union)     :", int((cohort_any["enrolled_any"]==1).sum()))
+-if "poc_other_quarantined_hypercap_threshold" in cohort_any.columns:
++if "poc_unknown_hypercap_threshold" in cohort_any.columns:
+     print(
+-        "POC OTHER quarantined hadm count:",
+-        int(cohort_any["poc_other_quarantined_hypercap_threshold"].sum()),
++        "POC UNKNOWN qualifying hadm count:",
++        int(cohort_any["poc_unknown_hypercap_threshold"].sum()),
+     )
+ 
+ # New hadm list used for the rest of the notebook
+@@ -2914,7 +2960,7 @@ hosp_class AS (
+     CASE
+       WHEN REGEXP_CONTAINS(s.spec_val, r'arter') OR REGEXP_CONTAINS(s.spec_val, r'\bart\b') THEN 'arterial'
+       WHEN REGEXP_CONTAINS(s.spec_val, r'ven|mixed|central') THEN 'venous'
+-      ELSE 'other'
++      ELSE 'unknown'
+     END AS site
+   FROM hosp_cand c
+   LEFT JOIN hosp_spec s USING (specimen_id)
+@@ -2930,7 +2976,7 @@ hosp_pairs AS (
+     (ARRAY_AGG(site IGNORE NULLS LIMIT 1))[OFFSET(0)] AS site
+   FROM hosp_class
+   GROUP BY hadm_id, specimen_id
+-  HAVING pco2_raw IS NOT NULL AND site IN ('arterial','venous','other')
++  HAVING pco2_raw IS NOT NULL AND site IN ('arterial','venous','unknown')
+ ),
+ hosp_pairs_std AS (
+   SELECT
+@@ -2970,7 +3016,7 @@ lab_other AS (
+          'mmhg'        AS lab_other_paco2_uom,
+          sample_time   AS lab_other_time
+   FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY hadm_id ORDER BY sample_time) rn
+-        FROM hosp_pairs_std WHERE site='other') WHERE rn=1
++        FROM hosp_pairs_std WHERE site='unknown') WHERE rn=1
+ ),
+ 
+ /* ---------------- POC (ICU) ---------------- */
+@@ -3000,6 +3046,11 @@ icu_raw AS (
+     ie.hadm_id, ce.stay_id, ce.itemid, ce.charttime,
+     di.lbl,
+     di.analyte,
++    CASE
++      WHEN ce.itemid IN UNNEST({ICU_PCO2_ABG_SQL_ARRAY}) THEN 'arterial'
++      WHEN ce.itemid IN UNNEST({ICU_PCO2_VBG_SQL_ARRAY}) THEN 'venous'
++      ELSE 'unknown'
++    END AS site_itemid,
+     LOWER(REPLACE(COALESCE(ce.valueuom,''),' ','')) AS uom_nospace,
+     LOWER(COALESCE(ce.value,'')) AS valstr,
+     COALESCE(
+@@ -3030,7 +3081,8 @@ icu_cand AS (
+     CASE
+       WHEN REGEXP_CONTAINS(COALESCE(spec_val, ''), r'arter|\\bart\\b') THEN 'arterial'
+       WHEN REGEXP_CONTAINS(COALESCE(spec_val, ''), r'ven|central|mixed') THEN 'venous'
+-      ELSE 'other'
++      WHEN site_itemid IN ('arterial', 'venous') THEN site_itemid
++      ELSE 'unknown'
+     END AS site
+   FROM icu_cand_ranked
+   WHERE val IS NOT NULL
+@@ -3062,7 +3114,7 @@ icu_pair_win AS (
+   JOIN icu_co2 c
+     ON c.hadm_id = p.hadm_id
+    AND c.stay_id = p.stay_id
+-   AND (COALESCE(p.site_ph, c.site_co2) IN ('arterial','venous','other'))
++   AND (COALESCE(p.site_ph, c.site_co2) IN ('arterial','venous','unknown'))
+    AND ABS(TIMESTAMP_DIFF(c.charttime, p.charttime, MINUTE)) <= 10
+   QUALIFY ROW_NUMBER() OVER (
+     PARTITION BY p.hadm_id, p.stay_id, p.charttime
+@@ -3090,7 +3142,7 @@ icu_solo_pco2_std AS (
+     CASE WHEN uom_nospace='kpa' THEN pco2_raw*7.50062 ELSE pco2_raw END AS pco2_mmHg,
+     'mmhg' AS pco2_uom_norm
+   FROM icu_co2
+-  WHERE site_co2 IN ('arterial','venous','other')
++  WHERE site_co2 IN ('arterial','venous','unknown')
+     AND pco2_raw BETWEEN 5 AND 200
+ ),
+ icu_all AS (
+@@ -3127,7 +3179,7 @@ poc_other AS (
+          'mmhg'        AS poc_other_paco2_uom,
+          sample_time   AS poc_other_time
+   FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY hadm_id ORDER BY sample_time) rn
+-        FROM icu_all WHERE site='other') WHERE rn=1
++        FROM icu_all WHERE site='unknown') WHERE rn=1
+ )
+ 
+ /* ---------------- Final one row per hadm ---------------- */
+@@ -3155,9 +3207,13 @@ SELECT
+          SELECT 'POC', pv.poc_vbg_time, pv.poc_vbg_ph, pv.poc_vbg_paco2)
+    WHERE t IS NOT NULL
+    ORDER BY t LIMIT 1) AS first_vbg,
+-  -- First OTHER-source pCO2 (LAB blood-gas unknown specimen only; POC OTHER is quarantined)
++  -- First UNKNOWN-source pCO2 across LAB+POC (definitive pCO2, unresolved sample type).
+   (SELECT AS STRUCT src, t, ph, pco2
+-   FROM (SELECT 'LAB_BG_UNKNOWN' AS src, lo.lab_other_time AS t, lo.lab_other_ph AS ph, lo.lab_other_paco2 AS pco2)
++   FROM (
++         SELECT 'LAB_BG_UNKNOWN' AS src, lo.lab_other_time AS t, lo.lab_other_ph AS ph, lo.lab_other_paco2 AS pco2
++         UNION ALL
++         SELECT 'POC_BG_UNKNOWN', po.poc_other_time, po.poc_other_ph, po.poc_other_paco2
++   )
+    WHERE t IS NOT NULL
+    ORDER BY t LIMIT 1) AS first_other
+ FROM hadms h
+@@ -3187,11 +3243,13 @@ if {"first_other_src", "poc_other_paco2"}.issubset(bg_pairs.columns):
+     bg_pairs["first_other_src_detail"] = np.select(
+         [
+             first_other_src_upper.eq("LAB_BG_UNKNOWN"),
++            first_other_src_upper.eq("POC_BG_UNKNOWN"),
+             pd.to_numeric(bg_pairs["poc_other_paco2"], errors="coerce").notna(),
+         ],
+         [
+             "lab_bg_unknown",
+-            "poc_quarantined",
++            "poc_bg_unknown",
++            "poc_bg_unknown_available",
+         ],
+         default="missing",
+     )
+@@ -3824,25 +3882,26 @@ def _any_ge(frame: pd.DataFrame, cols: list[str], threshold: float) -> pd.Series
+ 
+ existing_abg = _num_series(df, "abg_hypercap_threshold").fillna(0).astype(int)
+ existing_vbg = _num_series(df, "vbg_hypercap_threshold").fillna(0).astype(int)
+-existing_other = _num_series(df, "other_hypercap_threshold").fillna(0).astype(int)
++existing_unknown = _num_series(
++    df,
++    "unknown_hypercap_threshold" if "unknown_hypercap_threshold" in df.columns else "other_hypercap_threshold",
++).fillna(0).astype(int)
+ 
+ abg_from_values = _any_ge(df, ["lab_abg_paco2", "poc_abg_paco2", "first_abg_pco2"], 45.0)
+ vbg_from_values = _any_ge(df, ["lab_vbg_paco2", "poc_vbg_paco2", "first_vbg_pco2"], 50.0)
+-other_from_values = _any_ge(df, ["first_other_pco2"], 50.0)
+-if "first_other_src_detail" in df.columns:
+-    other_detail = df["first_other_src_detail"].astype("string").str.lower()
+-    other_from_values = ((other_from_values == 1) & other_detail.eq("lab_bg_unknown")).astype(
+-        "Int64"
+-    )
++unknown_from_values = _any_ge(df, ["first_other_pco2"], 50.0)
+ 
+ df["abg_hypercap_threshold"] = ((existing_abg == 1) | (abg_from_values == 1)).astype("Int64")
+ df["vbg_hypercap_threshold"] = ((existing_vbg == 1) | (vbg_from_values == 1)).astype("Int64")
+-df["other_hypercap_threshold"] = ((existing_other == 1) | (other_from_values == 1)).astype("Int64")
++df["unknown_hypercap_threshold"] = (
++    (existing_unknown == 1) | (unknown_from_values == 1)
++).astype("Int64")
++df["other_hypercap_threshold"] = df["unknown_hypercap_threshold"].astype("Int64")
+ 
+ df["pco2_threshold_any"] = (
+     (df["abg_hypercap_threshold"] == 1)
+     | (df["vbg_hypercap_threshold"] == 1)
+-    | (df["other_hypercap_threshold"] == 1)
++    | (df["unknown_hypercap_threshold"] == 1)
+ ).astype("Int64")
+ 
+ if "any_hypercap_icd" in df.columns:
+@@ -3852,42 +3911,17 @@ print(
+     "Threshold sanity (hadm-level):",
+     "ABG=", int(df["abg_hypercap_threshold"].fillna(0).sum()),
+     "VBG=", int(df["vbg_hypercap_threshold"].fillna(0).sum()),
+-    "OTHER=", int(df["other_hypercap_threshold"].fillna(0).sum()),
++    "UNKNOWN=", int(df["unknown_hypercap_threshold"].fillna(0).sum()),
+     "ANY=", int(df["pco2_threshold_any"].fillna(0).sum()),
+ )
+-if "poc_other_quarantined_hypercap_threshold" in df.columns:
+-    poc_other_quarantine_n = int(
+-        pd.to_numeric(df["poc_other_quarantined_hypercap_threshold"], errors="coerce")
++if "poc_unknown_hypercap_threshold" in df.columns:
++    poc_unknown_n = int(
++        pd.to_numeric(df["poc_unknown_hypercap_threshold"], errors="coerce")
+         .fillna(0)
+         .astype(int)
+         .sum()
+     )
+-    print("POC OTHER quarantined hadm count:", poc_other_quarantine_n)
+-    poc_other_threshold_leak_n = int(
+-        (
+-            pd.to_numeric(df["poc_other_quarantined_hypercap_threshold"], errors="coerce")
+-            .fillna(0)
+-            .astype(int)
+-            .eq(1)
+-            & pd.to_numeric(df["other_hypercap_threshold"], errors="coerce")
+-            .fillna(0)
+-            .astype(int)
+-            .eq(1)
+-        ).sum()
+-    )
+-    if poc_other_threshold_leak_n > 0:
+-        raise ValueError(
+-            "Detected quarantined POC-other leakage into other_hypercap_threshold: "
+-            f"{poc_other_threshold_leak_n} rows."
+-        )
+-
+-if "first_other_src" in df.columns:
+-    first_other_poc_n = int(df["first_other_src"].astype("string").str.upper().eq("POC").sum())
+-    if first_other_poc_n > 0:
+-        raise ValueError(
+-            "first_other_src includes POC rows after LAB-only OTHER quarantine policy: "
+-            f"{first_other_poc_n} rows."
+-        )
++    print("POC UNKNOWN qualifying hadm count:", poc_unknown_n)
+ 
+ # Harmonize NIH race/ethnicity into a collapsed reporting label at cohort-build time.
+ RACE_NIH_MAP = {
+@@ -4477,8 +4511,8 @@ TARGET_RAW_FIELDS = {
+     "labs_gas": [
+         "first_gas_time","first_pco2","first_ph","first_hco3","first_lactate",
+         "max_pco2_0_6h","min_ph_0_6h","max_pco2_0_24h","min_ph_0_24h",
+-        "flag_abg_hypercapnia","flag_vbg_hypercapnia","flag_other_hypercapnia","flag_any_gas_hypercapnia",
+-        "gas_source_other_rate","poc_inclusion_enabled","poc_inclusion_reason",
++        "flag_abg_hypercapnia","flag_vbg_hypercapnia","flag_unknown_hypercapnia","flag_other_hypercapnia","flag_any_gas_hypercapnia",
++        "gas_source_unknown_rate","gas_source_other_rate","poc_inclusion_enabled","poc_inclusion_reason",
+         "first_gas_specimen_type","first_gas_specimen_present","first_gas_pco2_itemid","first_gas_pco2_fluid",
+         "co2_other_is_blood_asserted","first_gas_anchor_has_pco2","first_gas_anchor_source_validated",
+         "dt_first_imv_hours","dt_first_niv_hours","first_other_time",
+@@ -4500,7 +4534,7 @@ TARGET_RAW_FIELDS = {
+         "dt_first_imv_hours","dt_first_niv_hours","abg_before_imv","vbg_before_imv",
+         "dt_first_imv_hours_model","dt_first_niv_hours_model",
+         "imv_time_outside_window_flag","niv_time_outside_window_flag",
+-        "hospital_los_negative_flag","admittime_before_ed_intime_flag",
++        "hospital_los_negative_flag","admittime_before_ed_intime_flag","dischtime_before_admittime_flag","time_integrity_any",
+         "ph_band","hco3_band","lactate_band",
+     ],
+ }
+@@ -5031,22 +5065,42 @@ for analyte_name, itemids in manifest_lab_itemid_sets.items():
+     if not itemids:
+         continue
+     frame = labitems.loc[labitems["itemid"].isin(itemids), ["itemid", "label", "category", "fluid"]].copy()
++    present_ids = set(frame["itemid"].astype(int).tolist()) if not frame.empty else set()
+     frame = frame.merge(counts, on="itemid", how="left").fillna({"n": 0})
+-    for record in frame.to_dict(orient="records"):
++    record_map = {
++        int(record["itemid"]): record for record in frame.to_dict(orient="records")
++    }
++    for itemid_value in sorted(itemids):
++        record = record_map.get(int(itemid_value), {})
+         manifest_lab_audit_rows.append(
+             {
+                 "source_branch": "LAB",
+                 "analyte": analyte_name,
+-                "itemid": int(record["itemid"]),
++                "itemid": int(itemid_value),
+                 "label": record.get("label"),
+                 "category": record.get("category"),
+                 "fluid": record.get("fluid"),
+                 "cohort_row_count": int(record.get("n", 0)),
+                 "manifest_version": BLOOD_GAS_MANIFEST["version"],
++                "present_in_dictionary": int(itemid_value in present_ids),
+             }
+         )
+ 
+ blood_gas_itemid_manifest_audit = pd.DataFrame(manifest_lab_audit_rows)
++missing_manifest_rows = blood_gas_itemid_manifest_audit.loc[
++    pd.to_numeric(
++        blood_gas_itemid_manifest_audit.get("present_in_dictionary"), errors="coerce"
++    ).fillna(0).astype(int).eq(0)
++].copy()
++if not missing_manifest_rows.empty:
++    missing_repr = ", ".join(
++        f"{row.source_branch}:{row.analyte}:{int(row.itemid)}"
++        for row in missing_manifest_rows.itertuples(index=False)
++    )
++    raise ValueError(
++        "Blood-gas manifest itemids missing from dictionary tables: "
++        f"{missing_repr}"
++    )
+ ```
+ 
+ ```{python}
+@@ -5286,6 +5340,7 @@ if "first_hco3_source" not in ed_df.columns:
+ panel_hco3_present = pd.to_numeric(ed_df.get("first_hco3"), errors="coerce").notna()
+ ed_df.loc[panel_hco3_present, "first_hco3_source"] = "lab_panel_same_specimen"
+ 
++lab_hco3_long = pd.DataFrame(columns=["ed_stay_id", "charttime", "valuenum"])
+ if hco3_ids and "first_gas_time" in ed_df.columns:
+     lab_hco3_long = labs.loc[
+         labs["itemid"].isin(hco3_ids),
+@@ -5345,6 +5400,36 @@ if hco3_ids and "first_gas_time" in ed_df.columns:
+                 ed_df.loc[fill_mask, "first_hco3_source"] = "lab_nearest_to_anchor"
+                 ed_df = ed_df.drop(columns=["first_hco3_fallback_lab"])
+ 
++if hco3_ids and not lab_hco3_long.empty:
++    remaining_missing = pd.to_numeric(ed_df["first_hco3"], errors="coerce").isna()
++    if remaining_missing.any():
++        first_hco3_in_window = (
++            lab_hco3_long.sort_values(["ed_stay_id", "charttime"], kind="stable")
++            .groupby("ed_stay_id", as_index=False)
++            .first()
++            .rename(columns={"valuenum": "first_hco3_fallback_window"})
++        )
++        ed_df = ed_df.merge(
++            first_hco3_in_window[["ed_stay_id", "first_hco3_fallback_window"]],
++            on="ed_stay_id",
++            how="left",
++        )
++        window_fill_mask = (
++            pd.to_numeric(ed_df["first_hco3"], errors="coerce").isna()
++            & pd.to_numeric(ed_df["first_hco3_fallback_window"], errors="coerce").notna()
++        )
++        ed_df.loc[window_fill_mask, "first_hco3"] = ed_df.loc[
++            window_fill_mask, "first_hco3_fallback_window"
++        ]
++        ed_df.loc[window_fill_mask, "first_hco3_source"] = "lab_first_0_24h"
++        ed_df = ed_df.drop(columns=["first_hco3_fallback_window"])
++
++ed_df["first_hco3_source"] = np.where(
++    pd.to_numeric(ed_df["first_hco3"], errors="coerce").notna(),
++    ed_df["first_hco3_source"].astype("string").fillna("missing"),
++    "missing",
++)
++
+ ed_df["first_gas_anchor_has_pco2"] = ed_df["first_gas_time"].notna()
+ ed_df["first_gas_anchor_source_validated"] = False
+ 
+@@ -5398,7 +5483,7 @@ if gas_source_audit["all_other_or_unknown"]:
+ warn_other_rate_threshold = float(os.getenv("COHORT_WARN_OTHER_RATE", "0.50"))
+ fail_other_rate_raw = os.getenv("COHORT_FAIL_OTHER_RATE", "").strip()
+ fail_other_rate_threshold = float(fail_other_rate_raw) if fail_other_rate_raw else None
+-other_source_rate = float(gas_source_audit.get("source_rates", {}).get("other", 0.0))
++other_source_rate = float(gas_source_audit.get("source_rates", {}).get("unknown", 0.0))
+ 
+ if fail_other_rate_threshold is not None and other_source_rate >= fail_other_rate_threshold:
+     raise ValueError(
+@@ -5423,13 +5508,23 @@ gas_source_audit_path = prior_runs_dir / f"{out_date} gas_source_audit.json"
+ reduction_target = float(os.getenv("COHORT_OTHER_RELATIVE_REDUCTION_MIN", "0.10"))
+ baseline_other_rate = None
+ baseline_audit_path = None
++baseline_mode_mismatch_path = None
++current_source_mode = str(gas_source_audit.get("mode", "")).strip().lower()
+ for candidate in sorted(prior_runs_dir.glob("* gas_source_audit.json"), reverse=True):
+     if candidate.resolve() == gas_source_audit_path.resolve():
+         continue
+     try:
+         baseline_payload = json.loads(candidate.read_text())
++        baseline_mode = str(baseline_payload.get("mode", "")).strip().lower()
++        if current_source_mode and baseline_mode and baseline_mode != current_source_mode:
++            baseline_mode_mismatch_path = candidate
++            continue
++        baseline_rates = baseline_payload.get("source_rates", {})
+         baseline_other_rate = float(
+-            baseline_payload.get("source_rates", {}).get("other", float("nan"))
++            baseline_rates.get(
++                "unknown",
++                baseline_rates.get("other", float("nan")),
++            )
+         )
+         if math.isnan(baseline_other_rate):
+             baseline_other_rate = None
+@@ -5442,15 +5537,21 @@ for candidate in sorted(prior_runs_dir.glob("* gas_source_audit.json"), reverse=
+ if baseline_other_rate is None or baseline_other_rate <= 0:
+     gas_source_audit["baseline_other_rate"] = None
+     gas_source_audit["baseline_path"] = str(baseline_audit_path) if baseline_audit_path else None
++    gas_source_audit["baseline_mode_mismatch_path"] = (
++        str(baseline_mode_mismatch_path) if baseline_mode_mismatch_path else None
++    )
+     gas_source_audit["relative_reduction_vs_baseline"] = None
+     print(
+         "WARNING: Unable to evaluate gas_source_other_rate relative reduction "
+-        "because no valid baseline gas_source_audit was found."
++        "because no valid baseline gas_source_audit was found for the current source mode."
+     )
+ else:
+     relative_reduction = (baseline_other_rate - other_source_rate) / baseline_other_rate
+     gas_source_audit["baseline_other_rate"] = baseline_other_rate
+     gas_source_audit["baseline_path"] = str(baseline_audit_path)
++    gas_source_audit["baseline_mode_mismatch_path"] = (
++        str(baseline_mode_mismatch_path) if baseline_mode_mismatch_path else None
++    )
+     gas_source_audit["relative_reduction_vs_baseline"] = relative_reduction
+     gas_source_audit["relative_reduction_target"] = reduction_target
+     print(
+@@ -5478,7 +5579,7 @@ if panel_anchor.empty:
+     first_anchor["first_gas_time"] = pd.NaT
+     first_anchor["first_pco2"] = pd.NA
+     first_anchor["first_ph"] = pd.NA
+-    first_anchor["first_hco3"] = pd.NA
++    first_anchor["first_hco3_anchor"] = pd.NA
+     first_anchor["first_lactate"] = pd.NA
+     first_anchor["first_gas_specimen_type"] = pd.NA
+     first_anchor["first_gas_specimen_present"] = False
+@@ -5498,7 +5599,7 @@ else:
+             "panel_time": "first_gas_time",
+             "pco2": "first_pco2",
+             "ph": "first_ph",
+-            "hco3": "first_hco3",
++            "hco3": "first_hco3_anchor",
+             "lactate": "first_lactate",
+             "source_hint_specimen_text": "first_gas_specimen_type",
+             "pco2_itemid": "first_gas_pco2_itemid",
+@@ -5513,7 +5614,7 @@ else:
+         .ne("")
+     )
+     first_anchor["co2_other_is_blood_asserted"] = (
+-        first_anchor["source"].astype("string").str.lower().eq("other")
++        first_anchor["source"].astype("string").str.lower().eq("unknown")
+         & first_anchor["first_gas_pco2_fluid"]
+         .astype("string")
+         .str.strip()
+@@ -5522,7 +5623,7 @@ else:
+     )
+     first_anchor["first_gas_anchor_has_pco2"] = True
+     first_anchor["first_gas_anchor_source_validated"] = first_anchor["source"].isin(
+-        {"arterial", "venous", "other"}
++        {"arterial", "venous", "unknown"}
+     )
+ 
+ anchor_merge_cols = [
+@@ -5530,7 +5631,7 @@ anchor_merge_cols = [
+     "first_gas_time",
+     "first_pco2",
+     "first_ph",
+-    "first_hco3",
++    "first_hco3_anchor",
+     "first_lactate",
+     "first_gas_specimen_type",
+     "first_gas_specimen_present",
+@@ -5540,10 +5641,30 @@ anchor_merge_cols = [
+     "first_gas_anchor_has_pco2",
+     "first_gas_anchor_source_validated",
+ ]
+-drop_existing_anchor_cols = [col for col in anchor_merge_cols if col in ed_df.columns and col != "ed_stay_id"]
++drop_existing_anchor_cols = [
++    col
++    for col in anchor_merge_cols
++    if col in ed_df.columns and col not in {"ed_stay_id", "first_hco3_anchor"}
++]
+ if drop_existing_anchor_cols:
+     ed_df = ed_df.drop(columns=drop_existing_anchor_cols)
+ ed_df = ed_df.merge(first_anchor[anchor_merge_cols], on="ed_stay_id", how="left")
++if "first_hco3_source" not in ed_df.columns:
++    ed_df["first_hco3_source"] = "missing"
++if "first_hco3" not in ed_df.columns:
++    ed_df["first_hco3"] = pd.NA
++hco3_anchor_numeric = pd.to_numeric(ed_df.get("first_hco3_anchor"), errors="coerce")
++hco3_existing_numeric = pd.to_numeric(ed_df.get("first_hco3"), errors="coerce")
++hco3_fill_from_anchor = hco3_existing_numeric.isna() & hco3_anchor_numeric.notna()
++ed_df.loc[hco3_fill_from_anchor, "first_hco3"] = hco3_anchor_numeric.loc[hco3_fill_from_anchor]
++ed_df.loc[hco3_fill_from_anchor, "first_hco3_source"] = "lab_panel_same_specimen"
++ed_df["first_hco3_source"] = np.where(
++    pd.to_numeric(ed_df["first_hco3"], errors="coerce").notna(),
++    ed_df["first_hco3_source"].astype("string").fillna("missing"),
++    "missing",
++)
++if "first_hco3_anchor" in ed_df.columns:
++    ed_df = ed_df.drop(columns=["first_hco3_anchor"])
+ ed_df["first_gas_anchor_has_pco2"] = (
+     ed_df["first_gas_anchor_has_pco2"].fillna(False).astype(bool)
+ )
+@@ -5560,26 +5681,31 @@ ed_df["co2_other_is_blood_asserted"] = (
+ # flags
+ panel["flag_abg_hypercapnia"] = ((panel["source"]=="arterial") & (panel["pco2"]>=45)).astype(int)
+ panel["flag_vbg_hypercapnia"] = ((panel["source"]=="venous") & (panel["pco2"]>=50)).astype(int)
+-panel["flag_other_hypercapnia"] = ((panel["source"]=="other") & (panel["pco2"]>=50)).astype(int)
+-panel["flag_any_gas_hypercapnia"] = ((panel["flag_abg_hypercapnia"]==1) | (panel["flag_vbg_hypercapnia"]==1) | (panel["flag_other_hypercapnia"]==1)).astype(int)
++panel["flag_unknown_hypercapnia"] = ((panel["source"]=="unknown") & (panel["pco2"]>=50)).astype(int)
++panel["flag_other_hypercapnia"] = panel["flag_unknown_hypercapnia"].astype(int)
++panel["flag_any_gas_hypercapnia"] = (
++    (panel["flag_abg_hypercapnia"] == 1)
++    | (panel["flag_vbg_hypercapnia"] == 1)
++    | (panel["flag_unknown_hypercapnia"] == 1)
++).astype(int)
+ 
+ # per-stay unknown source rate
+ if len(panel) > 0:
+     unk_rate = (
+-        panel.assign(_unk=(panel["source"].fillna("other") == "other"))
++        panel.assign(_unk=(panel["source"].fillna("unknown") == "unknown"))
+              .groupby("ed_stay_id", as_index=False)["_unk"].mean()
+-             .rename(columns={"_unk": "gas_source_other_rate"})
++             .rename(columns={"_unk": "gas_source_unknown_rate"})
+     )
+ else:
+     unk_rate = panel[["ed_stay_id"]].drop_duplicates()
+-    unk_rate["gas_source_other_rate"] = 1.0
++    unk_rate["gas_source_unknown_rate"] = 1.0
+ 
+ if len(panel) > 0:
+     panel_for_diag = panel.copy()
+     panel_for_diag["source_inference_tier"] = (
+         panel_for_diag["source_inference_tier"]
+         .astype("string")
+-        .fillna("fallback_other")
++        .fillna("fallback_unknown")
+     )
+     panel_for_diag["source_hint_conflict"] = (
+         panel_for_diag["source_hint_conflict"]
+@@ -5587,7 +5713,7 @@ if len(panel) > 0:
+         .astype(bool)
+     )
+     panel_for_diag["source"] = (
+-        panel_for_diag["source"].astype("string").fillna("other").str.lower()
++        panel_for_diag["source"].astype("string").fillna("unknown").str.lower()
+     )
+     panel_for_diag["source_resolved"] = panel_for_diag["source"].isin(
+         {"arterial", "venous"}
+@@ -5605,13 +5731,13 @@ if len(panel) > 0:
+         "source_inference_tier"
+     ].eq("panel_cooccurrence")
+     panel_for_diag["tier_fallback_other"] = panel_for_diag["source_inference_tier"].eq(
+-        "fallback_other"
++        "fallback_unknown"
+     )
+ 
+     def _tier_mode(series: pd.Series) -> str:
+         mode_values = series.mode(dropna=True)
+         if mode_values.empty:
+-            return "fallback_other"
++            return "fallback_unknown"
+         return str(mode_values.iloc[0])
+ 
+     source_diag = (
+@@ -5630,7 +5756,7 @@ if len(panel) > 0:
+     )
+ else:
+     source_diag = ed_df[["ed_stay_id"]].drop_duplicates().copy()
+-    source_diag["gas_source_inference_primary_tier"] = "fallback_other"
++    source_diag["gas_source_inference_primary_tier"] = "fallback_unknown"
+     source_diag["gas_source_hint_conflict_rate"] = 0.0
+     source_diag["gas_source_resolved_rate"] = 0.0
+     source_diag["gas_source_tier_specimen_text_rate"] = 0.0
+@@ -5643,6 +5769,7 @@ else:
+ flags = panel.groupby("ed_stay_id", as_index=False).agg(
+     flag_abg_hypercapnia=("flag_abg_hypercapnia","max"),
+     flag_vbg_hypercapnia=("flag_vbg_hypercapnia","max"),
++    flag_unknown_hypercapnia=("flag_unknown_hypercapnia","max"),
+     flag_other_hypercapnia=("flag_other_hypercapnia","max"),
+     flag_any_gas_hypercapnia=("flag_any_gas_hypercapnia","max"),
+ )
+@@ -5650,7 +5777,14 @@ flags = panel.groupby("ed_stay_id", as_index=False).agg(
+ ed_df = ed_df.merge(flags, on="ed_stay_id", how="left")
+ ed_df = ed_df.merge(unk_rate, on="ed_stay_id", how="left")
+ ed_df = ed_df.merge(source_diag, on="ed_stay_id", how="left")
+-ed_df["gas_source_other_rate"] = ed_df["gas_source_other_rate"].fillna(1.0)
++ed_df["gas_source_unknown_rate"] = ed_df["gas_source_unknown_rate"].fillna(1.0)
++ed_df["gas_source_other_rate"] = ed_df["gas_source_unknown_rate"]
++ed_df["flag_other_hypercapnia"] = (
++    pd.to_numeric(ed_df.get("flag_unknown_hypercapnia"), errors="coerce")
++    .fillna(pd.to_numeric(ed_df.get("flag_other_hypercapnia"), errors="coerce"))
++    .fillna(0)
++    .astype("Int64")
++)
+ ```
+ 
+ ### Phase 5C — ICU POC blood gases (chartevents, optional)
+@@ -5768,6 +5902,20 @@ else:
+     manifest_audit_combined = pd.DataFrame(manifest_icu_audit_rows)
+ 
+ blood_gas_itemid_manifest_audit = manifest_audit_combined
++manifest_missing = blood_gas_itemid_manifest_audit.loc[
++    pd.to_numeric(
++        blood_gas_itemid_manifest_audit.get("present_in_dictionary"), errors="coerce"
++    ).fillna(1).astype(int).eq(0)
++].copy()
++if not manifest_missing.empty:
++    missing_repr = ", ".join(
++        f"{row.source_branch}:{row.analyte}:{int(row.itemid)}"
++        for row in manifest_missing.itertuples(index=False)
++    )
++    raise ValueError(
++        "Blood-gas manifest references itemids not present in runtime dictionaries: "
++        f"{missing_repr}"
++    )
+ blood_gas_itemid_manifest_audit_path = prior_runs_dir / f"{audit_date} blood_gas_itemid_manifest_audit.csv"
+ blood_gas_itemid_manifest_audit.to_csv(blood_gas_itemid_manifest_audit_path, index=False)
+ print("Wrote:", blood_gas_itemid_manifest_audit_path)
+@@ -5923,6 +6071,12 @@ if len(icu_poc_long) > 0 and pco2_ids:
+             label_text = str(group["label"].dropna().astype(str).head(1).tolist()[0]) if group["label"].notna().any() else ""
+             category_text = str(group["category"].dropna().astype(str).head(1).tolist()[0]) if group["category"].notna().any() else ""
+             label_text_l = label_text.lower()
++            if int(itemid_value) in set(ICU_PCO2_ABG_ITEMIDS):
++                sample_type_hint = "ABG"
++            elif int(itemid_value) in set(ICU_PCO2_VBG_ITEMIDS):
++                sample_type_hint = "VBG"
++            else:
++                sample_type_hint = "UNKNOWN"
+             value_units = sorted(set(group["valueuom_norm"].dropna().astype(str).tolist()))
+             unit_ok = set(value_units).issubset(ICU_PCO2_QC_ALLOWED_UOMS)
+             include_ok = any(token in label_text_l for token in ICU_PCO2_QC_INCLUDE_TOKENS)
+@@ -5940,6 +6094,8 @@ if len(icu_poc_long) > 0 and pco2_ids:
+                     "itemid": int(itemid_value),
+                     "label": label_text,
+                     "category": category_text,
++                    "source_branch": "POC",
++                    "sample_type_hint": sample_type_hint,
+                     "row_count": int(len(group)),
+                     "non_null_count": int(len(numeric)),
+                     "units_observed": ";".join(value_units),
+@@ -5955,7 +6111,30 @@ if len(icu_poc_long) > 0 and pco2_ids:
+                 }
+             )
+ 
++pco2_itemid_qc_columns = [
++    "itemid",
++    "label",
++    "category",
++    "source_branch",
++    "sample_type_hint",
++    "row_count",
++    "non_null_count",
++    "units_observed",
++    "p50_mmhg",
++    "p95_mmhg",
++    "max_mmhg",
++    "label_include_ok",
++    "label_exclude_hit",
++    "unit_ok",
++    "median_in_expected_range",
++    "contamination_flag",
++    "manifest_whitelisted",
++]
+ pco2_itemid_qc_audit = pd.DataFrame(pco2_itemid_qc_rows)
++for column_name in pco2_itemid_qc_columns:
++    if column_name not in pco2_itemid_qc_audit.columns:
++        pco2_itemid_qc_audit[column_name] = pd.NA
++pco2_itemid_qc_audit = pco2_itemid_qc_audit[pco2_itemid_qc_columns]
+ pco2_itemid_qc_audit_path = prior_runs_dir / f"{audit_date} pco2_itemid_qc_audit.csv"
+ pco2_itemid_qc_audit.to_csv(pco2_itemid_qc_audit_path, index=False)
+ print("Wrote:", pco2_itemid_qc_audit_path)
+@@ -6494,10 +6673,19 @@ ed_df["admittime_before_ed_intime_flag"] = (
+     & ed_intime_series.notna()
+     & admittime_series.lt(ed_intime_series)
+ )
++dischtime_series = pd.to_datetime(ed_df.get("dischtime"), errors="coerce")
++ed_df["dischtime_before_admittime_flag"] = (
++    dischtime_series.notna()
++    & admittime_series.notna()
++    & dischtime_series.lt(admittime_series)
++)
++ed_df["time_integrity_any"] = (
++    ed_df["hospital_los_negative_flag"].fillna(False).astype(bool)
++    | ed_df["admittime_before_ed_intime_flag"].fillna(False).astype(bool)
++    | ed_df["dischtime_before_admittime_flag"].fillna(False).astype(bool)
++)
+ hospital_los_numeric = pd.to_numeric(ed_df.get("hospital_los_hours"), errors="coerce")
+ ed_df["hospital_los_hours_model"] = hospital_los_numeric.mask(hospital_los_numeric.lt(0))
+-
+-dischtime_series = pd.to_datetime(ed_df.get("dischtime"), errors="coerce")
+ anchor_series = pd.to_datetime(ed_df.get(anchor), errors="coerce")
+ for event_col, delta_col, model_col, outside_col in [
+     ("first_imv_time", "dt_first_imv_hours", "dt_first_imv_hours_model", "imv_time_outside_window_flag"),
+@@ -6534,7 +6722,16 @@ ed_df["lactate_band"] = pd.cut(ed_df["first_lactate"], bins=bins_lac, labels=lab
+ # Align ED-stay gas source flags to hadm-level thresholds and ICU POC signal.
+ # This keeps source-specific flags internally consistent in the final ED-stay export.
+ if "df" in globals() and "hadm_id" in ed_df.columns and "hadm_id" in df.columns:
+-    hadm_thr_cols = [c for c in ["abg_hypercap_threshold", "vbg_hypercap_threshold", "other_hypercap_threshold"] if c in df.columns]
++    hadm_thr_cols = [
++        c
++        for c in [
++            "abg_hypercap_threshold",
++            "vbg_hypercap_threshold",
++            "unknown_hypercap_threshold",
++            "other_hypercap_threshold",
++        ]
++        if c in df.columns
++    ]
+     if hadm_thr_cols:
+         hadm_thr = df[["hadm_id"] + hadm_thr_cols].drop_duplicates("hadm_id")
+         hadm_thr_map = hadm_thr.set_index("hadm_id")
+@@ -6548,7 +6745,7 @@ if "df" in globals() and "hadm_id" in ed_df.columns and "hadm_id" in df.columns:
+ flag_specs = [
+     ("flag_abg_hypercapnia", "abg_hypercap_threshold"),
+     ("flag_vbg_hypercapnia", "vbg_hypercap_threshold"),
+-    ("flag_other_hypercapnia", "other_hypercap_threshold"),
++    ("flag_unknown_hypercapnia", "unknown_hypercap_threshold"),
+ ]
+ for flag_col, thr_col in flag_specs:
+     base = pd.to_numeric(ed_df.get(flag_col, pd.Series(0, index=ed_df.index)), errors="coerce").fillna(0).astype(int)
+@@ -6558,11 +6755,12 @@ for flag_col, thr_col in flag_specs:
+ any_from_sources = (
+     (pd.to_numeric(ed_df.get("flag_abg_hypercapnia", 0), errors="coerce").fillna(0).astype(int) == 1)
+     | (pd.to_numeric(ed_df.get("flag_vbg_hypercapnia", 0), errors="coerce").fillna(0).astype(int) == 1)
+-    | (pd.to_numeric(ed_df.get("flag_other_hypercapnia", 0), errors="coerce").fillna(0).astype(int) == 1)
++    | (pd.to_numeric(ed_df.get("flag_unknown_hypercapnia", 0), errors="coerce").fillna(0).astype(int) == 1)
+ )
+ 
+ poc_any = pd.to_numeric(ed_df.get("flag_any_gas_hypercapnia_poc", pd.Series(0, index=ed_df.index)), errors="coerce").fillna(0).astype(int) == 1
+ ed_df["flag_any_gas_hypercapnia"] = (any_from_sources | poc_any).astype("Int64")
++ed_df["flag_other_hypercapnia"] = ed_df["flag_unknown_hypercapnia"].astype("Int64")
+ ```
+ 
+ ## QA & Data Fidelity
+@@ -6689,8 +6887,10 @@ timing_integrity_audit = pd.DataFrame(
+     [
+         {
+             "rows_total": int(len(ed_df)),
++            "time_integrity_any_n": int(ed_df.get("time_integrity_any", pd.Series(False, index=ed_df.index)).fillna(False).astype(bool).sum()),
+             "hospital_los_negative_n": int(ed_df.get("hospital_los_negative_flag", pd.Series(False, index=ed_df.index)).fillna(False).astype(bool).sum()),
+             "admittime_before_ed_intime_n": int(ed_df.get("admittime_before_ed_intime_flag", pd.Series(False, index=ed_df.index)).fillna(False).astype(bool).sum()),
++            "dischtime_before_admittime_n": int(ed_df.get("dischtime_before_admittime_flag", pd.Series(False, index=ed_df.index)).fillna(False).astype(bool).sum()),
+             "qualifying_gas_observed_n": int(pd.to_numeric(ed_df.get("qualifying_gas_observed"), errors="coerce").fillna(0).astype(int).sum()),
+             "qualifying_gas_missing_n": int(pd.to_numeric(ed_df.get("qualifying_gas_observed"), errors="coerce").fillna(0).astype(int).eq(0).sum()),
+         }
+@@ -6717,6 +6917,34 @@ ventilation_timing_audit_path = prior_runs_dir / f"{out_date} ventilation_timing
+ ventilation_timing_audit.to_csv(ventilation_timing_audit_path, index=False)
+ print("Wrote:", ventilation_timing_audit_path)
+ 
++hco3_numeric = pd.to_numeric(ed_df.get("first_hco3"), errors="coerce")
++hco3_source = ed_df.get("first_hco3_source", pd.Series("missing", index=ed_df.index)).astype("string").fillna("missing")
++hco3_source_value_mismatch_n = int(((hco3_source != "missing") & hco3_numeric.isna()).sum())
++hco3_source_counts = (
++    hco3_source.value_counts(dropna=False)
++    .rename_axis("first_hco3_source")
++    .reset_index(name="row_count")
++)
++hco3_source_counts["null_value_count"] = hco3_source_counts["first_hco3_source"].map(
++    lambda source_name: int(
++        ((hco3_source == source_name) & hco3_numeric.isna()).sum()
++    )
++)
++hco3_source_counts["nonnull_value_count"] = hco3_source_counts["first_hco3_source"].map(
++    lambda source_name: int(
++        ((hco3_source == source_name) & hco3_numeric.notna()).sum()
++    )
++)
++hco3_source_counts["null_value_rate"] = np.where(
++    hco3_source_counts["row_count"] > 0,
++    hco3_source_counts["null_value_count"] / hco3_source_counts["row_count"],
++    0.0,
++)
++hco3_source_counts["source_value_mismatch_n"] = hco3_source_value_mismatch_n
++hco3_integrity_audit_path = prior_runs_dir / f"{out_date} hco3_integrity_audit.csv"
++hco3_source_counts.to_csv(hco3_integrity_audit_path, index=False)
++print("Wrote:", hco3_integrity_audit_path)
++
+ print("ED vitals cleaning summary (raw->clean removals):")
+ display(
+     ed_vitals_model_delta[
+@@ -6809,50 +7037,58 @@ gas_overlap_summary_path = prior_runs_dir / f"{out_date} gas_source_overlap_summ
+ gas_overlap_summary.to_csv(gas_overlap_summary_path, index=False)
+ print("Wrote:", gas_overlap_summary_path)
+ 
+-gas_source_other_rate = float(gas_source_audit.get("source_rates", {}).get("other", 0.0))
+-source_unknown_rate = float(gas_source_audit.get("source_rates", {}).get("unknown", 0.0))
+-print("% source other (panel-level):", round(gas_source_other_rate * 100, 1))
+-print("% source unknown (panel-level):", round(source_unknown_rate * 100, 1))
++gas_source_unknown_rate = float(gas_source_audit.get("source_rates", {}).get("unknown", 0.0))
++gas_source_other_rate = gas_source_unknown_rate
++print("% source unknown (panel-level):", round(gas_source_unknown_rate * 100, 1))
+ 
+-# Blood-gas source distribution audit (validated LAB + quarantined POC OTHER monitoring).
++# Blood-gas source distribution audit (LAB + POC definitive pCO2 by source class).
+ pco2_source_distribution_rows: list[dict[str, Any]] = []
++PCC_DIST_COLUMNS = [
++    "source_branch",
++    "source",
++    "n",
++    "median",
++    "p95",
++    "max",
++    "pct_ge_50",
++]
++
++def _append_distribution_rows(source_branch: str, source: str, values: pd.Series) -> None:
++    numeric = pd.to_numeric(values, errors="coerce").dropna()
++    if numeric.empty:
++        return
++    pco2_source_distribution_rows.append(
++        {
++            "source_branch": source_branch,
++            "source": source,
++            "n": int(numeric.shape[0]),
++            "median": float(numeric.median()),
++            "p95": float(numeric.quantile(0.95)),
++            "max": float(numeric.max()),
++            "pct_ge_50": float((numeric >= 50).mean()),
++        }
++    )
++
+ if "panel" in globals() and len(panel) > 0 and "pco2" in panel.columns:
+     panel_pco2 = panel.copy()
+     panel_pco2["pco2"] = pd.to_numeric(panel_pco2["pco2"], errors="coerce")
+     panel_pco2 = panel_pco2.loc[panel_pco2["pco2"].notna()].copy()
+     if len(panel_pco2) > 0:
+         for source_name, subset in panel_pco2.groupby("source", dropna=False):
+-            values = pd.to_numeric(subset["pco2"], errors="coerce").dropna()
+-            if values.empty:
+-                continue
+-            pco2_source_distribution_rows.append(
+-                {
+-                    "source_branch": "LAB",
+-                    "source": str(source_name),
+-                    "n": int(values.shape[0]),
+-                    "median": float(values.median()),
+-                    "p95": float(values.quantile(0.95)),
+-                    "max": float(values.max()),
+-                    "pct_ge_50": float((values >= 50).mean()),
+-                }
+-            )
++            _append_distribution_rows("LAB", str(source_name), subset["pco2"])
+ 
++if "poc_abg_paco2" in ed_df.columns:
++    _append_distribution_rows("POC", "arterial", ed_df["poc_abg_paco2"])
++if "poc_vbg_paco2" in ed_df.columns:
++    _append_distribution_rows("POC", "venous", ed_df["poc_vbg_paco2"])
+ if "poc_other_paco2" in ed_df.columns:
+-    poc_other_values = pd.to_numeric(ed_df["poc_other_paco2"], errors="coerce").dropna()
+-    if len(poc_other_values) > 0:
+-        pco2_source_distribution_rows.append(
+-            {
+-                "source_branch": "POC_QUARANTINED",
+-                "source": "other",
+-                "n": int(poc_other_values.shape[0]),
+-                "median": float(poc_other_values.median()),
+-                "p95": float(poc_other_values.quantile(0.95)),
+-                "max": float(poc_other_values.max()),
+-                "pct_ge_50": float((poc_other_values >= 50).mean()),
+-            }
+-        )
++    _append_distribution_rows("POC", "unknown", ed_df["poc_other_paco2"])
+ 
+ pco2_source_distribution_audit = pd.DataFrame(pco2_source_distribution_rows)
++for column_name in PCC_DIST_COLUMNS:
++    if column_name not in pco2_source_distribution_audit.columns:
++        pco2_source_distribution_audit[column_name] = pd.NA
++pco2_source_distribution_audit = pco2_source_distribution_audit[PCC_DIST_COLUMNS]
+ pco2_source_distribution_audit_path = prior_runs_dir / f"{out_date} pco2_source_distribution_audit.csv"
+ pco2_source_distribution_audit.to_csv(pco2_source_distribution_audit_path, index=False)
+ print("Wrote:", pco2_source_distribution_audit_path)
+@@ -6862,14 +7098,14 @@ poc_other_values_all = (
+     if "poc_other_paco2" in ed_df.columns
+     else pd.Series(dtype="float64")
+ )
+-poc_other_quarantine_series = (
+-    pd.to_numeric(ed_df["poc_other_quarantined_hypercap_threshold"], errors="coerce")
+-    if "poc_other_quarantined_hypercap_threshold" in ed_df.columns
++unknown_threshold_series = (
++    pd.to_numeric(ed_df["unknown_hypercap_threshold"], errors="coerce")
++    if "unknown_hypercap_threshold" in ed_df.columns
+     else pd.Series(0, index=ed_df.index, dtype="float64")
+ )
+-other_threshold_series = (
+-    pd.to_numeric(ed_df["other_hypercap_threshold"], errors="coerce")
+-    if "other_hypercap_threshold" in ed_df.columns
++poc_unknown_threshold_series = (
++    pd.to_numeric(ed_df["poc_unknown_hypercap_threshold"], errors="coerce")
++    if "poc_unknown_hypercap_threshold" in ed_df.columns
+     else pd.Series(0, index=ed_df.index, dtype="float64")
+ )
+ first_other_detail_series = (
+@@ -6879,13 +7115,13 @@ first_other_detail_series = (
+ )
+ poc_other_candidate_n = int(poc_other_values_all.notna().sum())
+ poc_other_hypercap_n = int((poc_other_values_all >= 50).sum())
+-poc_other_quarantined_hadm_n = int(
+-    poc_other_quarantine_series.fillna(0).astype(int).sum()
++poc_unknown_hadm_n = int(
++    poc_unknown_threshold_series.fillna(0).astype(int).sum()
+ )
+-poc_other_leak_into_other_threshold_n = int(
++unknown_from_poc_detail_n = int(
+     (
+-        other_threshold_series.fillna(0).astype(int).eq(1)
+-        & first_other_detail_series.str.lower().eq("poc_quarantined")
++        unknown_threshold_series.fillna(0).astype(int).eq(1)
++        & first_other_detail_series.str.lower().isin({"poc_bg_unknown", "poc_bg_unknown_available"})
+     ).sum()
+ )
+ other_route_quarantine_audit = pd.DataFrame(
+@@ -6896,9 +7132,9 @@ other_route_quarantine_audit = pd.DataFrame(
+             "poc_other_ge50_rate": float(poc_other_hypercap_n / poc_other_candidate_n)
+             if poc_other_candidate_n
+             else 0.0,
+-            "poc_other_quarantined_hadm_n": poc_other_quarantined_hadm_n,
+-            "other_hypercap_threshold_hadm_n": int(other_threshold_series.fillna(0).astype(int).sum()),
+-            "poc_other_leak_into_other_threshold_n": poc_other_leak_into_other_threshold_n,
++            "poc_unknown_hadm_n": poc_unknown_hadm_n,
++            "unknown_hypercap_threshold_hadm_n": int(unknown_threshold_series.fillna(0).astype(int).sum()),
++            "unknown_from_poc_detail_hadm_n": unknown_from_poc_detail_n,
+         }
+     ]
+ )
+@@ -6950,12 +7186,15 @@ if uom_failed_checks:
+     qa_warnings.append("uom_checks_failed")
+ if "status" in first_other_pco2_audit.columns and (first_other_pco2_audit["status"] == "missing_columns").any():
+     qa_warnings.append("first_other_pco2_audit_missing_columns")
+-if "poc_other_leak_into_other_threshold_n" in other_route_quarantine_audit.columns:
+-    if int(other_route_quarantine_audit["poc_other_leak_into_other_threshold_n"].iloc[0]) > 0:
+-        qa_warnings.append("poc_other_quarantine_leakage_detected")
++if "unknown_from_poc_detail_hadm_n" in other_route_quarantine_audit.columns:
++    if int(other_route_quarantine_audit["unknown_from_poc_detail_hadm_n"].iloc[0]) > 0:
++        qa_infos.append("unknown_route_includes_poc_detail")
+ if "first_gas_without_pco2_anchor_n" in first_gas_anchor_audit.columns:
+     if int(first_gas_anchor_audit["first_gas_without_pco2_anchor_n"].iloc[0]) > 0:
+         qa_warnings.append("first_gas_anchor_without_pco2_detected")
++if "source_value_mismatch_n" in hco3_source_counts.columns:
++    if int(hco3_source_counts["source_value_mismatch_n"].max()) > 0:
++        qa_warnings.append("first_hco3_source_value_mismatch_detected")
+ qa_other_warn_threshold = float(os.getenv("COHORT_WARN_OTHER_RATE", "0.50"))
+ qa_other_fail_raw = os.getenv("COHORT_FAIL_OTHER_RATE", "").strip()
+ qa_other_fail_threshold = float(qa_other_fail_raw) if qa_other_fail_raw else None
+@@ -6997,6 +7236,11 @@ anthropometric_cleaning_audit_records = (
+     if "anthropometric_cleaning_audit" in globals()
+     else []
+ )
++hco3_integrity_audit_records = (
++    json.loads(hco3_source_counts.to_json(orient="records"))
++    if "hco3_source_counts" in globals()
++    else []
++)
+ blood_gas_itemid_manifest_audit_records = (
+     json.loads(blood_gas_itemid_manifest_audit.to_json(orient="records"))
+     if "blood_gas_itemid_manifest_audit" in globals() and not blood_gas_itemid_manifest_audit.empty
+@@ -7018,7 +7262,7 @@ qa_summary = {
+     "gas_source_other_rate": gas_source_other_rate,
+     "gas_source_other_rate_warn_threshold": qa_other_warn_threshold,
+     "gas_source_other_rate_fail_threshold": qa_other_fail_threshold,
+-    "source_unknown_rate": source_unknown_rate,
++    "source_unknown_rate": gas_source_unknown_rate,
+     "gas_source_audit": gas_source_audit,
+     "gas_source_overlap_summary": gas_overlap_summary_records,
+     "blood_gas_manifest": {
+@@ -7038,6 +7282,7 @@ qa_summary = {
+     "anthro_timing_tier_rates": omr_diagnostics.get("selected_tier_rates", {}) if "omr_diagnostics" in globals() else {},
+     "anthro_coverage_audit": anthro_coverage_audit if "anthro_coverage_audit" in globals() else None,
+     "anthropometric_cleaning_audit": anthropometric_cleaning_audit_records,
++    "hco3_integrity_audit": hco3_integrity_audit_records,
+     "charted_anthro_diagnostics": charted_anthro_diagnostics if "charted_anthro_diagnostics" in globals() else None,
+     "timing_integrity_audit": timing_integrity_audit_records,
+     "ventilation_timing_audit": ventilation_timing_audit_records,
+@@ -7066,6 +7311,9 @@ qa_summary = {
+         "pco2_source_distribution": str(pco2_source_distribution_audit_path),
+         "other_route_quarantine": str(other_route_quarantine_audit_path),
+         "first_gas_anchor": str(first_gas_anchor_audit_path),
++        "hco3_integrity": str(hco3_integrity_audit_path)
++        if "hco3_integrity_audit_path" in globals()
++        else None,
+     },
+     "timing_integrity_audit_path": str(timing_integrity_audit_path)
+     if "timing_integrity_audit_path" in globals()
+diff --git a/current_columns.json b/current_columns.json
+index 0b9db83..dbcea85 100644
+--- a/current_columns.json
++++ b/current_columns.json
+@@ -97,6 +97,7 @@
+   "poc_other_ph_uom",
+   "poc_other_quarantined_hypercap_threshold",
+   "poc_other_time",
++  "poc_unknown_hypercap_threshold",
+   "poc_vbg_paco2",
+   "poc_vbg_paco2_uom",
+   "poc_vbg_ph",
+@@ -106,6 +107,7 @@
+   "race_eth_collapsed",
+   "race_hosp_raw",
+   "subject_id",
++  "unknown_hypercap_threshold",
+   "vbg_before_imv",
+   "vbg_hypercap_threshold"
+ ]
+\ No newline at end of file
+diff --git a/lab_item_map.json b/lab_item_map.json
+index b3f8b23..f39599f 100644
+--- a/lab_item_map.json
++++ b/lab_item_map.json
+@@ -6,7 +6,7 @@
+         "itemid": 50818,
+         "label": "pCO2",
+         "category": "Blood Gas",
+-        "n": 494716
++        "n": 495853
+       }
+     ]
+   },
+@@ -17,7 +17,7 @@
+         "itemid": 50820,
+         "label": "pH",
+         "category": "Blood Gas",
+-        "n": 523650
++        "n": 524869
+       }
+     ]
+   },
+@@ -28,7 +28,7 @@
+         "itemid": 50803,
+         "label": "Calculated Bicarbonate, Whole Blood",
+         "category": "Blood Gas",
+-        "n": 5417
++        "n": 5435
+       }
+     ]
+   },
+@@ -39,7 +39,7 @@
+         "itemid": 50813,
+         "label": "Lactate",
+         "category": "Blood Gas",
+-        "n": 290348
++        "n": 291284
+       },
+       {
+         "itemid": 52442,
+@@ -56,7 +56,7 @@
+         "itemid": 52033,
+         "label": "Specimen Type",
+         "category": "Blood Gas",
+-        "n": 561569
++        "n": 562910
+       }
+     ]
+   },
+@@ -67,31 +67,31 @@
+         "itemid": 50912,
+         "label": "Creatinine",
+         "category": "Chemistry",
+-        "n": 686830
++        "n": 690288
+       },
+       {
+         "itemid": 51082,
+         "label": "Creatinine, Urine",
+         "category": "Chemistry",
+-        "n": 17118
++        "n": 17230
+       },
+       {
+         "itemid": 52024,
+         "label": "Creatinine, Whole Blood",
+         "category": "Blood Gas",
+-        "n": 3102
++        "n": 3108
+       },
+       {
+         "itemid": 51099,
+         "label": "Protein/Creatinine Ratio",
+         "category": "Chemistry",
+-        "n": 2537
++        "n": 2551
+       },
+       {
+         "itemid": 50841,
+         "label": "Creatinine, Ascites",
+         "category": "Chemistry",
+-        "n": 647
++        "n": 650
+       },
+       {
+         "itemid": 51052,
+@@ -103,13 +103,13 @@
+         "itemid": 51067,
+         "label": "24 hr Creatinine",
+         "category": "Chemistry",
+-        "n": 455
++        "n": 456
+       },
+       {
+         "itemid": 51070,
+         "label": "Albumin/Creatinine, Urine",
+         "category": "Chemistry",
+-        "n": 414
++        "n": 415
+       },
+       {
+         "itemid": 51032,
+@@ -139,7 +139,7 @@
+         "itemid": 51073,
+         "label": "Amylase/Creatinine Ratio, Urine",
+         "category": "Chemistry",
+-        "n": 18
++        "n": 19
+       },
+       {
+         "itemid": 51937,
+@@ -192,19 +192,19 @@
+         "itemid": 50983,
+         "label": "Sodium",
+         "category": "Chemistry",
+-        "n": 706434
++        "n": 710201
+       },
+       {
+         "itemid": 50824,
+         "label": "Sodium, Whole Blood",
+         "category": "Blood Gas",
+-        "n": 74474
++        "n": 74660
+       },
+       {
+         "itemid": 51100,
+         "label": "Sodium, Urine",
+         "category": "Chemistry",
+-        "n": 17855
++        "n": 18029
+       },
+       {
+         "itemid": 51065,
+@@ -275,19 +275,19 @@
+         "itemid": 50902,
+         "label": "Chloride",
+         "category": "Chemistry",
+-        "n": 700798
++        "n": 704369
+       },
+       {
+         "itemid": 50806,
+         "label": "Chloride, Whole Blood",
+         "category": "Blood Gas",
+-        "n": 51284
++        "n": 51365
+       },
+       {
+         "itemid": 51078,
+         "label": "Chloride, Urine",
+         "category": "Chemistry",
+-        "n": 8935
++        "n": 9039
+       },
+       {
+         "itemid": 50839,
+@@ -346,7 +346,7 @@
+         "itemid": 50804,
+         "label": "Calculated Total CO2",
+         "category": "Blood Gas",
+-        "n": 494757
++        "n": 495894
+       },
+       {
+         "itemid": 51739,
+@@ -363,25 +363,25 @@
+         "itemid": 51222,
+         "label": "Hemoglobin",
+         "category": "Hematology",
+-        "n": 621071
++        "n": 624186
+       },
+       {
+         "itemid": 51224,
+         "label": "Hemoglobin C",
+         "category": "Hematology",
+-        "n": 53
++        "n": 54
+       },
+       {
+         "itemid": 51223,
+         "label": "Hemoglobin A2",
+         "category": "Hematology",
+-        "n": 46
++        "n": 47
+       },
+       {
+         "itemid": 51225,
+         "label": "Hemoglobin F",
+         "category": "Hematology",
+-        "n": 44
++        "n": 45
+       },
+       {
+         "itemid": 51212,
+diff --git a/lab_unit_audit.csv b/lab_unit_audit.csv
+index 83bdc19..b35af1e 100644
+--- a/lab_unit_audit.csv
++++ b/lab_unit_audit.csv
+@@ -1,2 +1,2 @@
+ valueuom,n
+-mm Hg,23105
++mm Hg,23471
+diff --git a/qa_summary.json b/qa_summary.json
+index 7bf130e..42f8fed 100644
+--- a/qa_summary.json
++++ b/qa_summary.json
+@@ -1,42 +1,42 @@
+ {
+-  "ed_spine_rows": 11786,
+-  "ed_rows": 11786,
+-  "ed_unique": 11786,
+-  "hadm_rows": 40167,
+-  "hadm_cc_rows": 11769,
+-  "icu_link_rate": 0.7677753266587477,
+-  "pct_any_gas_0_6h": 0.41897166129305957,
+-  "pct_any_gas_0_24h": 0.9590191752927202,
+-  "gas_source_other_rate": 0.6617519019140463,
++  "ed_spine_rows": 12038,
++  "ed_rows": 12038,
++  "ed_unique": 12038,
++  "hadm_rows": 40629,
++  "hadm_cc_rows": 12020,
++  "icu_link_rate": 0.7726366506064131,
++  "pct_any_gas_0_6h": 0.4184249875394584,
++  "pct_any_gas_0_24h": 0.9582987207177271,
++  "gas_source_other_rate": 0.6626423339262455,
+   "gas_source_other_rate_warn_threshold": 0.5,
+   "gas_source_other_rate_fail_threshold": null,
+-  "source_unknown_rate": 0.0,
++  "source_unknown_rate": 0.6626423339262455,
+   "gas_source_audit": {
+-    "panel_rows": 70061,
++    "panel_rows": 71399,
+     "source_present": true,
+     "source_counts": {
+-      "other": 46363,
+-      "arterial": 14397,
+-      "venous": 9301
++      "unknown": 47312,
++      "arterial": 14635,
++      "venous": 9452
+     },
+     "source_rates": {
+-      "other": 0.6617519019140463,
+-      "arterial": 0.20549235666062432,
+-      "venous": 0.13275574142532937
++      "unknown": 0.6626423339262455,
++      "arterial": 0.20497485959187103,
++      "venous": 0.1323828064818835
+     },
+     "all_other_or_unknown": false,
+     "tier_counts": {
+-      "fallback_other": 46363,
+-      "specimen_text": 23698
++      "fallback_unknown": 47312,
++      "specimen_text": 24087
+     },
+     "tier_rates": {
+-      "fallback_other": 0.6617519019140463,
+-      "specimen_text": 0.3382480980859537
++      "fallback_unknown": 0.6626423339262455,
++      "specimen_text": 0.33735766607375456
+     },
+     "mode": "specimen_only",
+-    "resolved_rows": 23698,
+-    "resolved_rate": 0.3382480980859537,
+-    "unresolved_specimen_id_count": 46332,
++    "resolved_rows": 24087,
++    "resolved_rate": 0.33735766607375456,
++    "unresolved_specimen_id_count": 47279,
+     "unresolved_specimen_id_examples": [
+       1068183,
+       2752210,
+@@ -60,33 +60,33 @@
+       65374931
+     ],
+     "heuristic_reference": {
+-      "panel_rows": 70061,
++      "panel_rows": 71399,
+       "source_present": true,
+       "source_counts": {
+-        "other": 25396,
+-        "arterial": 25314,
+-        "venous": 19351
++        "unknown": 25935,
++        "arterial": 25780,
++        "venous": 19684
+       },
+       "source_rates": {
+-        "other": 0.3624841209802886,
+-        "arterial": 0.3613137123363926,
+-        "venous": 0.2762021666833188
++        "unknown": 0.3632403815179484,
++        "arterial": 0.3610694827658651,
++        "venous": 0.2756901357161865
+       },
+       "all_other_or_unknown": false,
+       "tier_counts": {
+-        "fallback_other": 25396,
+-        "specimen_text": 23698,
+-        "cluster_inheritance": 20967
++        "fallback_unknown": 25935,
++        "specimen_text": 24087,
++        "cluster_inheritance": 21377
+       },
+       "tier_rates": {
+-        "fallback_other": 0.3624841209802886,
+-        "specimen_text": 0.3382480980859537,
+-        "cluster_inheritance": 0.2992677809337577
++        "fallback_unknown": 0.3632403815179484,
++        "specimen_text": 0.33735766607375456,
++        "cluster_inheritance": 0.29940195240829703
+       },
+       "mode": "metadata_only",
+-      "resolved_rows": 44665,
+-      "resolved_rate": 0.6375158790197114,
+-      "unresolved_specimen_id_count": 25379,
++      "resolved_rows": 45464,
++      "resolved_rate": 0.6367596184820515,
++      "unresolved_specimen_id_count": 25918,
+       "unresolved_specimen_id_examples": [
+         1068183,
+         2752210,
+@@ -110,89 +110,90 @@
+         75880307
+       ],
+       "unresolved_value_text_top": {
+-        "___": 4748,
+-        "0.9": 1038,
+-        "0.8": 1035,
+-        "0.7": 935,
+-        "1.0": 916,
+-        "138": 851,
+-        "139": 819,
+-        "140": 788,
+-        "1.1": 778,
+-        "141": 777,
+-        "101": 747,
+-        "103": 745,
+-        "0.6": 739,
+-        "102": 739,
+-        "104": 720
++        "___": 4838,
++        "0.9": 1064,
++        "0.8": 1055,
++        "0.7": 960,
++        "1.0": 941,
++        "138": 867,
++        "139": 838,
++        "140": 809,
++        "141": 793,
++        "1.1": 792,
++        "103": 766,
++        "101": 763,
++        "0.6": 757,
++        "102": 751,
++        "104": 737
+       },
+       "unresolved_label_top": {
+-        "Sodium | Blood": 11349,
+-        "Chloride | Blood": 11250,
+-        "Creatinine | Blood": 11112,
+-        "Hemoglobin | Blood": 10074,
+-        "Lactate | Blood": 2500,
+-        "pH | Blood": 796,
+-        "Sodium, Urine | Urine": 788,
+-        "Creatinine, Urine | Urine": 742,
+-        "pCO2 | Blood": 700,
+-        "Calculated Total CO2 | Blood": 699,
+-        "Specimen Type | Blood": 500,
+-        "Chloride, Urine | Urine": 476,
+-        "Sodium, Whole Blood | Blood": 354,
+-        "Chloride, Whole Blood | Blood": 200,
+-        "Calculated Bicarbonate, Whole Blood | Blood": 97
++        "Sodium | Blood": 11596,
++        "Chloride | Blood": 11489,
++        "Creatinine | Blood": 11354,
++        "Hemoglobin | Blood": 10290,
++        "Lactate | Blood": 2543,
++        "pH | Blood": 809,
++        "Sodium, Urine | Urine": 800,
++        "Creatinine, Urine | Urine": 753,
++        "pCO2 | Blood": 710,
++        "Calculated Total CO2 | Blood": 709,
++        "Specimen Type | Blood": 512,
++        "Chloride, Urine | Urine": 483,
++        "Sodium, Whole Blood | Blood": 369,
++        "Chloride, Whole Blood | Blood": 206,
++        "Calculated Bicarbonate, Whole Blood | Blood": 102
+       }
+     },
+-    "baseline_other_rate": 0.3624841209802886,
+-    "baseline_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-18 gas_source_audit.json",
+-    "relative_reduction_vs_baseline": -0.8256024570798551,
+-    "relative_reduction_target": 0.0
++    "baseline_other_rate": 0.7711144274014472,
++    "baseline_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-15 gas_source_audit.json",
++    "baseline_mode_mismatch_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-16 gas_source_audit.json",
++    "relative_reduction_vs_baseline": 0.1406692568841413,
++    "relative_reduction_target": 0.1
+   },
+   "gas_source_overlap_summary": [
+     {
+       "gas_overlap": "ABG",
+-      "count": 4527,
+-      "percent": 38.41
++      "count": 4635,
++      "percent": 38.5
+     },
+     {
+       "gas_overlap": "VBG",
+-      "count": 3513,
+-      "percent": 29.81
++      "count": 3537,
++      "percent": 29.38
+     },
+     {
+       "gas_overlap": "ABG+VBG",
+-      "count": 1932,
+-      "percent": 16.39
++      "count": 2076,
++      "percent": 17.25
+     },
+     {
+       "gas_overlap": "ABG+VBG+OTHER",
+-      "count": 555,
+-      "percent": 4.71
++      "count": 576,
++      "percent": 4.78
+     },
+     {
+       "gas_overlap": "NO_GAS",
+-      "count": 461,
+-      "percent": 3.91
++      "count": 437,
++      "percent": 3.63
+     },
+     {
+       "gas_overlap": "OTHER",
+-      "count": 277,
+-      "percent": 2.35
++      "count": 274,
++      "percent": 2.28
+     },
+     {
+       "gas_overlap": "ABG+OTHER",
+-      "count": 266,
+-      "percent": 2.26
++      "count": 258,
++      "percent": 2.14
+     },
+     {
+       "gas_overlap": "VBG+OTHER",
+-      "count": 255,
+-      "percent": 2.16
++      "count": 245,
++      "percent": 2.04
+     }
+   ],
+   "blood_gas_manifest": {
+-    "version": "2026-02-17",
++    "version": "2026-02-20.1",
+     "path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/specs/blood_gas_itemids.json"
+   },
+   "blood_gas_itemid_manifest_audit": [
+@@ -203,8 +204,9 @@
+       "label": "pCO2",
+       "category": "Blood Gas",
+       "fluid": "Blood",
+-      "cohort_row_count": 494716,
+-      "manifest_version": "2026-02-17"
++      "cohort_row_count": 495853,
++      "manifest_version": "2026-02-20.1",
++      "present_in_dictionary": 1
+     },
+     {
+       "source_branch": "LAB",
+@@ -213,8 +215,9 @@
+       "label": "pH",
+       "category": "Blood Gas",
+       "fluid": "Blood",
+-      "cohort_row_count": 523650,
+-      "manifest_version": "2026-02-17"
++      "cohort_row_count": 524869,
++      "manifest_version": "2026-02-20.1",
++      "present_in_dictionary": 1
+     },
+     {
+       "source_branch": "LAB",
+@@ -223,8 +226,9 @@
+       "label": "Calculated Bicarbonate, Whole Blood",
+       "category": "Blood Gas",
+       "fluid": "Blood",
+-      "cohort_row_count": 5417,
+-      "manifest_version": "2026-02-17"
++      "cohort_row_count": 5435,
++      "manifest_version": "2026-02-20.1",
++      "present_in_dictionary": 1
+     },
+     {
+       "source_branch": "LAB",
+@@ -233,37 +237,60 @@
+       "label": "Specimen Type",
+       "category": "Blood Gas",
+       "fluid": "Blood",
+-      "cohort_row_count": 561569,
+-      "manifest_version": "2026-02-17"
++      "cohort_row_count": 562910,
++      "manifest_version": "2026-02-20.1",
++      "present_in_dictionary": 1
++    },
++    {
++      "source_branch": "ICU",
++      "analyte": "pco2",
++      "itemid": 220235,
++      "label": "Arterial CO2 Pressure",
++      "category": "Labs",
++      "fluid": null,
++      "cohort_row_count": 14130,
++      "manifest_version": "2026-02-20.1",
++      "present_in_dictionary": 1
++    },
++    {
++      "source_branch": "ICU",
++      "analyte": "pco2",
++      "itemid": 226062,
++      "label": "Venous CO2 Pressure",
++      "category": "Labs",
++      "fluid": null,
++      "cohort_row_count": 6402,
++      "manifest_version": "2026-02-20.1",
++      "present_in_dictionary": 1
+     }
+   ],
+   "pco2_source_distribution_audit": [
+     {
+       "source_branch": "LAB",
+       "source": "arterial",
+-      "n": 14196,
++      "n": 14428,
+       "median": 43.0,
+-      "p95": 74.0,
++      "p95": 73.0,
+       "max": 188.0,
+-      "pct_ge_50": 0.2695125387
++      "pct_ge_50": 0.265178819
+     },
+     {
+       "source_branch": "LAB",
+-      "source": "other",
+-      "n": 899,
++      "source": "unknown",
++      "n": 912,
+       "median": 49.0,
+       "p95": 76.0,
+       "max": 140.0,
+-      "pct_ge_50": 0.4927697442
++      "pct_ge_50": 0.485745614
+     },
+     {
+       "source_branch": "LAB",
+       "source": "venous",
+-      "n": 8002,
++      "n": 8122,
+       "median": 51.0,
+       "p95": 84.0,
+       "max": 233.0,
+-      "pct_ge_50": 0.5931017246
++      "pct_ge_50": 0.5843388328
+     }
+   ],
+   "other_route_quarantine_audit": [
+@@ -271,31 +298,70 @@
+       "poc_other_candidate_n": 0,
+       "poc_other_ge50_n": 0,
+       "poc_other_ge50_rate": 0.0,
+-      "poc_other_quarantined_hadm_n": 0,
+-      "other_hypercap_threshold_hadm_n": 1353,
+-      "poc_other_leak_into_other_threshold_n": 0
++      "poc_unknown_hadm_n": 0,
++      "unknown_hypercap_threshold_hadm_n": 1353,
++      "unknown_from_poc_detail_hadm_n": 0
+     }
+   ],
+   "first_gas_anchor_audit": [
+     {
+-      "row_count": 11786,
+-      "first_gas_time_nonnull_n": 7613,
+-      "first_gas_anchor_has_pco2_n": 7613,
+-      "first_gas_anchor_source_validated_n": 7613,
++      "row_count": 12038,
++      "first_gas_time_nonnull_n": 7752,
++      "first_gas_anchor_has_pco2_n": 7752,
++      "first_gas_anchor_source_validated_n": 7752,
+       "first_gas_without_pco2_anchor_n": 0
+     }
+   ],
+-  "pco2_itemid_qc_audit": [],
++  "pco2_itemid_qc_audit": [
++    {
++      "itemid": 220235,
++      "label": "Arterial CO2 Pressure",
++      "category": "Labs",
++      "source_branch": "POC",
++      "sample_type_hint": "ABG",
++      "row_count": 14130,
++      "non_null_count": 14130,
++      "units_observed": "mmhg",
++      "p50_mmhg": 43.0,
++      "p95_mmhg": 73.0,
++      "max_mmhg": 181.0,
++      "label_include_ok": false,
++      "label_exclude_hit": false,
++      "unit_ok": true,
++      "median_in_expected_range": false,
++      "contamination_flag": true,
++      "manifest_whitelisted": 1
++    },
++    {
++      "itemid": 226062,
++      "label": "Venous CO2 Pressure",
++      "category": "Labs",
++      "source_branch": "POC",
++      "sample_type_hint": "VBG",
++      "row_count": 6402,
++      "non_null_count": 6402,
++      "units_observed": "mmhg",
++      "p50_mmhg": 51.0,
++      "p95_mmhg": 85.0,
++      "max_mmhg": 999998.0,
++      "label_include_ok": false,
++      "label_exclude_hit": false,
++      "unit_ok": true,
++      "median_in_expected_range": true,
++      "contamination_flag": true,
++      "manifest_whitelisted": 1
++    }
++  ],
+   "poc_inclusion_enabled": false,
+-  "poc_inclusion_reason": "manifest_has_no_icu_pco2_itemids",
++  "poc_inclusion_reason": "validated_itemids_failed_qc",
+   "omr_diagnostics": {
+     "window_days": 365,
+     "source_rows_prepared": 46494,
+     "parsed_value_rows": 46489,
+-    "ed_rows": 11786,
+-    "ed_rows_eligible_for_join": 11786,
+-    "subject_overlap_count": 626,
+-    "candidate_rows_after_subject_join": 1940,
++    "ed_rows": 12038,
++    "ed_rows_eligible_for_join": 12038,
++    "subject_overlap_count": 632,
++    "candidate_rows_after_subject_join": 1970,
+     "days_before_min": -4034,
+     "days_before_max": -275,
+     "nonnegative_candidate_rows": 0,
+@@ -313,23 +379,23 @@
+     "selected_tier_counts": {
+       "pre_ed_365": 0,
+       "post_ed_365": 19,
+-      "missing": 11767
++      "missing": 12019
+     },
+     "selected_tier_rates": {
+       "pre_ed_365": 0.0,
+-      "post_ed_365": 0.0016120821313422705,
+-      "missing": 0.9983879178686578
++      "post_ed_365": 0.0015783352716398074,
++      "missing": 0.9984216647283602
+     },
+     "timing_uncertain_count": 19,
+     "anthro_source_counts": {
+-      "missing": 11767,
++      "missing": 12019,
+       "omr": 19
+     },
+     "source_rows_raw": 46494,
+     "prepared_rows": 46494
+   },
+   "omr_window_diagnostics": {
+-    "subject_overlap_count": 626,
++    "subject_overlap_count": 632,
+     "pre_window_candidate_rows": 0,
+     "post_window_candidate_rows": 21,
+     "closest_absolute_candidate_rows": 21,
+@@ -338,64 +404,64 @@
+     "selected_tier_counts": {
+       "pre_ed_365": 0,
+       "post_ed_365": 19,
+-      "missing": 11767
++      "missing": 12019
+     },
+     "selected_tier_rates": {
+       "pre_ed_365": 0.0,
+-      "post_ed_365": 0.0016120821313422705,
+-      "missing": 0.9983879178686578
++      "post_ed_365": 0.0015783352716398074,
++      "missing": 0.9984216647283602
+     }
+   },
+   "anthro_timing_tier_counts": {
+     "pre_ed_365": 0,
+     "post_ed_365": 19,
+-    "missing": 11767
++    "missing": 12019
+   },
+   "anthro_timing_tier_rates": {
+     "pre_ed_365": 0.0,
+-    "post_ed_365": 0.0016120821313422705,
+-    "missing": 0.9983879178686578
++    "post_ed_365": 0.0015783352716398074,
++    "missing": 0.9984216647283602
+   },
+   "anthro_coverage_audit": {
+-    "row_count": 11786,
++    "row_count": 12038,
+     "field_nonnull_counts": {
+-      "bmi_closest_pre_ed": 7257,
+-      "height_closest_pre_ed": 7261,
+-      "weight_closest_pre_ed": 10210
++      "bmi_closest_pre_ed": 7400,
++      "height_closest_pre_ed": 7405,
++      "weight_closest_pre_ed": 10470
+     },
+     "field_nonnull_rates": {
+-      "bmi_closest_pre_ed": 0.615730527744782,
+-      "height_closest_pre_ed": 0.6160699134566435,
+-      "weight_closest_pre_ed": 0.866282029526557
++      "bmi_closest_pre_ed": 0.6147200531649776,
++      "height_closest_pre_ed": 0.6151354045522512,
++      "weight_closest_pre_ed": 0.8697458049509885
+     },
+     "source_counts": {
+-      "icu_charted": 10192,
+-      "missing": 1575,
++      "icu_charted": 10452,
++      "missing": 1567,
+       "omr": 19
+     },
+     "source_rates": {
+-      "icu_charted": 0.86475479382318,
+-      "missing": 0.1336331240454777,
+-      "omr": 0.0016120821313422705
++      "icu_charted": 0.8682505399568035,
++      "missing": 0.13017112477155673,
++      "omr": 0.0015783352716398074
+     },
+     "timing_basis_counts": {
+-      "nearest_anytime": 10192,
+-      "missing": 1575,
++      "nearest_anytime": 10452,
++      "missing": 1567,
+       "post": 19
+     },
+     "timing_basis_rates": {
+-      "nearest_anytime": 0.86475479382318,
+-      "missing": 0.1336331240454777,
+-      "post": 0.0016120821313422705
++      "nearest_anytime": 0.8682505399568035,
++      "missing": 0.13017112477155673,
++      "post": 0.0015783352716398074
+     },
+     "omr": {
+       "window_days": 365,
+       "source_rows_prepared": 46494,
+       "parsed_value_rows": 46489,
+-      "ed_rows": 11786,
+-      "ed_rows_eligible_for_join": 11786,
+-      "subject_overlap_count": 626,
+-      "candidate_rows_after_subject_join": 1940,
++      "ed_rows": 12038,
++      "ed_rows_eligible_for_join": 12038,
++      "subject_overlap_count": 632,
++      "candidate_rows_after_subject_join": 1970,
+       "days_before_min": -4034,
+       "days_before_max": -275,
+       "nonnegative_candidate_rows": 0,
+@@ -413,37 +479,37 @@
+       "selected_tier_counts": {
+         "pre_ed_365": 0,
+         "post_ed_365": 19,
+-        "missing": 11767
++        "missing": 12019
+       },
+       "selected_tier_rates": {
+         "pre_ed_365": 0.0,
+-        "post_ed_365": 0.0016120821313422705,
+-        "missing": 0.9983879178686578
++        "post_ed_365": 0.0015783352716398074,
++        "missing": 0.9984216647283602
+       },
+       "timing_uncertain_count": 19,
+       "anthro_source_counts": {
+-        "missing": 11767,
++        "missing": 12019,
+         "omr": 19
+       },
+       "source_rows_raw": 46494,
+       "prepared_rows": 46494
+     },
+     "charted_fallback": {
+-      "charted_rows_input": 421296,
+-      "charted_rows_usable": 421296,
++      "charted_rows_input": 424643,
++      "charted_rows_usable": 424643,
+       "nearest_anytime": true,
+       "filled_counts": {
+         "bmi_closest_pre_ed": 0,
+-        "height_closest_pre_ed": 7260,
+-        "weight_closest_pre_ed": 10197
++        "height_closest_pre_ed": 7404,
++        "weight_closest_pre_ed": 10457
+       },
+-      "rows_with_any_charted_fill": 10207,
+-      "subject_overlap_count": 7911,
++      "rows_with_any_charted_fill": 10467,
++      "subject_overlap_count": 8116,
+       "fallback_source_counts": {
+-        "icu_charted": 10192,
++        "icu_charted": 10452,
+         "omr": 15
+       },
+-      "bmi_filled_from_height_weight": 7249,
++      "bmi_filled_from_height_weight": 7392,
+       "enabled": true
+     },
+     "cleaning_audit_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-20 anthropometric_cleaning_audit.csv"
+@@ -454,72 +520,108 @@
+       "model_column": "bmi_closest_pre_ed_model",
+       "lower_bound_exclusive": 0.0,
+       "upper_bound_inclusive": 100.0,
+-      "raw_non_missing_n": 7257,
+-      "outlier_n": 112,
+-      "model_non_missing_n": 7145
++      "raw_non_missing_n": 7400,
++      "outlier_n": 116,
++      "model_non_missing_n": 7284
+     },
+     {
+       "raw_column": "height_closest_pre_ed",
+       "model_column": "height_closest_pre_ed_model",
+       "lower_bound_exclusive": 100.0,
+       "upper_bound_inclusive": 250.0,
+-      "raw_non_missing_n": 7261,
+-      "outlier_n": 33,
+-      "model_non_missing_n": 7228
++      "raw_non_missing_n": 7405,
++      "outlier_n": 38,
++      "model_non_missing_n": 7367
+     },
+     {
+       "raw_column": "weight_closest_pre_ed",
+       "model_column": "weight_closest_pre_ed_model",
+       "lower_bound_exclusive": 0.0,
+       "upper_bound_inclusive": 400.0,
+-      "raw_non_missing_n": 10210,
+-      "outlier_n": 78,
+-      "model_non_missing_n": 10132
++      "raw_non_missing_n": 10470,
++      "outlier_n": 81,
++      "model_non_missing_n": 10389
++    }
++  ],
++  "hco3_integrity_audit": [
++    {
++      "first_hco3_source": "missing",
++      "row_count": 11761,
++      "null_value_count": 11761,
++      "nonnull_value_count": 0,
++      "null_value_rate": 1.0,
++      "source_value_mismatch_n": 0
++    },
++    {
++      "first_hco3_source": "lab_panel_same_specimen",
++      "row_count": 137,
++      "null_value_count": 0,
++      "nonnull_value_count": 137,
++      "null_value_rate": 0.0,
++      "source_value_mismatch_n": 0
++    },
++    {
++      "first_hco3_source": "lab_nearest_to_anchor",
++      "row_count": 112,
++      "null_value_count": 0,
++      "nonnull_value_count": 112,
++      "null_value_rate": 0.0,
++      "source_value_mismatch_n": 0
++    },
++    {
++      "first_hco3_source": "lab_first_0_24h",
++      "row_count": 28,
++      "null_value_count": 0,
++      "nonnull_value_count": 28,
++      "null_value_rate": 0.0,
++      "source_value_mismatch_n": 0
+     }
+   ],
+   "charted_anthro_diagnostics": {
+-    "charted_rows_input": 421296,
+-    "charted_rows_usable": 421296,
++    "charted_rows_input": 424643,
++    "charted_rows_usable": 424643,
+     "nearest_anytime": true,
+     "filled_counts": {
+       "bmi_closest_pre_ed": 0,
+-      "height_closest_pre_ed": 7260,
+-      "weight_closest_pre_ed": 10197
++      "height_closest_pre_ed": 7404,
++      "weight_closest_pre_ed": 10457
+     },
+-    "rows_with_any_charted_fill": 10207,
+-    "subject_overlap_count": 7911,
++    "rows_with_any_charted_fill": 10467,
++    "subject_overlap_count": 8116,
+     "fallback_source_counts": {
+-      "icu_charted": 10192,
++      "icu_charted": 10452,
+       "omr": 15
+     },
+-    "bmi_filled_from_height_weight": 7249,
++    "bmi_filled_from_height_weight": 7392,
+     "enabled": true
+   },
+   "timing_integrity_audit": [
+     {
+-      "rows_total": 11786,
+-      "hospital_los_negative_n": 17,
+-      "admittime_before_ed_intime_n": 15,
+-      "qualifying_gas_observed_n": 7613,
+-      "qualifying_gas_missing_n": 4173
++      "rows_total": 12038,
++      "time_integrity_any_n": 34,
++      "hospital_los_negative_n": 18,
++      "admittime_before_ed_intime_n": 16,
++      "dischtime_before_admittime_n": 18,
++      "qualifying_gas_observed_n": 7752,
++      "qualifying_gas_missing_n": 4286
+     }
+   ],
+   "ventilation_timing_audit": [
+     {
+-      "rows_total": 11786,
++      "rows_total": 12038,
+       "dt_first_imv_hours_negative_n": 6,
+       "dt_first_niv_hours_negative_n": 1,
+       "imv_time_outside_window_n": 28,
+-      "niv_time_outside_window_n": 13,
+-      "dt_first_imv_hours_model_nonnull_n": 6543,
+-      "dt_first_niv_hours_model_nonnull_n": 5058
++      "niv_time_outside_window_n": 16,
++      "dt_first_imv_hours_model_nonnull_n": 6723,
++      "dt_first_niv_hours_model_nonnull_n": 5145
+     }
+   ],
+   "unexpected_full_null_fields": [],
+   "expected_structural_null_fields": [],
+   "uom_expectation_scope": {
+     "frame": "final_cc_preview",
+-    "row_count": 11769
++    "row_count": 12020
+   },
+   "uom_expectation_checks": {
+     "expected_structural_null_fields": [
+@@ -530,19 +632,19 @@
+     "structural_null_checks": {
+       "poc_abg_ph_uom": {
+         "present": true,
+-        "missing_n": 11769,
++        "missing_n": 12020,
+         "missing_pct": 1.0,
+         "all_null": true
+       },
+       "poc_vbg_ph_uom": {
+         "present": true,
+-        "missing_n": 11769,
++        "missing_n": 12020,
+         "missing_pct": 1.0,
+         "all_null": true
+       },
+       "poc_other_ph_uom": {
+         "present": true,
+-        "missing_n": 11769,
++        "missing_n": 12020,
+         "missing_pct": 1.0,
+         "all_null": true
+       }
+@@ -551,7 +653,7 @@
+       "poc_abg_paco2_uom": {
+         "present": true,
+         "paired_value_column": "poc_abg_paco2",
+-        "value_rows": 0,
++        "value_rows": 6934,
+         "missing_uom_when_value_present": 0,
+         "non_mmhg_uom_when_value_present": 0,
+         "passes": true
+@@ -559,7 +661,7 @@
+       "poc_vbg_paco2_uom": {
+         "present": true,
+         "paired_value_column": "poc_vbg_paco2",
+-        "value_rows": 0,
++        "value_rows": 5375,
+         "missing_uom_when_value_present": 0,
+         "non_mmhg_uom_when_value_present": 0,
+         "passes": true
+@@ -578,28 +680,28 @@
+   "first_other_pco2_audit": [
+     {
+       "source": "LAB_BG_UNKNOWN",
+-      "count_nonnull": 2499,
+-      "mean": 49.9463785514,
++      "count_nonnull": 2520,
++      "mean": 49.8424603175,
+       "median": 48.0,
+       "q25": 41.0,
+       "q75": 56.0,
+       "p95": 76.0,
+       "max": 140.0,
+-      "pct_ge_80": 0.0356142457,
+-      "pct_ge_100": 0.006002401,
++      "pct_ge_80": 0.0353174603,
++      "pct_ge_100": 0.005952381,
+       "pct_ge_150": 0.0,
+       "pct_eq_160": 0.0,
+       "top_values": {
+         "50.0": 119,
++        "44.0": 95,
+         "41.0": 95,
+-        "44.0": 94,
+-        "40.0": 91,
+-        "43.0": 90,
+-        "48.0": 88,
++        "40.0": 93,
++        "43.0": 91,
++        "48.0": 89,
+         "51.0": 88,
+-        "42.0": 84,
++        "42.0": 85,
+         "52.0": 84,
+-        "47.0": 77
++        "47.0": 78
+       },
+       "status": "ok",
+       "missing_columns": ""
+@@ -613,9 +715,9 @@
+       "outlier_flag_column": "ed_first_dbp_outlier_flag",
+       "lower_bound": 10.0,
+       "upper_bound": 200.0,
+-      "nonnull_n": 9161,
+-      "out_of_range_n": 9,
+-      "out_of_range_pct": 0.0009824255,
++      "nonnull_n": 9296,
++      "out_of_range_n": 10,
++      "out_of_range_pct": 0.0010757315,
+       "example_outlier_values": "652; 460; 741; 9; 777"
+     },
+     {
+@@ -625,9 +727,9 @@
+       "outlier_flag_column": "ed_first_hr_outlier_flag",
+       "lower_bound": 20.0,
+       "upper_bound": 250.0,
+-      "nonnull_n": 9350,
++      "nonnull_n": 9492,
+       "out_of_range_n": 1,
+-      "out_of_range_pct": 0.0001069519,
++      "out_of_range_pct": 0.0001053519,
+       "example_outlier_values": "6.0"
+     },
+     {
+@@ -637,9 +739,9 @@
+       "outlier_flag_column": "ed_first_o2sat_outlier_flag",
+       "lower_bound": 0.0,
+       "upper_bound": 100.0,
+-      "nonnull_n": 8920,
++      "nonnull_n": 9053,
+       "out_of_range_n": 1,
+-      "out_of_range_pct": 0.0001121076,
++      "out_of_range_pct": 0.0001104606,
+       "example_outlier_values": "1000.0"
+     },
+     {
+@@ -649,7 +751,7 @@
+       "outlier_flag_column": "ed_first_pain_outlier_flag",
+       "lower_bound": 0.0,
+       "upper_bound": 10.0,
+-      "nonnull_n": 7077,
++      "nonnull_n": 7163,
+       "out_of_range_n": 0,
+       "out_of_range_pct": 0.0,
+       "example_outlier_values": ""
+@@ -661,7 +763,7 @@
+       "outlier_flag_column": "ed_first_rr_outlier_flag",
+       "lower_bound": 4.0,
+       "upper_bound": 80.0,
+-      "nonnull_n": 9235,
++      "nonnull_n": 9372,
+       "out_of_range_n": 0,
+       "out_of_range_pct": 0.0,
+       "example_outlier_values": ""
+@@ -673,9 +775,9 @@
+       "outlier_flag_column": "ed_first_sbp_outlier_flag",
+       "lower_bound": 20.0,
+       "upper_bound": 300.0,
+-      "nonnull_n": 9161,
+-      "out_of_range_n": 6,
+-      "out_of_range_pct": 0.0006549503,
++      "nonnull_n": 9296,
++      "out_of_range_n": 7,
++      "out_of_range_pct": 0.000753012,
+       "example_outlier_values": "11; 13; 15; 12; 10"
+     },
+     {
+@@ -685,9 +787,9 @@
+       "outlier_flag_column": "ed_first_temp_outlier_flag",
+       "lower_bound": 50.0,
+       "upper_bound": 120.0,
+-      "nonnull_n": 6911,
+-      "out_of_range_n": 4875,
+-      "out_of_range_pct": 0.7053971929,
++      "nonnull_n": 6993,
++      "out_of_range_n": 5045,
++      "out_of_range_pct": 0.7214357214,
+       "example_outlier_values": ""
+     },
+     {
+@@ -697,9 +799,9 @@
+       "outlier_flag_column": "ed_triage_dbp_outlier_flag",
+       "lower_bound": 10.0,
+       "upper_bound": 200.0,
+-      "nonnull_n": 8738,
+-      "out_of_range_n": 11,
+-      "out_of_range_pct": 0.0012588693,
++      "nonnull_n": 8842,
++      "out_of_range_n": 13,
++      "out_of_range_pct": 0.0014702556,
+       "example_outlier_values": "4.0; 652.0; 8132.0; 460.0; 9.0"
+     },
+     {
+@@ -709,7 +811,7 @@
+       "outlier_flag_column": "ed_triage_hr_outlier_flag",
+       "lower_bound": 20.0,
+       "upper_bound": 250.0,
+-      "nonnull_n": 8807,
++      "nonnull_n": 8916,
+       "out_of_range_n": 0,
+       "out_of_range_pct": 0.0,
+       "example_outlier_values": ""
+@@ -721,9 +823,9 @@
+       "outlier_flag_column": "ed_triage_o2sat_outlier_flag",
+       "lower_bound": 0.0,
+       "upper_bound": 100.0,
+-      "nonnull_n": 8680,
++      "nonnull_n": 8786,
+       "out_of_range_n": 1,
+-      "out_of_range_pct": 0.0001152074,
++      "out_of_range_pct": 0.0001138174,
+       "example_outlier_values": "1000.0"
+     },
+     {
+@@ -733,9 +835,9 @@
+       "outlier_flag_column": "ed_triage_pain_outlier_flag",
+       "lower_bound": 0.0,
+       "upper_bound": 10.0,
+-      "nonnull_n": 8151,
+-      "out_of_range_n": 556,
+-      "out_of_range_pct": 0.0682124893,
++      "nonnull_n": 8244,
++      "out_of_range_n": 570,
++      "out_of_range_pct": 0.0691411936,
+       "example_outlier_values": "13.0; 30.0; 134.0; 11.0; 90.0"
+     },
+     {
+@@ -745,7 +847,7 @@
+       "outlier_flag_column": "ed_triage_rr_outlier_flag",
+       "lower_bound": 4.0,
+       "upper_bound": 80.0,
+-      "nonnull_n": 8645,
++      "nonnull_n": 8749,
+       "out_of_range_n": 0,
+       "out_of_range_pct": 0.0,
+       "example_outlier_values": ""
+@@ -757,10 +859,10 @@
+       "outlier_flag_column": "ed_triage_sbp_outlier_flag",
+       "lower_bound": 20.0,
+       "upper_bound": 300.0,
+-      "nonnull_n": 8777,
+-      "out_of_range_n": 6,
+-      "out_of_range_pct": 0.0006836049,
+-      "example_outlier_values": "15.0; 18.0; 9656.0; 12.0; 14.0"
++      "nonnull_n": 8883,
++      "out_of_range_n": 7,
++      "out_of_range_pct": 0.0007880221,
++      "example_outlier_values": "18.0; 15.0; 9656.0; 12.0; 14.0"
+     },
+     {
+       "domain": "vitals",
+@@ -769,9 +871,9 @@
+       "outlier_flag_column": "ed_triage_temp_outlier_flag",
+       "lower_bound": 50.0,
+       "upper_bound": 120.0,
+-      "nonnull_n": 8343,
+-      "out_of_range_n": 3444,
+-      "out_of_range_pct": 0.4128011507,
++      "nonnull_n": 8435,
++      "out_of_range_n": 3604,
++      "out_of_range_pct": 0.4272673385,
+       "example_outlier_values": "9.1"
+     }
+   ],
+@@ -780,26 +882,26 @@
+       "vital_name": "triage_temp",
+       "raw_column": "ed_triage_temp",
+       "clean_column": "ed_triage_temp_f_clean",
+-      "raw_n_non_missing": 8343,
+-      "raw_missing_pct": 29.21,
++      "raw_n_non_missing": 8435,
++      "raw_missing_pct": 29.93,
+       "raw_min": 9.1,
+       "raw_p1": 95.2,
+       "raw_median": 98.0,
+-      "raw_mean": 97.9359671581,
+-      "raw_p99": 102.0,
++      "raw_mean": 97.9404237107,
++      "raw_p99": 102.066,
+       "raw_max": 107.0,
+-      "clean_n_non_missing": 8342,
+-      "clean_missing_pct": 29.22,
++      "clean_n_non_missing": 8434,
++      "clean_missing_pct": 29.94,
+       "clean_min": 80.0,
+-      "clean_p1": 95.441,
++      "clean_p1": 95.5,
+       "clean_median": 98.0,
+-      "clean_mean": 98.0934588828,
++      "clean_mean": 98.0961980081,
+       "clean_p99": 102.1,
+       "clean_max": 107.0,
+       "ed_triage_temp_was_celsius_like_count": 20.0,
+-      "ed_triage_temp_was_celsius_like_pct": 0.0016969286,
+-      "ed_triage_temp_out_of_range_count": 3444.0,
+-      "ed_triage_temp_out_of_range_pct": 0.2922110979,
++      "ed_triage_temp_was_celsius_like_pct": 0.0016614055,
++      "ed_triage_temp_out_of_range_count": 3604.0,
++      "ed_triage_temp_out_of_range_pct": 0.2993852799,
+       "ed_first_temp_was_celsius_like_count": null,
+       "ed_first_temp_was_celsius_like_pct": null,
+       "ed_first_temp_out_of_range_count": null,
+@@ -837,30 +939,30 @@
+       "vital_name": "first_temp",
+       "raw_column": "ed_first_temp",
+       "clean_column": "ed_first_temp_f_clean",
+-      "raw_n_non_missing": 6911,
+-      "raw_missing_pct": 41.36,
++      "raw_n_non_missing": 6993,
++      "raw_missing_pct": 41.91,
+       "raw_min": 28.6,
+-      "raw_p1": 91.04,
++      "raw_p1": 90.984,
+       "raw_median": 98.0,
+-      "raw_mean": 97.6744595572,
++      "raw_mean": 97.673958244,
+       "raw_p99": 102.7,
+       "raw_max": 107.0,
+-      "clean_n_non_missing": 6911,
+-      "clean_missing_pct": 41.36,
++      "clean_n_non_missing": 6993,
++      "clean_missing_pct": 41.91,
+       "clean_min": 80.0,
+-      "clean_p1": 95.11,
++      "clean_p1": 95.1,
+       "clean_median": 98.0,
+-      "clean_mean": 98.1555013746,
++      "clean_mean": 98.1576076076,
+       "clean_p99": 102.7,
+       "clean_max": 107.0,
+       "ed_triage_temp_was_celsius_like_count": null,
+       "ed_triage_temp_was_celsius_like_pct": null,
+       "ed_triage_temp_out_of_range_count": null,
+       "ed_triage_temp_out_of_range_pct": null,
+-      "ed_first_temp_was_celsius_like_count": 55.0,
+-      "ed_first_temp_was_celsius_like_pct": 0.0046665535,
+-      "ed_first_temp_out_of_range_count": 4875.0,
+-      "ed_first_temp_out_of_range_pct": 0.4136263363,
++      "ed_first_temp_was_celsius_like_count": 56.0,
++      "ed_first_temp_was_celsius_like_pct": 0.0046519355,
++      "ed_first_temp_out_of_range_count": 5045.0,
++      "ed_first_temp_out_of_range_pct": 0.4190895498,
+       "ed_triage_pain_is_sentinel_13_count": null,
+       "ed_triage_pain_is_sentinel_13_pct": null,
+       "ed_triage_pain_out_of_range_count": null,
+@@ -894,20 +996,20 @@
+       "vital_name": "triage_pain",
+       "raw_column": "ed_triage_pain",
+       "clean_column": "ed_triage_pain_clean",
+-      "raw_n_non_missing": 8151,
+-      "raw_missing_pct": 30.84,
++      "raw_n_non_missing": 8244,
++      "raw_missing_pct": 31.52,
+       "raw_min": 0.0,
+       "raw_p1": 0.0,
+       "raw_median": 0.0,
+-      "raw_mean": 3.6639062692,
++      "raw_mean": 3.6646652111,
+       "raw_p99": 13.0,
+       "raw_max": 134.0,
+-      "clean_n_non_missing": 7595,
+-      "clean_missing_pct": 35.56,
++      "clean_n_non_missing": 7674,
++      "clean_missing_pct": 36.25,
+       "clean_min": 0.0,
+       "clean_p1": 0.0,
+       "clean_median": 0.0,
+-      "clean_mean": 2.9462146149,
++      "clean_mean": 2.9373859786,
+       "clean_p99": 10.0,
+       "clean_max": 10.0,
+       "ed_triage_temp_was_celsius_like_count": null,
+@@ -918,10 +1020,10 @@
+       "ed_first_temp_was_celsius_like_pct": null,
+       "ed_first_temp_out_of_range_count": null,
+       "ed_first_temp_out_of_range_pct": null,
+-      "ed_triage_pain_is_sentinel_13_count": 551.0,
+-      "ed_triage_pain_is_sentinel_13_pct": 0.0467503818,
++      "ed_triage_pain_is_sentinel_13_count": 565.0,
++      "ed_triage_pain_is_sentinel_13_pct": 0.0469347068,
+       "ed_triage_pain_out_of_range_count": 5.0,
+-      "ed_triage_pain_out_of_range_pct": 0.0004242321,
++      "ed_triage_pain_out_of_range_pct": 0.0004153514,
+       "ed_first_pain_is_sentinel_13_count": null,
+       "ed_first_pain_is_sentinel_13_pct": null,
+       "ed_first_pain_out_of_range_count": null,
+@@ -951,20 +1053,20 @@
+       "vital_name": "first_pain",
+       "raw_column": "ed_first_pain",
+       "clean_column": "ed_first_pain_clean",
+-      "raw_n_non_missing": 7077,
+-      "raw_missing_pct": 39.95,
++      "raw_n_non_missing": 7163,
++      "raw_missing_pct": 40.5,
+       "raw_min": 0.0,
+       "raw_p1": 0.0,
+       "raw_median": 0.0,
+-      "raw_mean": 2.6821393246,
++      "raw_mean": 2.6664805249,
+       "raw_p99": 10.0,
+       "raw_max": 10.0,
+-      "clean_n_non_missing": 7077,
+-      "clean_missing_pct": 39.95,
++      "clean_n_non_missing": 7163,
++      "clean_missing_pct": 40.5,
+       "clean_min": 0.0,
+       "clean_p1": 0.0,
+       "clean_median": 0.0,
+-      "clean_mean": 2.6821393246,
++      "clean_mean": 2.6664805249,
+       "clean_p99": 10.0,
+       "clean_max": 10.0,
+       "ed_triage_temp_was_celsius_like_count": null,
+@@ -1008,21 +1110,21 @@
+       "vital_name": "triage_sbp",
+       "raw_column": "ed_triage_sbp",
+       "clean_column": "ed_triage_sbp_clean",
+-      "raw_n_non_missing": 8777,
+-      "raw_missing_pct": 25.53,
++      "raw_n_non_missing": 8883,
++      "raw_missing_pct": 26.21,
+       "raw_min": 12.0,
+-      "raw_p1": 75.0,
++      "raw_p1": 74.0,
+       "raw_median": 128.0,
+-      "raw_mean": 131.081121112,
+-      "raw_p99": 202.24,
++      "raw_mean": 131.06979624,
++      "raw_p99": 204.0,
+       "raw_max": 9656.0,
+-      "clean_n_non_missing": 8771,
+-      "clean_missing_pct": 25.58,
++      "clean_n_non_missing": 8876,
++      "clean_missing_pct": 26.27,
+       "clean_min": 24.0,
+       "clean_p1": 75.0,
+       "clean_median": 128.0,
+-      "clean_mean": 130.0616805381,
+-      "clean_p99": 201.3,
++      "clean_mean": 130.0751464624,
++      "clean_p99": 203.25,
+       "clean_max": 256.0,
+       "ed_triage_temp_was_celsius_like_count": null,
+       "ed_triage_temp_was_celsius_like_pct": null,
+@@ -1040,8 +1142,8 @@
+       "ed_first_pain_is_sentinel_13_pct": null,
+       "ed_first_pain_out_of_range_count": null,
+       "ed_first_pain_out_of_range_pct": null,
+-      "ed_triage_sbp_out_of_range_count": 6.0,
+-      "ed_triage_sbp_out_of_range_pct": 0.0005090786,
++      "ed_triage_sbp_out_of_range_count": 7.0,
++      "ed_triage_sbp_out_of_range_pct": 0.0005814919,
+       "ed_triage_dbp_out_of_range_count": null,
+       "ed_triage_dbp_out_of_range_pct": null,
+       "ed_first_sbp_out_of_range_count": null,
+@@ -1065,20 +1167,20 @@
+       "vital_name": "triage_dbp",
+       "raw_column": "ed_triage_dbp",
+       "clean_column": "ed_triage_dbp_clean",
+-      "raw_n_non_missing": 8738,
+-      "raw_missing_pct": 25.86,
++      "raw_n_non_missing": 8842,
++      "raw_missing_pct": 26.55,
+       "raw_min": 4.0,
+       "raw_p1": 37.0,
+       "raw_median": 72.0,
+-      "raw_mean": 74.7075989929,
++      "raw_mean": 75.4928749152,
+       "raw_p99": 120.0,
+       "raw_max": 8132.0,
+-      "clean_n_non_missing": 8727,
+-      "clean_missing_pct": 25.95,
++      "clean_n_non_missing": 8829,
++      "clean_missing_pct": 26.66,
+       "clean_min": 13.0,
+       "clean_p1": 37.0,
+       "clean_median": 72.0,
+-      "clean_mean": 73.0327718575,
++      "clean_mean": 73.0496092423,
+       "clean_p99": 120.0,
+       "clean_max": 173.0,
+       "ed_triage_temp_was_celsius_like_count": null,
+@@ -1099,8 +1201,8 @@
+       "ed_first_pain_out_of_range_pct": null,
+       "ed_triage_sbp_out_of_range_count": null,
+       "ed_triage_sbp_out_of_range_pct": null,
+-      "ed_triage_dbp_out_of_range_count": 11.0,
+-      "ed_triage_dbp_out_of_range_pct": 0.0009333107,
++      "ed_triage_dbp_out_of_range_count": 13.0,
++      "ed_triage_dbp_out_of_range_pct": 0.0010799136,
+       "ed_first_sbp_out_of_range_count": null,
+       "ed_first_sbp_out_of_range_pct": null,
+       "ed_first_dbp_out_of_range_count": null,
+@@ -1122,21 +1224,21 @@
+       "vital_name": "first_sbp",
+       "raw_column": "ed_first_sbp",
+       "clean_column": "ed_first_sbp_clean",
+-      "raw_n_non_missing": 9161,
+-      "raw_missing_pct": 22.27,
++      "raw_n_non_missing": 9296,
++      "raw_missing_pct": 22.78,
+       "raw_min": 10.0,
+       "raw_p1": 73.0,
+       "raw_median": 127.0,
+-      "raw_mean": 128.7984936142,
+-      "raw_p99": 204.4,
++      "raw_mean": 128.7321428571,
++      "raw_p99": 204.0,
+       "raw_max": 268.0,
+-      "clean_n_non_missing": 9155,
+-      "clean_missing_pct": 22.32,
++      "clean_n_non_missing": 9289,
++      "clean_missing_pct": 22.84,
+       "clean_min": 20.0,
+       "clean_p1": 74.0,
+       "clean_median": 127.0,
+-      "clean_mean": 128.8750409612,
+-      "clean_p99": 204.46,
++      "clean_mean": 128.819463882,
++      "clean_p99": 204.0,
+       "clean_max": 268.0,
+       "ed_triage_temp_was_celsius_like_count": null,
+       "ed_triage_temp_was_celsius_like_pct": null,
+@@ -1158,8 +1260,8 @@
+       "ed_triage_sbp_out_of_range_pct": null,
+       "ed_triage_dbp_out_of_range_count": null,
+       "ed_triage_dbp_out_of_range_pct": null,
+-      "ed_first_sbp_out_of_range_count": 6.0,
+-      "ed_first_sbp_out_of_range_pct": 0.0005090786,
++      "ed_first_sbp_out_of_range_count": 7.0,
++      "ed_first_sbp_out_of_range_pct": 0.0005814919,
+       "ed_first_dbp_out_of_range_count": null,
+       "ed_first_dbp_out_of_range_pct": null,
+       "ed_triage_o2sat_gt_100_count": null,
+@@ -1179,20 +1281,20 @@
+       "vital_name": "first_dbp",
+       "raw_column": "ed_first_dbp",
+       "clean_column": "ed_first_dbp_clean",
+-      "raw_n_non_missing": 9161,
+-      "raw_missing_pct": 22.27,
++      "raw_n_non_missing": 9296,
++      "raw_missing_pct": 22.78,
+       "raw_min": 7.0,
+       "raw_p1": 36.0,
+       "raw_median": 71.0,
+-      "raw_mean": 72.4923043336,
++      "raw_mean": 73.2475258176,
+       "raw_p99": 121.0,
+-      "raw_max": 867.0,
+-      "clean_n_non_missing": 9152,
+-      "clean_missing_pct": 22.35,
++      "raw_max": 7110.0,
++      "clean_n_non_missing": 9286,
++      "clean_missing_pct": 22.86,
+       "clean_min": 19.0,
+       "clean_p1": 36.0,
+       "clean_median": 71.0,
+-      "clean_mean": 72.1337412587,
++      "clean_mean": 72.1370880896,
+       "clean_p99": 120.0,
+       "clean_max": 195.0,
+       "ed_triage_temp_was_celsius_like_count": null,
+@@ -1217,8 +1319,8 @@
+       "ed_triage_dbp_out_of_range_pct": null,
+       "ed_first_sbp_out_of_range_count": null,
+       "ed_first_sbp_out_of_range_pct": null,
+-      "ed_first_dbp_out_of_range_count": 9.0,
+-      "ed_first_dbp_out_of_range_pct": 0.0007636179,
++      "ed_first_dbp_out_of_range_count": 10.0,
++      "ed_first_dbp_out_of_range_pct": 0.0008307028,
+       "ed_triage_o2sat_gt_100_count": null,
+       "ed_triage_o2sat_gt_100_pct": null,
+       "ed_triage_o2sat_out_of_range_count": null,
+@@ -1236,20 +1338,20 @@
+       "vital_name": "triage_o2sat",
+       "raw_column": "ed_triage_o2sat",
+       "clean_column": "ed_triage_o2sat_clean",
+-      "raw_n_non_missing": 8680,
+-      "raw_missing_pct": 26.35,
++      "raw_n_non_missing": 8786,
++      "raw_missing_pct": 27.01,
+       "raw_min": 9.0,
+-      "raw_p1": 78.0,
++      "raw_p1": 77.85,
+       "raw_median": 97.0,
+-      "raw_mean": 96.2980414747,
++      "raw_mean": 96.3002503984,
+       "raw_p99": 100.0,
+       "raw_max": 1000.0,
+-      "clean_n_non_missing": 8679,
+-      "clean_missing_pct": 26.36,
++      "clean_n_non_missing": 8785,
++      "clean_missing_pct": 27.02,
+       "clean_min": 9.0,
+-      "clean_p1": 78.0,
++      "clean_p1": 77.84,
+       "clean_median": 97.0,
+-      "clean_mean": 96.1939163498,
++      "clean_mean": 96.197381901,
+       "clean_p99": 100.0,
+       "clean_max": 100.0,
+       "ed_triage_temp_was_celsius_like_count": null,
+@@ -1277,7 +1379,7 @@
+       "ed_first_dbp_out_of_range_count": null,
+       "ed_first_dbp_out_of_range_pct": null,
+       "ed_triage_o2sat_gt_100_count": 1.0,
+-      "ed_triage_o2sat_gt_100_pct": 8.48464e-05,
++      "ed_triage_o2sat_gt_100_pct": 8.30703e-05,
+       "ed_triage_o2sat_out_of_range_count": 0.0,
+       "ed_triage_o2sat_out_of_range_pct": 0.0,
+       "ed_triage_o2sat_zero_count": 0.0,
+@@ -1293,20 +1395,20 @@
+       "vital_name": "first_o2sat",
+       "raw_column": "ed_first_o2sat",
+       "clean_column": "ed_first_o2sat_clean",
+-      "raw_n_non_missing": 8920,
+-      "raw_missing_pct": 24.32,
++      "raw_n_non_missing": 9053,
++      "raw_missing_pct": 24.8,
+       "raw_min": 10.0,
+       "raw_p1": 77.0,
+       "raw_median": 97.0,
+-      "raw_mean": 96.3323991031,
++      "raw_mean": 96.3327073898,
+       "raw_p99": 100.0,
+       "raw_max": 1000.0,
+-      "clean_n_non_missing": 8919,
+-      "clean_missing_pct": 24.33,
++      "clean_n_non_missing": 9052,
++      "clean_missing_pct": 24.8,
+       "clean_min": 10.0,
+       "clean_p1": 77.0,
+       "clean_median": 97.0,
+-      "clean_mean": 96.2310797175,
++      "clean_mean": 96.2328767123,
+       "clean_p99": 100.0,
+       "clean_max": 100.0,
+       "ed_triage_temp_was_celsius_like_count": null,
+@@ -1340,7 +1442,7 @@
+       "ed_triage_o2sat_zero_count": null,
+       "ed_triage_o2sat_zero_pct": null,
+       "ed_first_o2sat_gt_100_count": 1.0,
+-      "ed_first_o2sat_gt_100_pct": 8.48464e-05,
++      "ed_first_o2sat_gt_100_pct": 8.30703e-05,
+       "ed_first_o2sat_out_of_range_count": 0.0,
+       "ed_first_o2sat_out_of_range_pct": 0.0,
+       "ed_first_o2sat_zero_count": 0.0,
+@@ -1352,38 +1454,38 @@
+       "vital_name": "triage_temp",
+       "raw_column": "ed_triage_temp",
+       "clean_column": "ed_triage_temp_f_clean",
+-      "raw_n": 8343,
+-      "clean_n": 8342,
++      "raw_n": 8435,
++      "clean_n": 8434,
+       "raw_removed_n": 1,
+-      "raw_removed_pct": 0.000119861,
++      "raw_removed_pct": 0.0001185536,
+       "converted_celsius_like_n": 20
+     },
+     {
+       "vital_name": "first_temp",
+       "raw_column": "ed_first_temp",
+       "clean_column": "ed_first_temp_f_clean",
+-      "raw_n": 6911,
+-      "clean_n": 6911,
++      "raw_n": 6993,
++      "clean_n": 6993,
+       "raw_removed_n": 0,
+       "raw_removed_pct": 0.0,
+-      "converted_celsius_like_n": 55
++      "converted_celsius_like_n": 56
+     },
+     {
+       "vital_name": "triage_pain",
+       "raw_column": "ed_triage_pain",
+       "clean_column": "ed_triage_pain_clean",
+-      "raw_n": 8151,
+-      "clean_n": 7595,
+-      "raw_removed_n": 556,
+-      "raw_removed_pct": 0.0682124893,
++      "raw_n": 8244,
++      "clean_n": 7674,
++      "raw_removed_n": 570,
++      "raw_removed_pct": 0.0691411936,
+       "converted_celsius_like_n": 0
+     },
+     {
+       "vital_name": "first_pain",
+       "raw_column": "ed_first_pain",
+       "clean_column": "ed_first_pain_clean",
+-      "raw_n": 7077,
+-      "clean_n": 7077,
++      "raw_n": 7163,
++      "clean_n": 7163,
+       "raw_removed_n": 0,
+       "raw_removed_pct": 0.0,
+       "converted_celsius_like_n": 0
+@@ -1392,60 +1494,60 @@
+       "vital_name": "triage_sbp",
+       "raw_column": "ed_triage_sbp",
+       "clean_column": "ed_triage_sbp_clean",
+-      "raw_n": 8777,
+-      "clean_n": 8771,
+-      "raw_removed_n": 6,
+-      "raw_removed_pct": 0.0006836049,
++      "raw_n": 8883,
++      "clean_n": 8876,
++      "raw_removed_n": 7,
++      "raw_removed_pct": 0.0007880221,
+       "converted_celsius_like_n": 0
+     },
+     {
+       "vital_name": "triage_dbp",
+       "raw_column": "ed_triage_dbp",
+       "clean_column": "ed_triage_dbp_clean",
+-      "raw_n": 8738,
+-      "clean_n": 8727,
+-      "raw_removed_n": 11,
+-      "raw_removed_pct": 0.0012588693,
++      "raw_n": 8842,
++      "clean_n": 8829,
++      "raw_removed_n": 13,
++      "raw_removed_pct": 0.0014702556,
+       "converted_celsius_like_n": 0
+     },
+     {
+       "vital_name": "first_sbp",
+       "raw_column": "ed_first_sbp",
+       "clean_column": "ed_first_sbp_clean",
+-      "raw_n": 9161,
+-      "clean_n": 9155,
+-      "raw_removed_n": 6,
+-      "raw_removed_pct": 0.0006549503,
++      "raw_n": 9296,
++      "clean_n": 9289,
++      "raw_removed_n": 7,
++      "raw_removed_pct": 0.000753012,
+       "converted_celsius_like_n": 0
+     },
+     {
+       "vital_name": "first_dbp",
+       "raw_column": "ed_first_dbp",
+       "clean_column": "ed_first_dbp_clean",
+-      "raw_n": 9161,
+-      "clean_n": 9152,
+-      "raw_removed_n": 9,
+-      "raw_removed_pct": 0.0009824255,
++      "raw_n": 9296,
++      "clean_n": 9286,
++      "raw_removed_n": 10,
++      "raw_removed_pct": 0.0010757315,
+       "converted_celsius_like_n": 0
+     },
+     {
+       "vital_name": "triage_o2sat",
+       "raw_column": "ed_triage_o2sat",
+       "clean_column": "ed_triage_o2sat_clean",
+-      "raw_n": 8680,
+-      "clean_n": 8679,
++      "raw_n": 8786,
++      "clean_n": 8785,
+       "raw_removed_n": 1,
+-      "raw_removed_pct": 0.0001152074,
++      "raw_removed_pct": 0.0001138174,
+       "converted_celsius_like_n": 0
+     },
+     {
+       "vital_name": "first_o2sat",
+       "raw_column": "ed_first_o2sat",
+       "clean_column": "ed_first_o2sat_clean",
+-      "raw_n": 8920,
+-      "clean_n": 8919,
++      "raw_n": 9053,
++      "clean_n": 9052,
+       "raw_removed_n": 1,
+-      "raw_removed_pct": 0.0001121076,
++      "raw_removed_pct": 0.0001104606,
+       "converted_celsius_like_n": 0
+     }
+   ],
+@@ -1457,9 +1559,9 @@
+       "outlier_flag_column": "ed_first_dbp_outlier_flag",
+       "lower_bound": 10.0,
+       "upper_bound": 200.0,
+-      "nonnull_n": 9161,
+-      "out_of_range_n": 9,
+-      "out_of_range_pct": 0.0009824255,
++      "nonnull_n": 9296,
++      "out_of_range_n": 10,
++      "out_of_range_pct": 0.0010757315,
+       "example_outlier_values": "652; 460; 741; 9; 777"
+     },
+     {
+@@ -1469,9 +1571,9 @@
+       "outlier_flag_column": "ed_first_hr_outlier_flag",
+       "lower_bound": 20.0,
+       "upper_bound": 250.0,
+-      "nonnull_n": 9350,
++      "nonnull_n": 9492,
+       "out_of_range_n": 1,
+-      "out_of_range_pct": 0.0001069519,
++      "out_of_range_pct": 0.0001053519,
+       "example_outlier_values": "6.0"
+     },
+     {
+@@ -1481,9 +1583,9 @@
+       "outlier_flag_column": "ed_first_o2sat_outlier_flag",
+       "lower_bound": 0.0,
+       "upper_bound": 100.0,
+-      "nonnull_n": 8920,
++      "nonnull_n": 9053,
+       "out_of_range_n": 1,
+-      "out_of_range_pct": 0.0001121076,
++      "out_of_range_pct": 0.0001104606,
+       "example_outlier_values": "1000.0"
+     },
+     {
+@@ -1493,7 +1595,7 @@
+       "outlier_flag_column": "ed_first_pain_outlier_flag",
+       "lower_bound": 0.0,
+       "upper_bound": 10.0,
+-      "nonnull_n": 7077,
++      "nonnull_n": 7163,
+       "out_of_range_n": 0,
+       "out_of_range_pct": 0.0,
+       "example_outlier_values": ""
+@@ -1505,7 +1607,7 @@
+       "outlier_flag_column": "ed_first_rr_outlier_flag",
+       "lower_bound": 4.0,
+       "upper_bound": 80.0,
+-      "nonnull_n": 9235,
++      "nonnull_n": 9372,
+       "out_of_range_n": 0,
+       "out_of_range_pct": 0.0,
+       "example_outlier_values": ""
+@@ -1517,9 +1619,9 @@
+       "outlier_flag_column": "ed_first_sbp_outlier_flag",
+       "lower_bound": 20.0,
+       "upper_bound": 300.0,
+-      "nonnull_n": 9161,
+-      "out_of_range_n": 6,
+-      "out_of_range_pct": 0.0006549503,
++      "nonnull_n": 9296,
++      "out_of_range_n": 7,
++      "out_of_range_pct": 0.000753012,
+       "example_outlier_values": "11; 13; 15; 12; 10"
+     },
+     {
+@@ -1529,9 +1631,9 @@
+       "outlier_flag_column": "ed_first_temp_outlier_flag",
+       "lower_bound": 50.0,
+       "upper_bound": 120.0,
+-      "nonnull_n": 6911,
+-      "out_of_range_n": 4875,
+-      "out_of_range_pct": 0.7053971929,
++      "nonnull_n": 6993,
++      "out_of_range_n": 5045,
++      "out_of_range_pct": 0.7214357214,
+       "example_outlier_values": ""
+     },
+     {
+@@ -1541,9 +1643,9 @@
+       "outlier_flag_column": "ed_triage_dbp_outlier_flag",
+       "lower_bound": 10.0,
+       "upper_bound": 200.0,
+-      "nonnull_n": 8738,
+-      "out_of_range_n": 11,
+-      "out_of_range_pct": 0.0012588693,
++      "nonnull_n": 8842,
++      "out_of_range_n": 13,
++      "out_of_range_pct": 0.0014702556,
+       "example_outlier_values": "4.0; 652.0; 8132.0; 460.0; 9.0"
+     },
+     {
+@@ -1553,7 +1655,7 @@
+       "outlier_flag_column": "ed_triage_hr_outlier_flag",
+       "lower_bound": 20.0,
+       "upper_bound": 250.0,
+-      "nonnull_n": 8807,
++      "nonnull_n": 8916,
+       "out_of_range_n": 0,
+       "out_of_range_pct": 0.0,
+       "example_outlier_values": ""
+@@ -1565,9 +1667,9 @@
+       "outlier_flag_column": "ed_triage_o2sat_outlier_flag",
+       "lower_bound": 0.0,
+       "upper_bound": 100.0,
+-      "nonnull_n": 8680,
++      "nonnull_n": 8786,
+       "out_of_range_n": 1,
+-      "out_of_range_pct": 0.0001152074,
++      "out_of_range_pct": 0.0001138174,
+       "example_outlier_values": "1000.0"
+     },
+     {
+@@ -1577,9 +1679,9 @@
+       "outlier_flag_column": "ed_triage_pain_outlier_flag",
+       "lower_bound": 0.0,
+       "upper_bound": 10.0,
+-      "nonnull_n": 8151,
+-      "out_of_range_n": 556,
+-      "out_of_range_pct": 0.0682124893,
++      "nonnull_n": 8244,
++      "out_of_range_n": 570,
++      "out_of_range_pct": 0.0691411936,
+       "example_outlier_values": "13.0; 30.0; 134.0; 11.0; 90.0"
+     },
+     {
+@@ -1589,7 +1691,7 @@
+       "outlier_flag_column": "ed_triage_rr_outlier_flag",
+       "lower_bound": 4.0,
+       "upper_bound": 80.0,
+-      "nonnull_n": 8645,
++      "nonnull_n": 8749,
+       "out_of_range_n": 0,
+       "out_of_range_pct": 0.0,
+       "example_outlier_values": ""
+@@ -1601,10 +1703,10 @@
+       "outlier_flag_column": "ed_triage_sbp_outlier_flag",
+       "lower_bound": 20.0,
+       "upper_bound": 300.0,
+-      "nonnull_n": 8777,
+-      "out_of_range_n": 6,
+-      "out_of_range_pct": 0.0006836049,
+-      "example_outlier_values": "15.0; 18.0; 9656.0; 12.0; 14.0"
++      "nonnull_n": 8883,
++      "out_of_range_n": 7,
++      "out_of_range_pct": 0.0007880221,
++      "example_outlier_values": "18.0; 15.0; 9656.0; 12.0; 14.0"
+     },
+     {
+       "domain": "vitals",
+@@ -1613,9 +1715,9 @@
+       "outlier_flag_column": "ed_triage_temp_outlier_flag",
+       "lower_bound": 50.0,
+       "upper_bound": 120.0,
+-      "nonnull_n": 8343,
+-      "out_of_range_n": 3444,
+-      "out_of_range_pct": 0.4128011507,
++      "nonnull_n": 8435,
++      "out_of_range_n": 3604,
++      "out_of_range_pct": 0.4272673385,
+       "example_outlier_values": "9.1"
+     },
+     {
+@@ -1625,7 +1727,7 @@
+       "outlier_flag_column": "first_lactate_outlier_flag",
+       "lower_bound": 0.0,
+       "upper_bound": 30.0,
+-      "nonnull_n": 6225,
++      "nonnull_n": 6334,
+       "out_of_range_n": 0,
+       "out_of_range_pct": 0.0,
+       "example_outlier_values": ""
+@@ -1637,9 +1739,9 @@
+       "outlier_flag_column": "first_pco2_outlier_flag",
+       "lower_bound": 10.0,
+       "upper_bound": 200.0,
+-      "nonnull_n": 7613,
++      "nonnull_n": 7752,
+       "out_of_range_n": 2,
+-      "out_of_range_pct": 0.0002627085,
++      "out_of_range_pct": 0.0002579979,
+       "example_outlier_values": "9.0"
+     },
+     {
+@@ -1649,9 +1751,9 @@
+       "outlier_flag_column": "first_ph_outlier_flag",
+       "lower_bound": 6.8,
+       "upper_bound": 7.8,
+-      "nonnull_n": 7613,
++      "nonnull_n": 7752,
+       "out_of_range_n": 9,
+-      "out_of_range_pct": 0.0011821884,
++      "out_of_range_pct": 0.0011609907,
+       "example_outlier_values": "6.66; 6.6; 6.69; 6.73; 6.76"
+     }
+   ],
+@@ -1665,7 +1767,8 @@
+     "pco2_itemid_qc": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-20 pco2_itemid_qc_audit.csv",
+     "pco2_source_distribution": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-20 pco2_source_distribution_audit.csv",
+     "other_route_quarantine": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-20 other_route_quarantine_audit.csv",
+-    "first_gas_anchor": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-20 first_gas_anchor_audit.csv"
++    "first_gas_anchor": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-20 first_gas_anchor_audit.csv",
++    "hco3_integrity": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-20 hco3_integrity_audit.csv"
+   },
+   "timing_integrity_audit_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-20 timing_integrity_audit.csv",
+   "ventilation_timing_audit_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-20 ventilation_timing_audit.csv",
+@@ -1677,7 +1780,7 @@
+     "gas_source_other_rate_high"
+   ],
+   "run_metadata": {
+-    "run_utc": "2026-02-20T15:11:34.800993+00:00",
++    "run_utc": "2026-02-20T19:16:53.355268+00:00",
+     "work_project": "mimic-hypercapnia",
+     "physionet_project": "physionet-data",
+     "datasets": {
+@@ -1692,6 +1795,6 @@
+     },
+     "notebook": "MIMICIV_hypercap_EXT_cohort.ipynb",
+     "blood_gas_manifest_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/specs/blood_gas_itemids.json",
+-    "blood_gas_manifest_version": "2026-02-17"
++    "blood_gas_manifest_version": "2026-02-20.1"
+   }
+ }
+\ No newline at end of file
+diff --git a/specs/blood_gas_itemids.json b/specs/blood_gas_itemids.json
+index 20db61c..0120272 100644
+--- a/specs/blood_gas_itemids.json
++++ b/specs/blood_gas_itemids.json
+@@ -1,5 +1,5 @@
+ {
+-  "version": "2026-02-17",
++  "version": "2026-02-20.1",
+   "lab": {
+     "pco2_itemids": [
+       50818
+@@ -22,7 +22,26 @@
+     ]
+   },
+   "icu": {
+-    "pco2_itemids": [],
++    "pco2_itemids": [
++      220235,
++      226062
++    ],
++    "pco2_abg_itemids": [
++      220235
++    ],
++    "pco2_vbg_itemids": [
++      226062
++    ],
++    "excluded_pco2_itemids": [
++      220245,
++      223679,
++      225698,
++      227036,
++      227038,
++      228640,
++      228641,
++      228878
++    ],
+     "ph_itemids": [],
+     "hco3_itemids": [],
+     "specimen_type_itemids": [],
+diff --git a/src/hypercap_cc_nlp/pipeline_audit.py b/src/hypercap_cc_nlp/pipeline_audit.py
+index 9331686..49b1484 100644
+--- a/src/hypercap_cc_nlp/pipeline_audit.py
++++ b/src/hypercap_cc_nlp/pipeline_audit.py
+@@ -8,6 +8,7 @@ import os
+ import re
+ import subprocess
+ import sys
++import hashlib
+ from dataclasses import dataclass
+ from datetime import datetime, timezone
+ from importlib.metadata import PackageNotFoundError, version
+@@ -78,6 +79,7 @@ ENV_KNOBS: tuple[str, ...] = (
+     "COHORT_ALLOW_EMPTY_OMR",
+     "COHORT_ANTHRO_MIN_BMI_COVERAGE",
+     "RUN_MANIFEST_STAGE_SCOPE",
++    "RUN_MANIFEST_REQUIRE_CLEAN_GIT",
+     "GOOGLE_APPLICATION_CREDENTIALS",
+     "HF_TOKEN",
+ )
+@@ -170,6 +172,7 @@ def collect_run_manifest(
+     selected_env_vars: Iterable[str] = ENV_KNOBS,
+ ) -> dict[str, Any]:
+     """Collect immutable runtime metadata for reproducibility."""
++    selected_env_vars = tuple(selected_env_vars)
+     package_names = ("pandas", "numpy", "spacy", "torch", "sentence-transformers")
+     package_versions: dict[str, str] = {}
+     for package_name in package_names:
+@@ -181,6 +184,40 @@ def collect_run_manifest(
+     branch = _run_text_command(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=work_dir)
+     commit = _run_text_command(["git", "rev-parse", "HEAD"], cwd=work_dir)
+     dirty = bool(_run_text_command(["git", "status", "--porcelain"], cwd=work_dir))
++    config_fingerprint = hashlib.sha256(
++        json.dumps(
++            {key: os.getenv(key, "") for key in selected_env_vars},
++            sort_keys=True,
++        ).encode("utf-8")
++    ).hexdigest()
++
++    dirty_diff_path: str | None = None
++    dirty_diff_sha256: str | None = None
++    dirty_diff_line_count = 0
++    if dirty:
++        diff_completed = subprocess.run(
++            ["git", "diff", "--binary"],
++            cwd=str(work_dir),
++            check=False,
++            capture_output=True,
++            text=True,
++        )
++        if diff_completed.returncode == 0 and diff_completed.stdout:
++            diff_dir = (work_dir / "debug" / "run_manifests").resolve()
++            diff_dir.mkdir(parents=True, exist_ok=True)
++            diff_file = diff_dir / f"{run_id}_git.diff"
++            diff_file.write_text(diff_completed.stdout)
++            dirty_diff_path = str(diff_file)
++            dirty_diff_sha256 = hashlib.sha256(
++                diff_completed.stdout.encode("utf-8")
++            ).hexdigest()
++            dirty_diff_line_count = int(diff_completed.stdout.count("\n"))
++
++    require_clean_git = os.getenv("RUN_MANIFEST_REQUIRE_CLEAN_GIT", "0").strip() == "1"
++    if dirty and require_clean_git:
++        raise RuntimeError(
++            "Repository has uncommitted changes and RUN_MANIFEST_REQUIRE_CLEAN_GIT=1."
++        )
+ 
+     return {
+         "run_id": run_id,
+@@ -192,7 +229,12 @@ def collect_run_manifest(
+             "branch": branch,
+             "commit": commit,
+             "dirty": dirty,
++            "dirty_diff_path": dirty_diff_path,
++            "dirty_diff_sha256": dirty_diff_sha256,
++            "dirty_diff_line_count": dirty_diff_line_count,
++            "require_clean_git": require_clean_git,
+         },
++        "config_hash_sha256": config_fingerprint,
+         "package_versions": package_versions,
+         "env_knobs": {
+             key: _safe_env_value(key, os.getenv(key))
+diff --git a/src/hypercap_cc_nlp/pipeline_contracts.py b/src/hypercap_cc_nlp/pipeline_contracts.py
+index 3a4e492..757e9a0 100644
+--- a/src/hypercap_cc_nlp/pipeline_contracts.py
++++ b/src/hypercap_cc_nlp/pipeline_contracts.py
+@@ -29,6 +29,7 @@ COHORT_REQUIRED_AUDIT_SUFFIXES = (
+     "pco2_source_distribution_audit.csv",
+     "other_route_quarantine_audit.csv",
+     "first_gas_anchor_audit.csv",
++    "hco3_integrity_audit.csv",
+     "timing_integrity_audit.csv",
+     "ventilation_timing_audit.csv",
+     "anthropometric_cleaning_audit.csv",
+@@ -148,15 +149,19 @@ def validate_cohort_contract(
+     required = {
+         "abg_hypercap_threshold",
+         "vbg_hypercap_threshold",
+-        "other_hypercap_threshold",
+         "pco2_threshold_any",
+     }
+     if required.issubset(df.columns):
+         abg = pd.to_numeric(df["abg_hypercap_threshold"], errors="coerce").fillna(0).astype(int)
+         vbg = pd.to_numeric(df["vbg_hypercap_threshold"], errors="coerce").fillna(0).astype(int)
+-        other = pd.to_numeric(df["other_hypercap_threshold"], errors="coerce").fillna(0).astype(int)
++        if "unknown_hypercap_threshold" in df.columns:
++            unknown = pd.to_numeric(df["unknown_hypercap_threshold"], errors="coerce").fillna(0).astype(int)
++        elif "other_hypercap_threshold" in df.columns:
++            unknown = pd.to_numeric(df["other_hypercap_threshold"], errors="coerce").fillna(0).astype(int)
++        else:
++            unknown = pd.Series(0, index=df.index, dtype="int64")
+         any_reported = pd.to_numeric(df["pco2_threshold_any"], errors="coerce").fillna(0).astype(int)
+-        any_expected = (abg | vbg | other).astype(int)
++        any_expected = (abg | vbg | unknown).astype(int)
+         mismatch = int((any_expected != any_reported).sum())
+         if mismatch:
+             findings.append(
+@@ -357,6 +362,25 @@ def validate_cohort_contract(
+                 }
+             )
+ 
++    integrity_flag_columns = {
++        "time_integrity_any",
++        "hospital_los_negative_flag",
++        "admittime_before_ed_intime_flag",
++        "dischtime_before_admittime_flag",
++    }
++    missing_integrity_flags = sorted(integrity_flag_columns.difference(df.columns))
++    if missing_integrity_flags:
++        findings.append(
++            {
++                "severity": "warning",
++                "code": "missing_time_integrity_flags",
++                "message": (
++                    "Missing time-integrity diagnostic flags: "
++                    f"{missing_integrity_flags}"
++                ),
++            }
++        )
++
+     for model_col, raw_col, flag_col, code in (
+         (
+             "dt_first_imv_hours_model",
+@@ -509,7 +533,13 @@ def validate_cohort_contract(
+             )
+     elif any(
+         column_name in df.columns
+-        for column_name in ("poc_other_paco2", "poc_other_quarantined_hypercap_threshold")
++        for column_name in (
++            "poc_abg_paco2",
++            "poc_vbg_paco2",
++            "poc_other_paco2",
++            "poc_unknown_hypercap_threshold",
++            "poc_other_quarantined_hypercap_threshold",
++        )
+     ):
+         findings.append(
+             {
+@@ -531,9 +561,14 @@ def validate_cohort_contract(
+         )
+ 
+     gas_source_other_rate = None
+-    if "gas_source_other_rate" in df.columns:
++    if "gas_source_other_rate" in df.columns or "gas_source_unknown_rate" in df.columns:
++        rate_col = (
++            "gas_source_other_rate"
++            if "gas_source_other_rate" in df.columns
++            else "gas_source_unknown_rate"
++        )
+         gas_source_other_rate = float(
+-            pd.to_numeric(df["gas_source_other_rate"], errors="coerce").mean()
++            pd.to_numeric(df[rate_col], errors="coerce").mean()
+         )
+         if (
+             gas_source_other_fail_threshold is not None
+@@ -566,20 +601,10 @@ def validate_cohort_contract(
+     first_other_poc_rows = 0
+     if {"first_other_src", "first_other_pco2"}.issubset(df.columns):
+         source = df["first_other_src"].astype("string").str.strip().str.upper()
+-        first_other_poc_rows = int(source.eq("POC").sum())
+-        if first_other_poc_rows > 0:
+-            findings.append(
+-                {
+-                    "severity": "error",
+-                    "code": "first_other_src_contains_poc",
+-                    "message": (
+-                        "first_other_src contains POC rows under LAB-only OTHER policy: "
+-                        f"{first_other_poc_rows} rows."
+-                    ),
+-                }
+-            )
++        source_is_poc = source.str.contains("POC", na=False)
++        first_other_poc_rows = int(source_is_poc.sum())
+         values = pd.to_numeric(df["first_other_pco2"], errors="coerce")
+-        poc_values = values.loc[source.eq("POC") & values.notna()]
++        poc_values = values.loc[source_is_poc & values.notna()]
+         poc_other_pco2_count = int(poc_values.shape[0])
+         if poc_other_pco2_count > 0:
+             poc_other_pco2_median = float(poc_values.median())
+@@ -593,9 +618,9 @@ def validate_cohort_contract(
+                 findings.append(
+                     {
+                         "severity": "error",
+-                        "code": "poc_other_pco2_median_out_of_bounds",
++                        "code": "poc_unknown_pco2_median_out_of_bounds",
+                         "message": (
+-                            "POC first_other_pco2 median outside hard-coded QA bounds "
++                            "POC UNKNOWN first_other_pco2 median outside hard-coded QA bounds "
+                             f"[{COHORT_POC_PCO2_MEDIAN_MIN:.1f}, {COHORT_POC_PCO2_MEDIAN_MAX:.1f}] "
+                             f"with median={poc_other_pco2_median:.1f} (n={poc_other_pco2_count})."
+                         ),
+@@ -611,18 +636,9 @@ def validate_cohort_contract(
+             .astype(int)
+             .eq(1)
+         )
+-        poc_other_quarantine_leak_n = int((other_flag & detail.eq("poc_quarantined")).sum())
+-        if poc_other_quarantine_leak_n > 0:
+-            findings.append(
+-                {
+-                    "severity": "error",
+-                    "code": "poc_other_quarantine_leakage",
+-                    "message": (
+-                        "POC quarantined OTHER rows leaked into other_hypercap_threshold: "
+-                        f"{poc_other_quarantine_leak_n} rows."
+-                    ),
+-                }
+-            )
++        poc_other_quarantine_leak_n = int(
++            (other_flag & detail.isin({"poc_bg_unknown", "poc_bg_unknown_available"})).sum()
++        )
+ 
+     anthro_source_counts: dict[str, int] = {}
+     if "anthro_source" in df.columns:
+@@ -663,6 +679,7 @@ def validate_cohort_contract(
+             )
+ 
+     hco3_coverage_rate = None
++    hco3_source_value_mismatch_n = 0
+     if "first_hco3" in df.columns:
+         hco3_coverage_rate = float(
+             pd.to_numeric(df["first_hco3"], errors="coerce").notna().mean()
+@@ -678,6 +695,23 @@ def validate_cohort_contract(
+                     ),
+                 }
+             )
++    if {"first_hco3", "first_hco3_source"}.issubset(df.columns):
++        hco3_values = pd.to_numeric(df["first_hco3"], errors="coerce")
++        hco3_source = df["first_hco3_source"].astype("string").fillna("missing")
++        hco3_source_value_mismatch_n = int(
++            ((hco3_source != "missing") & hco3_values.isna()).sum()
++        )
++        if hco3_source_value_mismatch_n > 0:
++            findings.append(
++                {
++                    "severity": "error",
++                    "code": "first_hco3_source_value_mismatch",
++                    "message": (
++                        "first_hco3_source implies a value but first_hco3 is null in "
++                        f"{hco3_source_value_mismatch_n} rows."
++                    ),
++                }
++            )
+ 
+     status = _status_from_findings(findings)
+     return {
+@@ -697,6 +731,7 @@ def validate_cohort_contract(
+         "anthro_bmi_coverage_rate": bmi_coverage_rate,
+         "anthro_model_invalid_counts": anthro_model_invalid_counts,
+         "first_hco3_coverage_rate": hco3_coverage_rate,
++        "first_hco3_source_value_mismatch_n": hco3_source_value_mismatch_n,
+         "anthro_source_counts": anthro_source_counts,
+         "findings": findings,
+     }
+@@ -767,6 +802,24 @@ def build_pipeline_contract_report_for_stages(
+                         ),
+                     }
+                     cohort_report.setdefault("findings", []).append(finding)
++                else:
++                    latest_audit_path = Path(latest_path)
++                    try:
++                        if latest_audit_path.suffix.lower() == ".csv":
++                            pd.read_csv(latest_audit_path, nrows=5)
++                        elif latest_audit_path.suffix.lower() == ".json":
++                            json.loads(latest_audit_path.read_text())
++                    except Exception as exc:
++                        cohort_report.setdefault("findings", []).append(
++                            {
++                                "severity": "error",
++                                "code": "invalid_cohort_audit_artifact",
++                                "message": (
++                                    "Failed to parse required cohort audit artifact "
++                                    f"{latest_audit_path}: {exc}"
++                                ),
++                            }
++                        )
+             cohort_report["audit_artifacts"] = audit_artifacts
+             contracts["cohort"] = cohort_report
+             findings.extend(cohort_report["findings"])
+diff --git a/tests/test_pipeline_contracts.py b/tests/test_pipeline_contracts.py
+index 56baa05..bf791d2 100644
+--- a/tests/test_pipeline_contracts.py
++++ b/tests/test_pipeline_contracts.py
+@@ -145,7 +145,7 @@ def test_validate_cohort_contract_fails_when_poc_other_pco2_median_out_of_bounds
+     codes = {finding["code"] for finding in report["findings"]}
+ 
+     assert report["status"] == "fail"
+-    assert "poc_other_pco2_median_out_of_bounds" in codes
++    assert "poc_unknown_pco2_median_out_of_bounds" in codes
+     assert report["poc_other_pco2_median"] > COHORT_POC_PCO2_MEDIAN_MAX
+ 
+ 
+@@ -162,15 +162,20 @@ def test_validate_cohort_contract_flags_poc_quarantine_leakage() -> None:
+             "gas_source_inference_primary_tier": ["specimen_text", "specimen_text"],
+             "gas_source_hint_conflict_rate": [0.0, 0.0],
+             "gas_source_resolved_rate": [1.0, 1.0],
++            "time_integrity_any": [False, False],
++            "hospital_los_negative_flag": [False, False],
++            "admittime_before_ed_intime_flag": [False, False],
++            "dischtime_before_admittime_flag": [False, False],
+             "bmi_closest_pre_ed": [30.0, 32.0],
+             "anthro_source": ["omr", "icu_charted"],
+-            "first_other_src_detail": ["poc_quarantined", "lab_bg_unknown"],
++            "first_other_src_detail": ["poc_bg_unknown", "lab_bg_unknown"],
+         }
+     )
+     report = validate_cohort_contract(df)
+     codes = {finding["code"] for finding in report["findings"]}
+-    assert report["status"] == "fail"
+-    assert "poc_other_quarantine_leakage" in codes
++    assert report["status"] == "pass"
++    assert report["poc_other_quarantine_leak_n"] == 1
++    assert "poc_other_quarantine_leakage" not in codes
+ 
+ 
+ def test_validate_cohort_contract_flags_first_gas_anchor_without_pco2() -> None:
+@@ -248,6 +253,10 @@ def test_validate_cohort_contract_flags_first_other_src_poc_rows() -> None:
+             "gas_source_inference_primary_tier": ["specimen_text", "specimen_text"],
+             "gas_source_hint_conflict_rate": [0.0, 0.0],
+             "gas_source_resolved_rate": [1.0, 1.0],
++            "time_integrity_any": [False, False],
++            "hospital_los_negative_flag": [False, False],
++            "admittime_before_ed_intime_flag": [False, False],
++            "dischtime_before_admittime_flag": [False, False],
+             "bmi_closest_pre_ed": [30.0, 32.0],
+             "anthro_source": ["omr", "icu_charted"],
+             "first_other_src": ["POC", "LAB_BG_UNKNOWN"],
+@@ -256,8 +265,9 @@ def test_validate_cohort_contract_flags_first_other_src_poc_rows() -> None:
+     )
+     report = validate_cohort_contract(df)
+     codes = {finding["code"] for finding in report["findings"]}
+-    assert report["status"] == "fail"
+-    assert "first_other_src_contains_poc" in codes
++    assert report["status"] == "pass"
++    assert report["first_other_poc_rows"] == 1
++    assert "first_other_src_contains_poc" not in codes
+ 
+ 
+ def test_validate_cohort_contract_warns_on_low_first_hco3_coverage() -> None:
+@@ -307,6 +317,10 @@ def test_build_pipeline_contract_report_reads_canonical_outputs(tmp_path: Path)
+             "gas_source_inference_primary_tier": ["specimen_text"],
+             "gas_source_hint_conflict_rate": [0.0],
+             "gas_source_resolved_rate": [1.0],
++            "time_integrity_any": [False],
++            "hospital_los_negative_flag": [False],
++            "admittime_before_ed_intime_flag": [False],
++            "dischtime_before_admittime_flag": [False],
+         }
+     )
+     cohort.to_excel(data_dir / CANONICAL_COHORT_FILENAME, index=False)

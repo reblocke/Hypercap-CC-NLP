@@ -1,0 +1,18 @@
+domain,raw_column,model_column,outlier_flag_column,lower_bound,upper_bound,nonnull_n,out_of_range_n,out_of_range_pct,example_outlier_values
+vitals,ed_first_dbp,ed_first_dbp_model,ed_first_dbp_outlier_flag,10.0,200.0,9296,10,0.0010757314974182443,652; 460; 741; 9; 777
+vitals,ed_first_hr,ed_first_hr_model,ed_first_hr_outlier_flag,20.0,250.0,9492,1,0.00010535187526337969,6.0
+vitals,ed_first_o2sat,ed_first_o2sat_model,ed_first_o2sat_outlier_flag,0.0,100.0,9053,1,0.00011046062078868883,1000.0
+vitals,ed_first_pain,ed_first_pain_model,ed_first_pain_outlier_flag,0.0,10.0,7163,0,0.0,
+vitals,ed_first_rr,ed_first_rr_model,ed_first_rr_outlier_flag,4.0,80.0,9372,0,0.0,
+vitals,ed_first_sbp,ed_first_sbp_model,ed_first_sbp_outlier_flag,20.0,300.0,9296,7,0.0007530120481927711,11; 13; 15; 12; 10
+vitals,ed_first_temp,ed_first_temp_model,ed_first_temp_outlier_flag,50.0,120.0,6993,5045,0.7214357214357214,
+vitals,ed_triage_dbp,ed_triage_dbp_model,ed_triage_dbp_outlier_flag,10.0,200.0,8842,13,0.001470255598280932,4.0; 652.0; 8132.0; 460.0; 9.0
+vitals,ed_triage_hr,ed_triage_hr_model,ed_triage_hr_outlier_flag,20.0,250.0,8916,0,0.0,
+vitals,ed_triage_o2sat,ed_triage_o2sat_model,ed_triage_o2sat_outlier_flag,0.0,100.0,8786,1,0.00011381743683132256,1000.0
+vitals,ed_triage_pain,ed_triage_pain_model,ed_triage_pain_outlier_flag,0.0,10.0,8244,570,0.06914119359534207,13.0; 30.0; 134.0; 11.0; 90.0
+vitals,ed_triage_rr,ed_triage_rr_model,ed_triage_rr_outlier_flag,4.0,80.0,8749,0,0.0,
+vitals,ed_triage_sbp,ed_triage_sbp_model,ed_triage_sbp_outlier_flag,20.0,300.0,8883,7,0.0007880220646178094,18.0; 15.0; 9656.0; 12.0; 14.0
+vitals,ed_triage_temp,ed_triage_temp_model,ed_triage_temp_outlier_flag,50.0,120.0,8435,3604,0.42726733847065795,9.1
+gas,first_lactate,first_lactate_model,first_lactate_outlier_flag,0.0,30.0,6334,0,0.0,
+gas,first_pco2,first_pco2_model,first_pco2_outlier_flag,10.0,200.0,7752,2,0.00025799793601651185,9.0
+gas,first_ph,first_ph_model,first_ph_outlier_flag,6.8,7.8,7752,9,0.0011609907120743034,6.66; 6.6; 6.69; 6.73; 6.76

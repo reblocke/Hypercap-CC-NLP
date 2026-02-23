@@ -1,0 +1,139 @@
+{
+  "panel_rows": 71399,
+  "source_present": true,
+  "source_counts": {
+    "unknown": 47312,
+    "arterial": 14635,
+    "venous": 9452
+  },
+  "source_rates": {
+    "unknown": 0.6626423339262455,
+    "arterial": 0.20497485959187103,
+    "venous": 0.1323828064818835
+  },
+  "all_other_or_unknown": false,
+  "tier_counts": {
+    "fallback_unknown": 47312,
+    "specimen_text": 24087
+  },
+  "tier_rates": {
+    "fallback_unknown": 0.6626423339262455,
+    "specimen_text": 0.33735766607375456
+  },
+  "mode": "specimen_only",
+  "resolved_rows": 24087,
+  "resolved_rate": 0.33735766607375456,
+  "unresolved_specimen_id_count": 47279,
+  "unresolved_specimen_id_examples": [
+    1068183,
+    2752210,
+    12826971,
+    39367736,
+    45465398,
+    54325826,
+    95145860,
+    97178600,
+    9593781,
+    81892638,
+    18027495,
+    29753913,
+    39459350,
+    75616262,
+    50588428,
+    86652150,
+    88463482,
+    45338459,
+    62225368,
+    65374931
+  ],
+  "heuristic_reference": {
+    "panel_rows": 71399,
+    "source_present": true,
+    "source_counts": {
+      "unknown": 25935,
+      "arterial": 25780,
+      "venous": 19684
+    },
+    "source_rates": {
+      "unknown": 0.3632403815179484,
+      "arterial": 0.3610694827658651,
+      "venous": 0.2756901357161865
+    },
+    "all_other_or_unknown": false,
+    "tier_counts": {
+      "fallback_unknown": 25935,
+      "specimen_text": 24087,
+      "cluster_inheritance": 21377
+    },
+    "tier_rates": {
+      "fallback_unknown": 0.3632403815179484,
+      "specimen_text": 0.33735766607375456,
+      "cluster_inheritance": 0.29940195240829703
+    },
+    "mode": "metadata_only",
+    "resolved_rows": 45464,
+    "resolved_rate": 0.6367596184820515,
+    "unresolved_specimen_id_count": 25918,
+    "unresolved_specimen_id_examples": [
+      1068183,
+      2752210,
+      12826971,
+      39367736,
+      45465398,
+      54325826,
+      95145860,
+      97178600,
+      9593781,
+      81892638,
+      18027495,
+      29753913,
+      39459350,
+      75616262,
+      50588428,
+      86652150,
+      88463482,
+      45338459,
+      62225368,
+      75880307
+    ],
+    "unresolved_value_text_top": {
+      "___": 4838,
+      "0.9": 1064,
+      "0.8": 1055,
+      "0.7": 960,
+      "1.0": 941,
+      "138": 867,
+      "139": 838,
+      "140": 809,
+      "141": 793,
+      "1.1": 792,
+      "103": 766,
+      "101": 763,
+      "0.6": 757,
+      "102": 751,
+      "104": 737
+    },
+    "unresolved_label_top": {
+      "Sodium | Blood": 11596,
+      "Chloride | Blood": 11489,
+      "Creatinine | Blood": 11354,
+      "Hemoglobin | Blood": 10290,
+      "Lactate | Blood": 2543,
+      "pH | Blood": 809,
+      "Sodium, Urine | Urine": 800,
+      "Creatinine, Urine | Urine": 753,
+      "pCO2 | Blood": 710,
+      "Calculated Total CO2 | Blood": 709,
+      "Specimen Type | Blood": 512,
+      "Chloride, Urine | Urine": 483,
+      "Sodium, Whole Blood | Blood": 369,
+      "Chloride, Whole Blood | Blood": 206,
+      "Calculated Bicarbonate, Whole Blood | Blood": 102
+    }
+  },
+  "baseline_other_rate": 0.7711144274014472,
+  "baseline_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-15 gas_source_audit.json",
+  "baseline_mode_mismatch_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-16 gas_source_audit.json",
+  "relative_reduction_vs_baseline": 0.1406692568841413,
+  "relative_reduction_target": 0.1
+}

@@ -1,0 +1,5 @@
+first_hco3_source,row_count,null_value_count,nonnull_value_count,null_value_rate,source_value_mismatch_n
+missing,11761,11761,0,1.0,0
+lab_panel_same_specimen,137,0,137,0.0,0
+lab_nearest_to_anchor,112,0,112,0.0,0
+lab_first_0_24h,28,0,28,0.0,0

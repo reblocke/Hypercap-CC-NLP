@@ -39,7 +39,7 @@ def _load_notebook_functions() -> dict[str, object]:
 def test_normalize_temperature_to_f() -> None:
     funcs = _load_notebook_functions()
     normalize_temperature_to_f = funcs["normalize_temperature_to_f"]
-    values = pd.Series([36.5, 98.6, 6.0, 200.0], dtype="float64")
+    values = pd.Series([36.5, 98.6, 6.0, 200.0, np.nan], dtype="float64")
     result = normalize_temperature_to_f(values)
 
     assert round(float(result.loc[0, "temp_f_clean"]), 1) == 97.7
@@ -57,6 +57,10 @@ def test_normalize_temperature_to_f() -> None:
     assert pd.isna(result.loc[3, "temp_f_clean"])
     assert bool(result.loc[3, "temp_was_celsius_like"]) is False
     assert bool(result.loc[3, "temp_out_of_range"]) is True
+
+    assert pd.isna(result.loc[4, "temp_f_clean"])
+    assert bool(result.loc[4, "temp_was_celsius_like"]) is False
+    assert bool(result.loc[4, "temp_out_of_range"]) is False
 
 
 def test_clean_pain_score() -> None:

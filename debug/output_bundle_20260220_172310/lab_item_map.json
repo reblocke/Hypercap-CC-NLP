@@ -1,0 +1,424 @@
+{
+  "gas_pco2": {
+    "pattern": "\\bp\\s*co2\\b|pco2|pco\u2082",
+    "items": [
+      {
+        "itemid": 50818,
+        "label": "pCO2",
+        "category": "Blood Gas",
+        "n": 495853
+      }
+    ]
+  },
+  "gas_ph": {
+    "pattern": "\\bph\\b",
+    "items": [
+      {
+        "itemid": 50820,
+        "label": "pH",
+        "category": "Blood Gas",
+        "n": 524869
+      }
+    ]
+  },
+  "gas_hco3": {
+    "pattern": "hco3|bicarbonate",
+    "items": [
+      {
+        "itemid": 50803,
+        "label": "Calculated Bicarbonate, Whole Blood",
+        "category": "Blood Gas",
+        "n": 5435
+      }
+    ]
+  },
+  "gas_lactate": {
+    "pattern": "lactate",
+    "items": [
+      {
+        "itemid": 50813,
+        "label": "Lactate",
+        "category": "Blood Gas",
+        "n": 291284
+      },
+      {
+        "itemid": 52442,
+        "label": "Lactate",
+        "category": "Blood Gas",
+        "n": 0
+      }
+    ]
+  },
+  "gas_specimen": {
+    "pattern": "specimen|source|type",
+    "items": [
+      {
+        "itemid": 52033,
+        "label": "Specimen Type",
+        "category": "Blood Gas",
+        "n": 562910
+      }
+    ]
+  },
+  "chem_creatinine": {
+    "pattern": "creatinine",
+    "items": [
+      {
+        "itemid": 50912,
+        "label": "Creatinine",
+        "category": "Chemistry",
+        "n": 690288
+      },
+      {
+        "itemid": 51082,
+        "label": "Creatinine, Urine",
+        "category": "Chemistry",
+        "n": 17230
+      },
+      {
+        "itemid": 52024,
+        "label": "Creatinine, Whole Blood",
+        "category": "Blood Gas",
+        "n": 3108
+      },
+      {
+        "itemid": 51099,
+        "label": "Protein/Creatinine Ratio",
+        "category": "Chemistry",
+        "n": 2551
+      },
+      {
+        "itemid": 50841,
+        "label": "Creatinine, Ascites",
+        "category": "Chemistry",
+        "n": 650
+      },
+      {
+        "itemid": 51052,
+        "label": "Creatinine, Pleural",
+        "category": "Chemistry",
+        "n": 528
+      },
+      {
+        "itemid": 51067,
+        "label": "24 hr Creatinine",
+        "category": "Chemistry",
+        "n": 456
+      },
+      {
+        "itemid": 51070,
+        "label": "Albumin/Creatinine, Urine",
+        "category": "Chemistry",
+        "n": 415
+      },
+      {
+        "itemid": 51032,
+        "label": "Creatinine, Body Fluid",
+        "category": "Chemistry",
+        "n": 132
+      },
+      {
+        "itemid": 51080,
+        "label": "Creatinine Clearance",
+        "category": "Chemistry",
+        "n": 49
+      },
+      {
+        "itemid": 51081,
+        "label": "Creatinine, Serum",
+        "category": "Chemistry",
+        "n": 49
+      },
+      {
+        "itemid": 51106,
+        "label": "Urine Creatinine",
+        "category": "Chemistry",
+        "n": 49
+      },
+      {
+        "itemid": 51073,
+        "label": "Amylase/Creatinine Ratio, Urine",
+        "category": "Chemistry",
+        "n": 19
+      },
+      {
+        "itemid": 51937,
+        "label": "Creatinine, Stool",
+        "category": "Chemistry",
+        "n": 0
+      },
+      {
+        "itemid": 52546,
+        "label": "Creatinine",
+        "category": "Chemistry",
+        "n": 0
+      },
+      {
+        "itemid": 51963,
+        "label": "Amylase/Creatinine Clearance",
+        "category": "Chemistry",
+        "n": 0
+      },
+      {
+        "itemid": 51977,
+        "label": "Creatinine, Blood",
+        "category": "Chemistry",
+        "n": 0
+      },
+      {
+        "itemid": 52000,
+        "label": "Urine  Creatinine",
+        "category": "Chemistry",
+        "n": 0
+      },
+      {
+        "itemid": 51021,
+        "label": "Creatinine, Joint Fluid",
+        "category": "Chemistry",
+        "n": 0
+      },
+      {
+        "itemid": 51787,
+        "label": "Creatinine, CSF",
+        "category": "Chemistry",
+        "n": 0
+      }
+    ]
+  },
+  "chem_sodium": {
+    "pattern": "\\bsodium\\b",
+    "items": [
+      {
+        "itemid": 50983,
+        "label": "Sodium",
+        "category": "Chemistry",
+        "n": 710201
+      },
+      {
+        "itemid": 50824,
+        "label": "Sodium, Whole Blood",
+        "category": "Blood Gas",
+        "n": 74660
+      },
+      {
+        "itemid": 51100,
+        "label": "Sodium, Urine",
+        "category": "Chemistry",
+        "n": 18029
+      },
+      {
+        "itemid": 51065,
+        "label": "Sodium, Stool",
+        "category": "Chemistry",
+        "n": 32
+      },
+      {
+        "itemid": 50848,
+        "label": "Sodium, Ascites",
+        "category": "Chemistry",
+        "n": 27
+      },
+      {
+        "itemid": 51042,
+        "label": "Sodium, Body Fluid",
+        "category": "Chemistry",
+        "n": 19
+      },
+      {
+        "itemid": 51058,
+        "label": "Sodium, Pleural",
+        "category": "Chemistry",
+        "n": 4
+      },
+      {
+        "itemid": 52455,
+        "label": "Sodium, Whole Blood",
+        "category": "Blood Gas",
+        "n": 0
+      },
+      {
+        "itemid": 52047,
+        "label": "Sodium, Urine",
+        "category": "Blood Gas",
+        "n": 0
+      },
+      {
+        "itemid": 50834,
+        "label": "Sodium, Body Fluid",
+        "category": "Blood Gas",
+        "n": 0
+      },
+      {
+        "itemid": 52623,
+        "label": "Sodium",
+        "category": "Chemistry",
+        "n": 0
+      },
+      {
+        "itemid": 51823,
+        "label": "Sodium, Joint Fluid",
+        "category": "Chemistry",
+        "n": 0
+      },
+      {
+        "itemid": 51801,
+        "label": "Sodium, CSF",
+        "category": "Chemistry",
+        "n": 0
+      }
+    ]
+  },
+  "chem_chloride": {
+    "pattern": "\\bchloride\\b",
+    "items": [
+      {
+        "itemid": 50902,
+        "label": "Chloride",
+        "category": "Chemistry",
+        "n": 704369
+      },
+      {
+        "itemid": 50806,
+        "label": "Chloride, Whole Blood",
+        "category": "Blood Gas",
+        "n": 51365
+      },
+      {
+        "itemid": 51078,
+        "label": "Chloride, Urine",
+        "category": "Chemistry",
+        "n": 9039
+      },
+      {
+        "itemid": 50839,
+        "label": "Chloride, Ascites",
+        "category": "Chemistry",
+        "n": 22
+      },
+      {
+        "itemid": 51062,
+        "label": "Chloride, Stool",
+        "category": "Chemistry",
+        "n": 19
+      },
+      {
+        "itemid": 51030,
+        "label": "Chloride, Body Fluid",
+        "category": "Chemistry",
+        "n": 15
+      },
+      {
+        "itemid": 51050,
+        "label": "Chloride, Pleural",
+        "category": "Chemistry",
+        "n": 1
+      },
+      {
+        "itemid": 52434,
+        "label": "Chloride, Whole Blood",
+        "category": "Blood Gas",
+        "n": 0
+      },
+      {
+        "itemid": 52535,
+        "label": "Chloride",
+        "category": "Chemistry",
+        "n": 0
+      },
+      {
+        "itemid": 51813,
+        "label": "Chloride, Joint Fluid",
+        "category": "Chemistry",
+        "n": 0
+      },
+      {
+        "itemid": 51784,
+        "label": "Chloride, CSF",
+        "category": "Chemistry",
+        "n": 0
+      }
+    ]
+  },
+  "chem_total_co2": {
+    "pattern": "carbon dioxide|total co2|\\bco2\\b",
+    "items": [
+      {
+        "itemid": 50804,
+        "label": "Calculated Total CO2",
+        "category": "Blood Gas",
+        "n": 495894
+      },
+      {
+        "itemid": 51739,
+        "label": "Total CO2",
+        "category": "Chemistry",
+        "n": 0
+      }
+    ]
+  },
+  "cbc_hemoglobin": {
+    "pattern": "hemoglobin",
+    "items": [
+      {
+        "itemid": 51222,
+        "label": "Hemoglobin",
+        "category": "Hematology",
+        "n": 624186
+      },
+      {
+        "itemid": 51224,
+        "label": "Hemoglobin C",
+        "category": "Hematology",
+        "n": 54
+      },
+      {
+        "itemid": 51223,
+        "label": "Hemoglobin A2",
+        "category": "Hematology",
+        "n": 47
+      },
+      {
+        "itemid": 51225,
+        "label": "Hemoglobin F",
+        "category": "Hematology",
+        "n": 45
+      },
+      {
+        "itemid": 51212,
+        "label": "Fetal Hemoglobin",
+        "category": "Hematology",
+        "n": 16
+      },
+      {
+        "itemid": 52129,
+        "label": "Hemoglobin Other",
+        "category": "Hematology",
+        "n": 1
+      },
+      {
+        "itemid": 51285,
+        "label": "Reticulocyte, Cellular Hemoglobin",
+        "category": "Hematology",
+        "n": 0
+      },
+      {
+        "itemid": 52128,
+        "label": "Hemoglobin H Inclusion",
+        "category": "Hematology",
+        "n": 0
+      },
+      {
+        "itemid": 52144,
+        "label": "Methemoglobin",
+        "category": "Hematology",
+        "n": 0
+      },
+      {
+        "itemid": 52157,
+        "label": "Plasma Hemoglobin",
+        "category": "Hematology",
+        "n": 0
+      }
+    ]
+  }
+}

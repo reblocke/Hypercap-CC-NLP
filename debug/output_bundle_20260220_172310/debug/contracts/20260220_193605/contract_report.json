@@ -1,0 +1,88 @@
+{
+  "generated_utc": "2026-02-20T19:36:05.805201+00:00",
+  "status": "warning",
+  "contracts": {
+    "cohort": {
+      "status": "warning",
+      "row_count": 12020,
+      "column_count": 293,
+      "gas_source_other_rate_mean": 0.7466644229754031,
+      "poc_other_pco2_median": null,
+      "poc_other_pco2_count": 0,
+      "first_other_poc_rows": 0,
+      "poc_other_quarantine_leak_n": 0,
+      "timing_tri_state_mismatch_n": 0,
+      "timing_tri_state_invalid_value_n": 0,
+      "hospital_los_hours_model_negative_n": 0,
+      "dt_first_imv_hours_model_negative_n": 0,
+      "dt_first_niv_hours_model_negative_n": 0,
+      "anthro_bmi_coverage_rate": 0.6146422628951748,
+      "anthro_model_invalid_counts": {
+        "bmi_closest_pre_ed_model": 0,
+        "height_closest_pre_ed_model": 0,
+        "weight_closest_pre_ed_model": 0
+      },
+      "first_hco3_coverage_rate": 0.023044925124792014,
+      "first_hco3_source_value_mismatch_n": 0,
+      "anthro_source_counts": {
+        "icu_charted": 10435,
+        "missing": 1566,
+        "omr": 19
+      },
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "gas_source_other_rate_high",
+          "message": "Mean gas_source_other_rate exceeded warning threshold 0.50: 0.7467"
+        },
+        {
+          "severity": "warning",
+          "code": "first_hco3_coverage_low",
+          "message": "first_hco3 coverage below warning floor 0.20: 0.0230"
+        }
+      ],
+      "audit_artifacts": {
+        "blood_gas_itemid_manifest_audit.csv": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-20 blood_gas_itemid_manifest_audit.csv",
+        "pco2_itemid_qc_audit.csv": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-20 pco2_itemid_qc_audit.csv",
+        "pco2_source_distribution_audit.csv": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-20 pco2_source_distribution_audit.csv",
+        "other_route_quarantine_audit.csv": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-20 other_route_quarantine_audit.csv",
+        "first_gas_anchor_audit.csv": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-20 first_gas_anchor_audit.csv",
+        "hco3_integrity_audit.csv": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-20 hco3_integrity_audit.csv",
+        "timing_integrity_audit.csv": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-20 timing_integrity_audit.csv",
+        "ventilation_timing_audit.csv": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-20 ventilation_timing_audit.csv",
+        "anthropometric_cleaning_audit.csv": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-20 anthropometric_cleaning_audit.csv"
+      }
+    },
+    "classifier": {
+      "status": "pass",
+      "error_count": 0,
+      "warning_count": 0,
+      "pseudo_missing_rows": 4,
+      "findings": [],
+      "row_count": 12020,
+      "column_count": 337,
+      "max_rfv": 5,
+      "cc_missing_audit_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-20 classifier_cc_missing_audit.csv"
+    }
+  },
+  "findings": [
+    {
+      "severity": "warning",
+      "code": "gas_source_other_rate_high",
+      "message": "Mean gas_source_other_rate exceeded warning threshold 0.50: 0.7467"
+    },
+    {
+      "severity": "warning",
+      "code": "first_hco3_coverage_low",
+      "message": "first_hco3 coverage below warning floor 0.20: 0.0230"
+    }
+  ],
+  "paths": {
+    "cohort": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/MIMICIV all with CC.xlsx",
+    "classifier": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx"
+  },
+  "stages": [
+    "classifier",
+    "cohort"
+  ]
+}

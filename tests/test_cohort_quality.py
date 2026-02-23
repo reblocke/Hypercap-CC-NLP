@@ -415,16 +415,16 @@ def test_build_anthro_coverage_audit_reports_sources() -> None:
     assert audit["source_counts"]["icu_charted"] == 1
 
 
-def test_build_gas_source_overlap_summary_counts_other() -> None:
+def test_build_gas_source_overlap_summary_counts_unknown() -> None:
     ed_df = pd.DataFrame(
         {
-            "flag_abg_hypercapnia": [1, 0, 0],
-            "flag_vbg_hypercapnia": [0, 1, 0],
-            "flag_other_hypercapnia": [0, 1, 1],
+            "abg_hypercap_threshold": [1, 0, 0],
+            "vbg_hypercap_threshold": [0, 1, 0],
+            "unknown_hypercap_threshold": [0, 1, 1],
         }
     )
     summary = build_gas_source_overlap_summary(ed_df)
     counts = dict(zip(summary["gas_overlap"], summary["count"]))
     assert counts["ABG"] == 1
-    assert counts["VBG+OTHER"] == 1
-    assert counts["OTHER"] == 1
+    assert counts["VBG+UNKNOWN"] == 1
+    assert counts["UNKNOWN"] == 1

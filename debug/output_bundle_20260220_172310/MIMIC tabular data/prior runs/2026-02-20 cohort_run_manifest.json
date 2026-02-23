@@ -1,0 +1,162 @@
+{
+  "run_id": "cohort_20260220_123120",
+  "generated_utc": "2026-02-20T19:31:20.288606+00:00",
+  "work_dir": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP",
+  "python_version": "3.11.10 (main, Oct 16 2024, 08:56:36) [Clang 18.1.8 ]",
+  "uv_version": "uv 0.9.28 (Homebrew 2026-01-29)",
+  "git": {
+    "branch": "main",
+    "commit": "c729db5955905697a0ce43ac8ba711735c762ee9",
+    "dirty": true,
+    "dirty_diff_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/debug/run_manifests/cohort_20260220_123120_git.diff",
+    "dirty_diff_sha256": "4caf4a6d3519b97a548011fe3c68ea327da44f507d8b427d44aa884bf27a1980",
+    "dirty_diff_line_count": 31867,
+    "require_clean_git": false
+  },
+  "config_hash_sha256": "20da4c15df0b80016eaf9391f0210a2e520c2837634628dd1012812475ce618c",
+  "package_versions": {
+    "pandas": "2.2.2",
+    "numpy": "2.3.5",
+    "spacy": "3.8.11",
+    "torch": "2.10.0",
+    "sentence-transformers": "5.2.2"
+  },
+  "env_knobs": {
+    "WORK_DIR": "<unset>",
+    "CLASSIFIER_INPUT_FILENAME": "<unset>",
+    "RATER_NLP_INPUT_FILENAME": "<unset>",
+    "RATER_ANNOTATION_PATH": "<unset>",
+    "ANALYSIS_INPUT_FILENAME": "<unset>",
+    "BQ_QUERY_TIMEOUT_SECS": "<unset>",
+    "WRITE_ARCHIVE_XLSX_EXPORTS": "<unset>",
+    "COHORT_FAIL_ON_ALL_OTHER_SOURCE": "<unset>",
+    "COHORT_WARN_OTHER_RATE": "<unset>",
+    "COHORT_FAIL_OTHER_RATE": "<unset>",
+    "COHORT_GAS_SOURCE_INFERENCE_MODE": "<unset>",
+    "COHORT_FAIL_ON_OMR_ATTACH_INCONSISTENCY": "<unset>",
+    "COHORT_ALLOW_EMPTY_OMR": "<unset>",
+    "COHORT_ANTHRO_MIN_BMI_COVERAGE": "<unset>",
+    "RUN_MANIFEST_STAGE_SCOPE": "<unset>",
+    "RUN_MANIFEST_REQUIRE_CLEAN_GIT": "<unset>",
+    "GOOGLE_APPLICATION_CREDENTIALS": "<unset>",
+    "HF_TOKEN": "<set>"
+  },
+  "stage": "cohort",
+  "outputs": {
+    "canonical_output_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/MIMICIV all with CC.xlsx",
+    "canonical_output_sha256": "05d9dcd5be171a20fed4807173492aa7abba34982714dc1aa1b9185b92ccffe9",
+    "dated_output_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-20 MIMICIV all with CC.xlsx",
+    "dated_output_sha256": "1548dd795f98a92780b791cadbac537b7deff5ea5ee1f497285ad7dad6fa0df1",
+    "gas_source_audit_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-20 gas_source_audit.json",
+    "gas_source_overlap_summary_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-20 gas_source_overlap_summary.csv",
+    "anthropometrics_coverage_audit_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-20 anthropometrics_coverage_audit.json",
+    "ed_vitals_distribution_summary_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-20 ed_vitals_distribution_summary.csv",
+    "ed_vitals_extreme_examples_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-20 ed_vitals_extreme_examples.csv",
+    "ed_vitals_model_delta_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-20 ed_vitals_model_delta.csv",
+    "outliers_audit_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-20 outliers_audit.csv"
+  },
+  "gas_source": {
+    "mode": null,
+    "source_rates": {
+      "unknown": 0.6626423339262455,
+      "arterial": 0.20497485959187103,
+      "venous": 0.1323828064818835
+    },
+    "tier_rates": {
+      "fallback_unknown": 0.6626423339262455,
+      "specimen_text": 0.33735766607375456
+    }
+  },
+  "anthropometrics": {
+    "row_count": 12038,
+    "field_nonnull_counts": {
+      "bmi_closest_pre_ed": 7400,
+      "height_closest_pre_ed": 7405,
+      "weight_closest_pre_ed": 10470
+    },
+    "field_nonnull_rates": {
+      "bmi_closest_pre_ed": 0.6147200531649776,
+      "height_closest_pre_ed": 0.6151354045522512,
+      "weight_closest_pre_ed": 0.8697458049509885
+    },
+    "source_counts": {
+      "icu_charted": 10452,
+      "missing": 1567,
+      "omr": 19
+    },
+    "source_rates": {
+      "icu_charted": 0.8682505399568035,
+      "missing": 0.13017112477155673,
+      "omr": 0.0015783352716398074
+    },
+    "timing_basis_counts": {
+      "nearest_anytime": 10452,
+      "missing": 1567,
+      "post": 19
+    },
+    "timing_basis_rates": {
+      "nearest_anytime": 0.8682505399568035,
+      "missing": 0.13017112477155673,
+      "post": 0.0015783352716398074
+    },
+    "omr": {
+      "window_days": 365,
+      "source_rows_prepared": 46494,
+      "parsed_value_rows": 46489,
+      "ed_rows": 12038,
+      "ed_rows_eligible_for_join": 12038,
+      "subject_overlap_count": 632,
+      "candidate_rows_after_subject_join": 1970,
+      "days_before_min": -4034,
+      "days_before_max": -275,
+      "nonnegative_candidate_rows": 0,
+      "pre_window_candidate_rows": 0,
+      "post_window_candidate_rows": 21,
+      "closest_absolute_candidate_rows": 21,
+      "within_window_candidate_rows": 0,
+      "eligible_ed_stays_with_candidates": 19,
+      "attached_non_null_counts": {
+        "bmi_closest_pre_ed": 8,
+        "height_closest_pre_ed": 1,
+        "weight_closest_pre_ed": 13
+      },
+      "attached_any_non_null_rows": 19,
+      "selected_tier_counts": {
+        "pre_ed_365": 0,
+        "post_ed_365": 19,
+        "missing": 12019
+      },
+      "selected_tier_rates": {
+        "pre_ed_365": 0.0,
+        "post_ed_365": 0.0015783352716398074,
+        "missing": 0.9984216647283602
+      },
+      "timing_uncertain_count": 19,
+      "anthro_source_counts": {
+        "missing": 12019,
+        "omr": 19
+      },
+      "source_rows_raw": 46494,
+      "prepared_rows": 46494
+    },
+    "charted_fallback": {
+      "charted_rows_input": 424643,
+      "charted_rows_usable": 424643,
+      "nearest_anytime": true,
+      "filled_counts": {
+        "bmi_closest_pre_ed": 0,
+        "height_closest_pre_ed": 7404,
+        "weight_closest_pre_ed": 10457
+      },
+      "rows_with_any_charted_fill": 10467,
+      "subject_overlap_count": 8116,
+      "fallback_source_counts": {
+        "icu_charted": 10452,
+        "omr": 15
+      },
+      "bmi_filled_from_height_weight": 7392,
+      "enabled": true
+    },
+    "cleaning_audit_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-20 anthropometric_cleaning_audit.csv"
+  }
+}

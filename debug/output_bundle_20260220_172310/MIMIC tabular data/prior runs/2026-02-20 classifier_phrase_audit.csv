@@ -1,0 +1,17 @@
+metric,value,audit_type,rfv1_name,row_count,row_rate
+abnormal_lab_rows,288,summary,,,
+abnormal_loss_rows,0,summary,,,
+abnormal_test_result_rows,130,summary,,,
+eye_ear_rows,0,summary,,,
+rfv_distribution,130,rfv_distribution,Abnormal test result,130.0,0.4513888888888889
+rfv_distribution,29,rfv_distribution,Symptom – Respiratory,29.0,0.10069444444444445
+rfv_distribution,29,rfv_distribution,Symptom – Digestive,29.0,0.10069444444444445
+rfv_distribution,27,rfv_distribution,Symptom – Nervous,27.0,0.09375
+rfv_distribution,24,rfv_distribution,Symptom – Circulatory,24.0,0.08333333333333333
+rfv_distribution,20,rfv_distribution,Symptom – General,20.0,0.06944444444444445
+rfv_distribution,8,rfv_distribution,Diseases (patient-stated),8.0,0.027777777777777776
+rfv_distribution,6,rfv_distribution,Symptom – Genitourinary,6.0,0.020833333333333332
+rfv_distribution,5,rfv_distribution,Symptom – Skin/Hair/Nails,5.0,0.017361111111111112
+rfv_distribution,4,rfv_distribution,Symptom – Musculoskeletal,4.0,0.013888888888888888
+rfv_distribution,4,rfv_distribution,Injuries & adverse effects,4.0,0.013888888888888888
+rfv_distribution,2,rfv_distribution,Symptom – Psychological,2.0,0.006944444444444444

@@ -1,0 +1,61 @@
+{
+  "generated_utc": "2026-02-20T15:23:11.782993+00:00",
+  "status": "pass",
+  "summary": {
+    "p0_count": 0,
+    "p1_count": 0,
+    "p2_count": 0,
+    "total_findings": 0
+  },
+  "baseline_dir": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/artifacts/baselines/jupyter/20260220_152137_post_residual_integrity",
+  "baseline_manifest_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/artifacts/baselines/jupyter/20260220_152137_post_residual_integrity/baseline_manifest.json",
+  "findings": [],
+  "metric_drift": [
+    {
+      "metric": "icu_link_rate",
+      "baseline_value": 0.7677753266587477,
+      "current_value": 0.7677753266587477,
+      "delta": 0.0,
+      "abs_delta": 0.0,
+      "warn_threshold": 0.04,
+      "fail_threshold": 0.08,
+      "severity": "ok"
+    },
+    {
+      "metric": "pct_any_gas_0_6h",
+      "baseline_value": 0.41897166129305957,
+      "current_value": 0.41897166129305957,
+      "delta": 0.0,
+      "abs_delta": 0.0,
+      "warn_threshold": 0.04,
+      "fail_threshold": 0.08,
+      "severity": "ok"
+    },
+    {
+      "metric": "pct_any_gas_0_24h",
+      "baseline_value": 0.9590191752927202,
+      "current_value": 0.9590191752927202,
+      "delta": 0.0,
+      "abs_delta": 0.0,
+      "warn_threshold": 0.04,
+      "fail_threshold": 0.08,
+      "severity": "ok"
+    },
+    {
+      "metric": "gas_source_other_rate",
+      "baseline_value": 0.6617519019140463,
+      "current_value": 0.6617519019140463,
+      "delta": 0.0,
+      "abs_delta": 0.0,
+      "warn_threshold": 0.04,
+      "fail_threshold": 0.08,
+      "severity": "ok"
+    }
+  ],
+  "current_metrics": {
+    "icu_link_rate": 0.7677753266587477,
+    "pct_any_gas_0_6h": 0.41897166129305957,
+    "pct_any_gas_0_24h": 0.9590191752927202,
+    "gas_source_other_rate": 0.6617519019140463
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "status": "pass",
+  "error_count": 0,
+  "warning_count": 0,
+  "pseudo_missing_rows": 4,
+  "findings": [],
+  "row_count": 11769,
+  "column_count": 331,
+  "max_rfv": 5,
+  "resource_report": {
+    "status": "pass",
+    "strict_hash": true,
+    "manifest_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Annotation/resource_manifest.json",
+    "checks": [
+      {
+        "resource": "appendix_csv",
+        "path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Annotation/nhamcs_rvc_2022_appendixII_codes.csv",
+        "exists": true
+      },
+      {
+        "resource": "summary_weights_csv",
+        "path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Annotation/nhamcs_rvc_2022_summary_by_top_level_17.csv",
+        "exists": true
+      }
+    ],
+    "hash_findings": [],
+    "errors": [],
+    "warnings": []
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "run_id": "classifier_20260220_081733",
+  "generated_utc": "2026-02-20T15:17:33.829110+00:00",
+  "work_dir": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP",
+  "python_version": "3.11.10 (main, Oct 16 2024, 08:56:36) [Clang 18.1.8 ]",
+  "uv_version": "uv 0.9.28 (Homebrew 2026-01-29)",
+  "git": {
+    "branch": "main",
+    "commit": "0707c583856e97729353655cf99e0aa39487e846",
+    "dirty": true
+  },
+  "package_versions": {
+    "pandas": "2.2.2",
+    "numpy": "2.3.5",
+    "spacy": "3.8.11",
+    "torch": "2.10.0",
+    "sentence-transformers": "5.2.2"
+  },
+  "env_knobs": {
+    "WORK_DIR": "<unset>",
+    "CLASSIFIER_INPUT_FILENAME": "<unset>",
+    "RATER_NLP_INPUT_FILENAME": "<unset>",
+    "RATER_ANNOTATION_PATH": "<unset>",
+    "ANALYSIS_INPUT_FILENAME": "<unset>",
+    "BQ_QUERY_TIMEOUT_SECS": "<unset>",
+    "WRITE_ARCHIVE_XLSX_EXPORTS": "<unset>",
+    "COHORT_FAIL_ON_ALL_OTHER_SOURCE": "<unset>",
+    "COHORT_WARN_OTHER_RATE": "<unset>",
+    "COHORT_FAIL_OTHER_RATE": "<unset>",
+    "COHORT_GAS_SOURCE_INFERENCE_MODE": "<unset>",
+    "COHORT_FAIL_ON_OMR_ATTACH_INCONSISTENCY": "<unset>",
+    "COHORT_ALLOW_EMPTY_OMR": "<unset>",
+    "COHORT_ANTHRO_MIN_BMI_COVERAGE": "<unset>",
+    "RUN_MANIFEST_STAGE_SCOPE": "<unset>",
+    "GOOGLE_APPLICATION_CREDENTIALS": "<unset>",
+    "HF_TOKEN": "<set>"
+  },
+  "stage": "classifier",
+  "model_metadata": {
+    "model_name": "NeuML/bioclinical-modernbert-base-embeddings",
+    "spacy_model": "en_core_web_sm",
+    "device": "cpu",
+    "appendix_rows_used": 606,
+    "prototype_total": 693
+  },
+  "resource_verification": {
+    "status": "pass",
+    "strict_hash": true,
+    "manifest_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Annotation/resource_manifest.json",
+    "checks": [
+      {
+        "resource": "appendix_csv",
+        "path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Annotation/nhamcs_rvc_2022_appendixII_codes.csv",
+        "exists": true
+      },
+      {
+        "resource": "summary_weights_csv",
+        "path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Annotation/nhamcs_rvc_2022_summary_by_top_level_17.csv",
+        "exists": true
+      }
+    ],
+    "hash_findings": [],
+    "errors": [],
+    "warnings": []
+  },
+  "outputs": {
+    "canonical_output_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx",
+    "canonical_output_sha256": "01318e977b343aa57c1b64bcc7a001d1dd6b985542a50f61176b02f8db8e0b26",
+    "archive_output_path": null,
+    "archive_output_sha256": null,
+    "cc_missing_audit_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-20 classifier_cc_missing_audit.csv",
+    "phrase_audit_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-20 classifier_phrase_audit.csv",
+    "spell_mode_comparison_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-20 classifier_spell_mode_comparison.csv",
+    "spellfix_log_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-20 classifier_spellfix_log.csv",
+    "hypercap_flags_audit_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-20 classifier_hypercap_flags_audit.csv",
+    "classifier_contract_report_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-20 classifier_contract_report.json"
+  }
+}

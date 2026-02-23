@@ -1,0 +1,105 @@
+vital_name,raw_column,clean_column,flag_type,hadm_id,ed_stay_id,raw_value,clean_value,flag_value,tail,ed_first_vitals_time
+triage_temp,ed_triage_temp,ed_triage_temp_f_clean,ed_triage_temp_was_celsius_like,23469154,37713070,28.600000000,83.48,True,low,
+triage_temp,ed_triage_temp,ed_triage_temp_f_clean,ed_triage_temp_was_celsius_like,20815339,39956606,36.000000000,96.8,True,low,
+triage_temp,ed_triage_temp,ed_triage_temp_f_clean,ed_triage_temp_was_celsius_like,28882946,37212579,36.100000000,96.98,True,low,
+triage_temp,ed_triage_temp,ed_triage_temp_f_clean,ed_triage_temp_was_celsius_like,24292831,36692230,36.100000000,96.98,True,low,
+triage_temp,ed_triage_temp,ed_triage_temp_f_clean,ed_triage_temp_was_celsius_like,26812589,30129021,36.100000000,96.98,True,low,
+triage_temp,ed_triage_temp,ed_triage_temp_f_clean,ed_triage_temp_was_celsius_like,25502159,36862663,39.200000000,102.56,True,high,
+triage_temp,ed_triage_temp,ed_triage_temp_f_clean,ed_triage_temp_was_celsius_like,20181962,32776784,39.000000000,102.2,True,high,
+triage_temp,ed_triage_temp,ed_triage_temp_f_clean,ed_triage_temp_was_celsius_like,23542656,38237235,38.700000000,101.66,True,high,
+triage_temp,ed_triage_temp,ed_triage_temp_f_clean,ed_triage_temp_was_celsius_like,20330509,35787341,37.600000000,99.68,True,high,
+triage_temp,ed_triage_temp,ed_triage_temp_f_clean,ed_triage_temp_was_celsius_like,21604044,30122252,37.600000000,99.68,True,high,
+triage_temp,ed_triage_temp,ed_triage_temp_f_clean,ed_triage_temp_out_of_range,24000537,34535214,9.100000000,,True,low,
+triage_temp,ed_triage_temp,ed_triage_temp_f_clean,ed_triage_temp_out_of_range,21582273,38652778,,,True,low,
+triage_temp,ed_triage_temp,ed_triage_temp_f_clean,ed_triage_temp_out_of_range,24229913,32062643,,,True,low,
+triage_temp,ed_triage_temp,ed_triage_temp_f_clean,ed_triage_temp_out_of_range,28543022,32407633,,,True,low,
+triage_temp,ed_triage_temp,ed_triage_temp_f_clean,ed_triage_temp_out_of_range,25485294,33148169,,,True,low,
+triage_temp,ed_triage_temp,ed_triage_temp_f_clean,ed_triage_temp_out_of_range,24000537,34535214,9.100000000,,True,high,
+triage_temp,ed_triage_temp,ed_triage_temp_f_clean,ed_triage_temp_out_of_range,21582273,38652778,,,True,high,
+triage_temp,ed_triage_temp,ed_triage_temp_f_clean,ed_triage_temp_out_of_range,24229913,32062643,,,True,high,
+triage_temp,ed_triage_temp,ed_triage_temp_f_clean,ed_triage_temp_out_of_range,28543022,32407633,,,True,high,
+triage_temp,ed_triage_temp,ed_triage_temp_f_clean,ed_triage_temp_out_of_range,25485294,33148169,,,True,high,
+first_temp,ed_first_temp,ed_first_temp_f_clean,ed_first_temp_was_celsius_like,23469154,37713070,28.600000000,83.48,True,low,2149-10-02 22:01:00
+first_temp,ed_first_temp,ed_first_temp_f_clean,ed_first_temp_was_celsius_like,22193750,35550463,31.700000000,89.06,True,low,2164-06-04 13:51:00
+first_temp,ed_first_temp,ed_first_temp_f_clean,ed_first_temp_was_celsius_like,22348841,31461193,32.100000000,89.78,True,low,2196-05-20 10:47:00
+first_temp,ed_first_temp,ed_first_temp_f_clean,ed_first_temp_was_celsius_like,23600342,35190395,32.200000000,89.96000000000001,True,low,2185-04-09 17:38:00
+first_temp,ed_first_temp,ed_first_temp_f_clean,ed_first_temp_was_celsius_like,29649567,37763231,32.500000000,90.5,True,low,2155-03-29 10:10:00
+first_temp,ed_first_temp,ed_first_temp_f_clean,ed_first_temp_was_celsius_like,29740997,35226129,39.800000000,103.64,True,high,2159-03-06 02:08:00
+first_temp,ed_first_temp,ed_first_temp_f_clean,ed_first_temp_was_celsius_like,25502159,36862663,39.200000000,102.56,True,high,2169-12-23 04:07:00
+first_temp,ed_first_temp,ed_first_temp_f_clean,ed_first_temp_was_celsius_like,20181962,32776784,39.000000000,102.2,True,high,2190-10-31 14:20:00
+first_temp,ed_first_temp,ed_first_temp_f_clean,ed_first_temp_was_celsius_like,23542656,38237235,38.700000000,101.66,True,high,2162-08-03 13:21:00
+first_temp,ed_first_temp,ed_first_temp_f_clean,ed_first_temp_was_celsius_like,25178197,30746000,38.600000000,101.48,True,high,2161-11-09 01:30:00
+first_temp,ed_first_temp,ed_first_temp_f_clean,ed_first_temp_out_of_range,21582273,38652778,,,True,low,2170-06-30 19:59:00
+first_temp,ed_first_temp,ed_first_temp_f_clean,ed_first_temp_out_of_range,22451169,37627390,,,True,low,2164-08-14 23:23:00
+first_temp,ed_first_temp,ed_first_temp_f_clean,ed_first_temp_out_of_range,28543022,32407633,,,True,low,2126-08-26 02:06:00
+first_temp,ed_first_temp,ed_first_temp_f_clean,ed_first_temp_out_of_range,25606363,31721673,,,True,low,2187-02-24 15:35:00
+first_temp,ed_first_temp,ed_first_temp_f_clean,ed_first_temp_out_of_range,25485294,33148169,,,True,low,2134-04-28 21:58:00
+first_temp,ed_first_temp,ed_first_temp_f_clean,ed_first_temp_out_of_range,21582273,38652778,,,True,high,2170-06-30 19:59:00
+first_temp,ed_first_temp,ed_first_temp_f_clean,ed_first_temp_out_of_range,22451169,37627390,,,True,high,2164-08-14 23:23:00
+first_temp,ed_first_temp,ed_first_temp_f_clean,ed_first_temp_out_of_range,28543022,32407633,,,True,high,2126-08-26 02:06:00
+first_temp,ed_first_temp,ed_first_temp_f_clean,ed_first_temp_out_of_range,25606363,31721673,,,True,high,2187-02-24 15:35:00
+first_temp,ed_first_temp,ed_first_temp_f_clean,ed_first_temp_out_of_range,25485294,33148169,,,True,high,2134-04-28 21:58:00
+triage_pain,ed_triage_pain,ed_triage_pain_clean,ed_triage_pain_is_sentinel_13,29491843,33260556,13,,True,low,
+triage_pain,ed_triage_pain,ed_triage_pain_clean,ed_triage_pain_is_sentinel_13,27898346,32026126,13,,True,low,
+triage_pain,ed_triage_pain,ed_triage_pain_clean,ed_triage_pain_is_sentinel_13,27615389,36807654,13,,True,low,
+triage_pain,ed_triage_pain,ed_triage_pain_clean,ed_triage_pain_is_sentinel_13,20356769,39821982,13,,True,low,
+triage_pain,ed_triage_pain,ed_triage_pain_clean,ed_triage_pain_is_sentinel_13,29677738,33809927,13,,True,low,
+triage_pain,ed_triage_pain,ed_triage_pain_clean,ed_triage_pain_is_sentinel_13,29491843,33260556,13,,True,high,
+triage_pain,ed_triage_pain,ed_triage_pain_clean,ed_triage_pain_is_sentinel_13,26816883,39418707,13,,True,high,
+triage_pain,ed_triage_pain,ed_triage_pain_clean,ed_triage_pain_is_sentinel_13,25827583,35614833,13,,True,high,
+triage_pain,ed_triage_pain,ed_triage_pain_clean,ed_triage_pain_is_sentinel_13,27336889,34565520,13,,True,high,
+triage_pain,ed_triage_pain,ed_triage_pain_clean,ed_triage_pain_is_sentinel_13,25183055,37915222,13,,True,high,
+triage_pain,ed_triage_pain,ed_triage_pain_clean,ed_triage_pain_out_of_range,28008312,30571889,11,,True,low,
+triage_pain,ed_triage_pain,ed_triage_pain_clean,ed_triage_pain_out_of_range,22952230,34720635,134,,True,low,
+triage_pain,ed_triage_pain,ed_triage_pain_clean,ed_triage_pain_out_of_range,25568113,31870576,30,,True,low,
+triage_pain,ed_triage_pain,ed_triage_pain_clean,ed_triage_pain_out_of_range,24698043,30250790,60,,True,low,
+triage_pain,ed_triage_pain,ed_triage_pain_clean,ed_triage_pain_out_of_range,27484774,39714606,90,,True,low,
+triage_pain,ed_triage_pain,ed_triage_pain_clean,ed_triage_pain_out_of_range,27484774,39714606,90,,True,high,
+triage_pain,ed_triage_pain,ed_triage_pain_clean,ed_triage_pain_out_of_range,24698043,30250790,60,,True,high,
+triage_pain,ed_triage_pain,ed_triage_pain_clean,ed_triage_pain_out_of_range,25568113,31870576,30,,True,high,
+triage_pain,ed_triage_pain,ed_triage_pain_clean,ed_triage_pain_out_of_range,22952230,34720635,134,,True,high,
+triage_pain,ed_triage_pain,ed_triage_pain_clean,ed_triage_pain_out_of_range,28008312,30571889,11,,True,high,
+triage_sbp,ed_triage_sbp,ed_triage_sbp_clean,ed_triage_sbp_out_of_range,23277167,38480365,12.000000000,,True,low,
+triage_sbp,ed_triage_sbp,ed_triage_sbp_clean,ed_triage_sbp_out_of_range,22315425,37093834,13.000000000,,True,low,
+triage_sbp,ed_triage_sbp,ed_triage_sbp_clean,ed_triage_sbp_out_of_range,23405865,35371784,14.000000000,,True,low,
+triage_sbp,ed_triage_sbp,ed_triage_sbp_clean,ed_triage_sbp_out_of_range,23282437,33191024,15.000000000,,True,low,
+triage_sbp,ed_triage_sbp,ed_triage_sbp_clean,ed_triage_sbp_out_of_range,25662479,33219384,18.000000000,,True,low,
+triage_sbp,ed_triage_sbp,ed_triage_sbp_clean,ed_triage_sbp_out_of_range,21211651,38587721,9656.000000000,,True,high,
+triage_sbp,ed_triage_sbp,ed_triage_sbp_clean,ed_triage_sbp_out_of_range,25662479,33219384,18.000000000,,True,high,
+triage_sbp,ed_triage_sbp,ed_triage_sbp_clean,ed_triage_sbp_out_of_range,28817077,35933903,18.000000000,,True,high,
+triage_sbp,ed_triage_sbp,ed_triage_sbp_clean,ed_triage_sbp_out_of_range,23282437,33191024,15.000000000,,True,high,
+triage_sbp,ed_triage_sbp,ed_triage_sbp_clean,ed_triage_sbp_out_of_range,23405865,35371784,14.000000000,,True,high,
+triage_dbp,ed_triage_dbp,ed_triage_dbp_clean,ed_triage_dbp_out_of_range,21485696,36428396,4.000000000,,True,low,
+triage_dbp,ed_triage_dbp,ed_triage_dbp_clean,ed_triage_dbp_out_of_range,29207918,38120365,5.000000000,,True,low,
+triage_dbp,ed_triage_dbp,ed_triage_dbp_clean,ed_triage_dbp_out_of_range,25895120,39706893,7.000000000,,True,low,
+triage_dbp,ed_triage_dbp,ed_triage_dbp_clean,ed_triage_dbp_out_of_range,29450181,39525957,9.000000000,,True,low,
+triage_dbp,ed_triage_dbp,ed_triage_dbp_clean,ed_triage_dbp_out_of_range,21440357,31764126,206.000000000,,True,low,
+triage_dbp,ed_triage_dbp,ed_triage_dbp_clean,ed_triage_dbp_out_of_range,25662479,33219384,8132.000000000,,True,high,
+triage_dbp,ed_triage_dbp,ed_triage_dbp_clean,ed_triage_dbp_out_of_range,28817077,35933903,7110.000000000,,True,high,
+triage_dbp,ed_triage_dbp,ed_triage_dbp_clean,ed_triage_dbp_out_of_range,22315425,37093834,4109.000000000,,True,high,
+triage_dbp,ed_triage_dbp,ed_triage_dbp_clean,ed_triage_dbp_out_of_range,21455850,39758555,867.000000000,,True,high,
+triage_dbp,ed_triage_dbp,ed_triage_dbp_clean,ed_triage_dbp_out_of_range,29260303,38183639,777.000000000,,True,high,
+first_sbp,ed_first_sbp,ed_first_sbp_clean,ed_first_sbp_out_of_range,25000430,36886916,10,,True,low,2134-06-02 09:46:00
+first_sbp,ed_first_sbp,ed_first_sbp_clean,ed_first_sbp_out_of_range,28236731,35922978,11,,True,low,2182-08-30 06:29:00
+first_sbp,ed_first_sbp,ed_first_sbp_clean,ed_first_sbp_out_of_range,21382394,30412556,11,,True,low,2187-12-11 22:30:00
+first_sbp,ed_first_sbp,ed_first_sbp_clean,ed_first_sbp_out_of_range,23277167,38480365,12,,True,low,2165-01-06 15:16:00
+first_sbp,ed_first_sbp,ed_first_sbp_clean,ed_first_sbp_out_of_range,26606250,34694808,13,,True,low,2188-02-22 16:16:00
+first_sbp,ed_first_sbp,ed_first_sbp_clean,ed_first_sbp_out_of_range,28817077,35933903,18,,True,high,2175-09-25 13:33:00
+first_sbp,ed_first_sbp,ed_first_sbp_clean,ed_first_sbp_out_of_range,28423286,33535738,15,,True,high,2127-04-20 21:18:00
+first_sbp,ed_first_sbp,ed_first_sbp_clean,ed_first_sbp_out_of_range,26606250,34694808,13,,True,high,2188-02-22 16:16:00
+first_sbp,ed_first_sbp,ed_first_sbp_clean,ed_first_sbp_out_of_range,23277167,38480365,12,,True,high,2165-01-06 15:16:00
+first_sbp,ed_first_sbp,ed_first_sbp_clean,ed_first_sbp_out_of_range,28236731,35922978,11,,True,high,2182-08-30 06:29:00
+first_dbp,ed_first_dbp,ed_first_dbp_clean,ed_first_dbp_out_of_range,25895120,39706893,7,,True,low,2137-04-03 12:06:00
+first_dbp,ed_first_dbp,ed_first_dbp_clean,ed_first_dbp_out_of_range,29450181,39525957,9,,True,low,2186-12-31 12:21:00
+first_dbp,ed_first_dbp,ed_first_dbp_clean,ed_first_dbp_out_of_range,21440357,31764126,206,,True,low,2155-01-05 12:05:00
+first_dbp,ed_first_dbp,ed_first_dbp_clean,ed_first_dbp_out_of_range,20894341,36762022,215,,True,low,2155-03-11 09:25:00
+first_dbp,ed_first_dbp,ed_first_dbp_clean,ed_first_dbp_out_of_range,24768641,34460476,460,,True,low,2158-12-24 01:56:00
+first_dbp,ed_first_dbp,ed_first_dbp_clean,ed_first_dbp_out_of_range,28817077,35933903,7110,,True,high,2175-09-25 13:33:00
+first_dbp,ed_first_dbp,ed_first_dbp_clean,ed_first_dbp_out_of_range,21455850,39758555,867,,True,high,2153-10-31 16:52:00
+first_dbp,ed_first_dbp,ed_first_dbp_clean,ed_first_dbp_out_of_range,29260303,38183639,777,,True,high,2173-07-14 13:04:00
+first_dbp,ed_first_dbp,ed_first_dbp_clean,ed_first_dbp_out_of_range,26503340,35985101,741,,True,high,2142-11-10 15:50:00
+first_dbp,ed_first_dbp,ed_first_dbp_clean,ed_first_dbp_out_of_range,22835521,37144487,652,,True,high,2145-03-05 11:50:00
+triage_o2sat,ed_triage_o2sat,ed_triage_o2sat_clean,ed_triage_o2sat_gt_100,28099645,39499860,1000.000000000,,True,low,
+triage_o2sat,ed_triage_o2sat,ed_triage_o2sat_clean,ed_triage_o2sat_gt_100,28099645,39499860,1000.000000000,,True,high,
+first_o2sat,ed_first_o2sat,ed_first_o2sat_clean,ed_first_o2sat_gt_100,28099645,39499860,1000.000000000,,True,low,2201-05-04 11:00:00
+first_o2sat,ed_first_o2sat,ed_first_o2sat_clean,ed_first_o2sat_gt_100,28099645,39499860,1000.000000000,,True,high,2201-05-04 11:00:00

@@ -1,0 +1,67 @@
+Ascertainment_Overlap_Intersections.xlsx
+Ascertainment_Overlap_UpSet.png
+Hypercap CC NLP Analysis.pdf
+Hypercap CC NLP Classifier.pdf
+ICD_Positive_Subset_Breakdown.xlsx
+ICD_vs_Gas_Performance.xlsx
+MIMIC tabular data/MIMICIV all with CC.xlsx
+MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx
+MIMIC tabular data/prior runs/2026-02-20 analysis_run_manifest.json
+MIMIC tabular data/prior runs/2026-02-20 anthropometric_cleaning_audit.csv
+MIMIC tabular data/prior runs/2026-02-20 anthropometrics_coverage_audit.json
+MIMIC tabular data/prior runs/2026-02-20 blood_gas_itemid_manifest_audit.csv
+MIMIC tabular data/prior runs/2026-02-20 classifier_cc_missing_audit.csv
+MIMIC tabular data/prior runs/2026-02-20 classifier_contract_report.json
+MIMIC tabular data/prior runs/2026-02-20 classifier_hypercap_flags_audit.csv
+MIMIC tabular data/prior runs/2026-02-20 classifier_phrase_audit.csv
+MIMIC tabular data/prior runs/2026-02-20 classifier_run_manifest.json
+MIMIC tabular data/prior runs/2026-02-20 classifier_spell_mode_comparison.csv
+MIMIC tabular data/prior runs/2026-02-20 classifier_spellfix_log.csv
+MIMIC tabular data/prior runs/2026-02-20 cohort_run_manifest.json
+MIMIC tabular data/prior runs/2026-02-20 ed_vitals_distribution_summary.csv
+MIMIC tabular data/prior runs/2026-02-20 ed_vitals_extreme_examples.csv
+MIMIC tabular data/prior runs/2026-02-20 ed_vitals_model_delta.csv
+MIMIC tabular data/prior runs/2026-02-20 first_gas_anchor_audit.csv
+MIMIC tabular data/prior runs/2026-02-20 first_other_pco2_audit.csv
+MIMIC tabular data/prior runs/2026-02-20 gas_source_audit.json
+MIMIC tabular data/prior runs/2026-02-20 gas_source_overlap_summary.csv
+MIMIC tabular data/prior runs/2026-02-20 hco3_integrity_audit.csv
+MIMIC tabular data/prior runs/2026-02-20 icu_poc_itemid_map.csv
+MIMIC tabular data/prior runs/2026-02-20 icu_poc_itemid_usage.csv
+MIMIC tabular data/prior runs/2026-02-20 omr_diagnostics.json
+MIMIC tabular data/prior runs/2026-02-20 other_route_quarantine_audit.csv
+MIMIC tabular data/prior runs/2026-02-20 outliers_audit.csv
+MIMIC tabular data/prior runs/2026-02-20 pco2_itemid_qc_audit.csv
+MIMIC tabular data/prior runs/2026-02-20 pco2_source_distribution_audit.csv
+MIMIC tabular data/prior runs/2026-02-20 timing_integrity_audit.csv
+MIMIC tabular data/prior runs/2026-02-20 ventilation_timing_audit.csv
+MIMIC tabular data/prior runs/2026-02-20 vitals_outlier_audit.csv
+MIMICIV_hypercap_EXT_cohort.pdf
+Rater Agreement Analysis.pdf
+Symptom_Composition_Pivot_ChartReady.xlsx
+Symptom_Composition_by_ABG_VBG_Overlap.xlsx
+Symptom_Composition_by_Gas_Source_Overlap.xlsx
+Symptom_Composition_by_Hypercapnia_Definition.xlsx
+Symptom_Composition_by_ICD_Gas_Overlap.xlsx
+annotation_agreement_outputs_nlp/R3_vs_NLP_binary_stats_by_category.csv
+annotation_agreement_outputs_nlp/R3_vs_NLP_input_manifest.json
+annotation_agreement_outputs_nlp/R3_vs_NLP_join_audit.json
+annotation_agreement_outputs_nlp/R3_vs_NLP_matched_key_hashes.csv
+annotation_agreement_outputs_nlp/R3_vs_NLP_run_manifest.json
+annotation_agreement_outputs_nlp/R3_vs_NLP_set_metrics_by_visit.csv
+annotation_agreement_outputs_nlp/R3_vs_NLP_summary.txt
+annotation_agreement_outputs_nlp/R3_vs_NLP_unmatched_adjudicated_keys.csv
+annotation_agreement_outputs_nlp/R3_vs_NLP_unmatched_nlp_keys.csv
+artifacts/reports/20260220_122745/MIMICIV_hypercap_EXT_cohort.pdf
+artifacts/reports/20260220_123152/Hypercap CC NLP Classifier.pdf
+artifacts/reports/20260220_123403/Hypercap CC NLP Analysis.pdf
+artifacts/reports/20260220_123447/Rater Agreement Analysis.pdf
+current_columns.json
+debug/contracts/20260220_193605/contract_report.json
+debug/pipeline_parity/20260220_192539/parity_report.json
+debug/pipeline_parity/20260220_192539/parity_summary.md
+file_list.txt
+included_files.txt
+lab_item_map.json
+lab_unit_audit.csv
+qa_summary.json

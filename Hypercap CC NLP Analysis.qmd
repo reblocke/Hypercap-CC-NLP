@@ -199,13 +199,13 @@ def classify_gas_source_overlap(
             abg.eq(0) & vbg.eq(0) & other.eq(1),
         ],
         [
-            "ABG+VBG+OTHER",
+            "ABG+VBG+UNKNOWN",
             "ABG+VBG",
-            "ABG+OTHER",
-            "VBG+OTHER",
+            "ABG+UNKNOWN",
+            "VBG+UNKNOWN",
             "ABG-only",
             "VBG-only",
-            "OTHER-only",
+            "UNKNOWN-only",
         ],
         default="No-gas",
     )
@@ -259,7 +259,7 @@ HYPERCAP_CRITERIA = [
     "any_hypercap_icd",
     "abg_hypercap_threshold",
     "vbg_hypercap_threshold",
-    "other_hypercap_threshold",
+    "unknown_hypercap_threshold",
     "pco2_threshold_any",
 ]
 
@@ -317,7 +317,7 @@ prevalence_label_map = {
     "any_hypercap_icd": "Hypercapnic RF ICD (any)",
     "abg_hypercap_threshold": "ABG hypercapnia threshold",
     "vbg_hypercap_threshold": "VBG hypercapnia threshold",
-    "other_hypercap_threshold": "PCO2 OTHER threshold",
+    "unknown_hypercap_threshold": "PCO2 UNKNOWN threshold",
     "pco2_threshold_any": "PCO2 threshold any source",
 }
 cohort_n = int(len(df))
@@ -413,22 +413,29 @@ if qa_summary_path.exists():
     ventilation_timing_audit = qa_summary_payload.get("ventilation_timing_audit", [{}])
     timing_row = timing_integrity_audit[0] if timing_integrity_audit else {}
     vent_row = ventilation_timing_audit[0] if ventilation_timing_audit else {}
-    qualifying_gas_observed_rate = (
-        float(pd.to_numeric(df["qualifying_gas_observed"], errors="coerce").fillna(0).mean())
-        if "qualifying_gas_observed" in df.columns
+    qualifying_gas_time_observed_rate = (
+        float(pd.to_numeric(df["dt_qualifying_hypercapnia_hours"], errors="coerce").notna().mean())
+        if "dt_qualifying_hypercapnia_hours" in df.columns
         else None
     )
     qc_rows = [
         {
-            "metric": "OTHER semantics",
-            "value": "LAB blood-gas unknown specimen only (POC OTHER quarantined).",
+            "metric": "UNKNOWN semantics",
+            "value": "LAB blood-gas unknown specimen only (POC UNKNOWN quarantined).",
         },
         {
-            "metric": "gas_source_other_rate",
+            "metric": "panel_unknown_rate",
+            "value": qa_summary_payload.get(
+                "gas_source_unknown_rate",
+                qa_summary_payload.get("source_unknown_rate"),
+            ),
+        },
+        {
+            "metric": "encounter_unknown_rate",
             "value": qa_summary_payload.get("gas_source_other_rate"),
         },
         {
-            "metric": "POC OTHER quarantined hadm count",
+            "metric": "POC UNKNOWN quarantined hadm count",
             "value": (
                 qa_summary_payload.get("other_route_quarantine_audit", [{}])[0].get(
                     "poc_other_quarantined_hadm_n"
@@ -438,7 +445,7 @@ if qa_summary_path.exists():
             ),
         },
         {
-            "metric": "POC OTHER leakage into threshold",
+            "metric": "POC UNKNOWN leakage into threshold",
             "value": (
                 qa_summary_payload.get("other_route_quarantine_audit", [{}])[0].get(
                     "poc_other_leak_into_other_threshold_n"
@@ -458,8 +465,16 @@ if qa_summary_path.exists():
             ),
         },
         {
-            "metric": "qualifying_gas_observed_rate",
-            "value": qualifying_gas_observed_rate,
+            "metric": "qualifying_gas_time_observed_rate",
+            "value": qualifying_gas_time_observed_rate,
+        },
+        {
+            "metric": "timing_usable_for_model_rate",
+            "value": (
+                float(pd.to_numeric(df.get("timing_usable_for_model"), errors="coerce").fillna(0).mean())
+                if "timing_usable_for_model" in df.columns
+                else None
+            ),
         },
         {
             "metric": "hospital_los_negative_n",
@@ -536,13 +551,13 @@ icd_positive_breakdown = pd.DataFrame(
         "Definition": [
             "ABG threshold positive",
             "VBG threshold positive",
-            "PCO2 OTHER threshold positive",
+            "PCO2 UNKNOWN threshold positive",
             "Any gas threshold positive",
         ],
         "Count": [
             int(icd_positive_df["abg_hypercap_threshold"].sum()),
             int(icd_positive_df["vbg_hypercap_threshold"].sum()),
-            int(icd_positive_df["other_hypercap_threshold"].sum()),
+            int(icd_positive_df["unknown_hypercap_threshold"].sum()),
             int(icd_positive_df["pco2_threshold_any"].sum()),
         ],
     }
@@ -726,7 +741,7 @@ overlap_required = [
     SYMPTOM_COL,
     "abg_hypercap_threshold",
     "vbg_hypercap_threshold",
-    "other_hypercap_threshold",
+    "unknown_hypercap_threshold",
     "any_hypercap_icd",
     "pco2_threshold_any",
 ]
@@ -734,7 +749,7 @@ ensure_required_columns(df, overlap_required)
 
 abg_flag = to_binary_flag(df["abg_hypercap_threshold"])
 vbg_flag = to_binary_flag(df["vbg_hypercap_threshold"])
-other_flag = to_binary_flag(df["other_hypercap_threshold"])
+other_flag = to_binary_flag(df["unknown_hypercap_threshold"])
 icd_flag = to_binary_flag(df["any_hypercap_icd"])
 gas_flag = to_binary_flag(df["pco2_threshold_any"])
 
@@ -794,7 +809,7 @@ icd_gas_pivot_df.to_excel(icd_gas_output_path)
 
 print("Symptom distribution by ABG/VBG overlap (legacy output):")
 display(abg_vbg_pivot_df.head(15))
-print("Symptom distribution by ABG/VBG/OTHER overlap (expanded output):")
+print("Symptom distribution by ABG/VBG/UNKNOWN overlap (expanded output):")
 display(gas_source_pivot_df.head(15))
 print("Symptom distribution by ICD/Gas overlap:")
 display(icd_gas_pivot_df.head(15))
@@ -811,7 +826,7 @@ performance_targets = [
     ("pco2_threshold_any", "Gas any"),
     ("abg_hypercap_threshold", "ABG threshold"),
     ("vbg_hypercap_threshold", "VBG threshold"),
-    ("other_hypercap_threshold", "PCO2 OTHER threshold"),
+    ("unknown_hypercap_threshold", "PCO2 UNKNOWN threshold"),
 ]
 
 icd_positive = to_binary_flag(df["any_hypercap_icd"])
@@ -895,7 +910,7 @@ ascertainment_flags = pd.DataFrame(
         "ICD": to_binary_flag(df["any_hypercap_icd"]).astype(bool),
         "ABG": to_binary_flag(df["abg_hypercap_threshold"]).astype(bool),
         "VBG": to_binary_flag(df["vbg_hypercap_threshold"]).astype(bool),
-        "OTHER": to_binary_flag(df["other_hypercap_threshold"]).astype(bool),
+        "UNKNOWN": to_binary_flag(df["unknown_hypercap_threshold"]).astype(bool),
     }
 )
 
@@ -908,7 +923,7 @@ upset_plot = UpSet(
     sort_by="cardinality",
 )
 upset_plot.plot()
-plt.suptitle("Ascertainment Overlap (ICD / ABG / VBG / OTHER)")
+plt.suptitle("Ascertainment Overlap (ICD / ABG / VBG / UNKNOWN)")
 plt.tight_layout()
 
 upset_output_path = OUTPUT_DIR / "Ascertainment_Overlap_UpSet.png"
@@ -916,7 +931,7 @@ plt.savefig(upset_output_path, dpi=300, bbox_inches="tight")
 plt.show()
 
 intersection_counts = (
-    ascertainment_flags.groupby(["ICD", "ABG", "VBG", "OTHER"], dropna=False)
+    ascertainment_flags.groupby(["ICD", "ABG", "VBG", "UNKNOWN"], dropna=False)
     .size()
     .reset_index(name="Count")
     .sort_values("Count", ascending=False)
@@ -997,36 +1012,74 @@ model_df["is_respiratory"] = model_df[SYMPTOM_COL].astype(str).str.contains(
     r"\brespir", case=False, na=False
 ).astype(int)
 
-design_matrix = sm.add_constant(model_df[HYPERCAP_CRITERIA], has_constant="add")
+predictor_df = model_df[HYPERCAP_CRITERIA].copy()
+non_constant_predictors = [
+    column for column in HYPERCAP_CRITERIA if predictor_df[column].nunique(dropna=True) > 1
+]
 outcome = model_df["is_respiratory"]
-logit_result = sm.Logit(outcome, design_matrix, missing="drop").fit(disp=False)
+model_status = "ok"
+model_message = ""
 
-or_table = pd.DataFrame(
-    {
-        "OR": np.exp(logit_result.params),
-        "CI_lo": np.exp(logit_result.conf_int()[0]),
-        "CI_hi": np.exp(logit_result.conf_int()[1]),
-        "p": logit_result.pvalues,
-    }
-).round(3)
+if not non_constant_predictors:
+    model_status = "skipped"
+    model_message = "Association model skipped: all hypercapnia predictors are constant in this run."
+    print(model_message)
+    or_table = pd.DataFrame(index=HYPERCAP_CRITERIA, columns=["OR", "CI_lo", "CI_hi", "p"])
+else:
+    design_matrix = sm.add_constant(
+        predictor_df[non_constant_predictors], has_constant="add"
+    )
+    try:
+        logit_result = sm.Logit(outcome, design_matrix, missing="drop").fit(disp=False)
+        fitted_table = pd.DataFrame(
+            {
+                "OR": np.exp(logit_result.params),
+                "CI_lo": np.exp(logit_result.conf_int()[0]),
+                "CI_hi": np.exp(logit_result.conf_int()[1]),
+                "p": logit_result.pvalues,
+            }
+        )
+        or_table = (
+            fitted_table.reindex(HYPERCAP_CRITERIA)
+            .astype(float, copy=False)
+            .round(3)
+        )
+    except Exception as exc:
+        model_status = "skipped"
+        model_message = (
+            "Association model skipped due to singular/ill-conditioned design matrix: "
+            f"{exc}"
+        )
+        print(model_message)
+        or_table = pd.DataFrame(index=HYPERCAP_CRITERIA, columns=["OR", "CI_lo", "CI_hi", "p"])
 
 display(or_table.loc[HYPERCAP_CRITERIA])
 ```
 
 ```{python}
 #| label: hypercap-cc-nlp-analysis-cell-011
-or_plot_df = or_table.loc[HYPERCAP_CRITERIA]
-y_positions = np.arange(len(or_plot_df))[::-1]
+or_plot_df = or_table.loc[HYPERCAP_CRITERIA].copy()
+or_plot_df = or_plot_df.apply(pd.to_numeric, errors="coerce")
 
-plt.figure(figsize=(6, 4))
-plt.hlines(y=y_positions, xmin=or_plot_df["CI_lo"], xmax=or_plot_df["CI_hi"], linewidth=1.5)
-plt.plot(or_plot_df["OR"], y_positions, "o")
-plt.vlines(1, ymin=-1, ymax=len(or_plot_df), linestyles="dashed")
-plt.yticks(y_positions, or_plot_df.index)
-plt.xlabel("Odds ratio for respiratory symptom")
-plt.title("Adjusted ORs (95% CI)")
-plt.tight_layout()
-plt.show()
+if or_plot_df["OR"].notna().any():
+    y_positions = np.arange(len(or_plot_df))[::-1]
+
+    plt.figure(figsize=(6, 4))
+    plt.hlines(
+        y=y_positions,
+        xmin=or_plot_df["CI_lo"],
+        xmax=or_plot_df["CI_hi"],
+        linewidth=1.5,
+    )
+    plt.plot(or_plot_df["OR"], y_positions, "o")
+    plt.vlines(1, ymin=-1, ymax=len(or_plot_df), linestyles="dashed")
+    plt.yticks(y_positions, or_plot_df.index)
+    plt.xlabel("Odds ratio for respiratory symptom")
+    plt.title("Adjusted ORs (95% CI)")
+    plt.tight_layout()
+    plt.show()
+else:
+    print("Adjusted OR plot skipped because association model was not estimable in this run.")
 ```
 
 ## Export Verification

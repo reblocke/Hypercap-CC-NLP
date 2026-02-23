@@ -1,283 +1,90 @@
 Goal (incl. success criteria):
-- Implement blood-gas source integrity remediation in the Quarto-first pipeline, with specimen-driven extraction and explicit quarantine of unreliable OTHER routes.
+- Create a one-time zip containing outputs from the most recent run.
 - Success criteria:
-  - curated versioned blood-gas itemid manifest is introduced and used by cohort core logic,
-  - OTHER thresholding is LAB blood-gas unknown-specimen only (POC-other quarantined from enrollment thresholds),
-  - first gas anchor is pCO2-qualified and auditable,
-  - classifier ABG-derived hypercap flags fail fast on authoritative-flag inconsistencies,
-  - contracts/tests and stage renders pass with new audit artifacts present.
+  - dated zip exists in repo root,
+  - zip contains canonical workbook plus run diagnostics/manifests/pdf from latest classifier run,
+  - zip content listing verified.
 
 Constraints/Assumptions:
-- Core phase logic must reside in `.qmd` notebooks.
-- Standalone `.py` allowed only for QA/contracts/audit/scripts/tests.
-- No physiologic-value inference for ABG/VBG source classification.
-- Missing symptom values treated as No for primary symptom table policy.
-- Dependency addition `upsetplot` is approved.
+- Core phase logic remains embedded in `.qmd` notebooks.
+- No dependency/version changes.
+- ABG/VBG/UNKNOWN inference stays metadata/specimen-driven only.
+- Unknown-source definitive pCO2 remains cohort-eligible.
 
 Key decisions:
-- Keep `OTHER` in enrollment and report explicitly.
-- Hybrid denominator policy in analysis tables.
-- Use `longtable` + `landscape` for wide PDF tables.
-- Keep `pco2_threshold_any` and add explicit `other_hypercap_threshold` in first table.
-- Hard-code POC sanity QA thresholds:
-  - `COHORT_POC_PCO2_MEDIAN_MIN = 45`
-  - `COHORT_POC_PCO2_MEDIAN_MAX = 80`
-  - `COHORT_POC_PCO2_FAIL_ENABLED = 1`
-- Apply the above thresholds in external QA/contracts only (not notebook execution path).
-- CC normalization remediation decision: implement dual-mode spell correction (`disabled` vs strict-gated), compare both in-notebook, and select lower-risk mode automatically (`CC_SPELL_CORRECTION_MODE=auto` default).
-- CO2 OTHER policy remains LAB-only blood-gas unknown route with hard-fail on any POC leakage.
-- HCO3 policy: prioritize LAB blood-gas bicarbonate itemids; allow ICU POC fallback only when explicit ICU HCO3 itemids are configured.
+- Timing tri-state export columns remain removed.
+- `dt_qualifying_hypercapnia_hours` remains canonical timing field; `hypercap_timing_class` retained.
+- `cc_missing_flag` and `cc_pseudomissing_flag` remain internal/diagnostic only and are removed from final classifier export.
+- `cc_missing_reason` remains in final classifier export.
+- Most recent run interpreted as latest classifier stage run (`classifier_20260223_075133`) and its immediately-following classifier contract check.
 
 State:
-- Done: prior P0/P1/P2 remediation and Quarto migration are in place.
-- Now: residual integrity + blood-gas alignment pass completed and validated on latest canonical `11,769`-row outputs.
-- Next: optional follow-up tuning for unresolved OTHER-route burden (`gas_source_other_rate_high`) and low HCO3 coverage warnings.
+- Done: validated candidate LAB/ICU pH/pO2 itemids from BigQuery dictionaries.
+- Now: output bundle created and verified.
+- Next: await user follow-up.
 
 Done:
-- Updated specimen-driven strictification in cohort core (`MIMICIV_hypercap_EXT_cohort.qmd`):
-  - removed ABG/VBG label fallback in `co2_thresholds_sql` and blood-gas pair SQL,
-  - kept source classification specimen-type-first with OTHER as unknown blood specimen class.
-- Added additive cohort fields and QA summary wiring:
-  - timing tri-state (`qualifying_gas_observed`, `presenting_hypercapnia_tri`, `late_hypercapnia_tri`, `hypercap_timing_class`),
-  - timestamp/vent model fields (`hospital_los_hours_model`, `dt_first_imv_hours_model`, `dt_first_niv_hours_model`) + integrity flags,
-  - conservative anthropometric model fields + outlier flags,
-  - first-gas provenance (`first_gas_specimen_*`, `first_gas_pco2_*`, `co2_other_is_blood_asserted`),
-  - POC inclusion state (`poc_inclusion_enabled`, `poc_inclusion_reason`),
-  - new audits (`pco2_itemid_qc_audit`, `timing_integrity_audit`, `ventilation_timing_audit`, `anthropometric_cleaning_audit`).
-- Updated contracts/tests/docs:
-  - `src/hypercap_cc_nlp/pipeline_contracts.py` checks tri-state consistency, vent/timestamp model integrity, anthro model bounds, POC inclusion status, and new required audit artifacts.
-  - `tests/test_pipeline_contracts.py` + `tests/test_notebook_output_contracts.py` updated for new contract semantics and notebook markers.
-  - `Hypercap CC NLP Analysis.qmd` now surfaces QC metrics for qualifying-gas observation, timing/vent anomalies, and POC inclusion state.
-  - `README.md` updated with new semantics/columns/artifacts.
-- Validation after implementation:
+- Removed `qualifying_gas_observed`, `presenting_hypercapnia_tri`, `late_hypercapnia_tri` from cohort notebook timing derivation/export.
+- Updated analysis notebook QC metric from `qualifying_gas_observed_rate` to `qualifying_gas_time_observed_rate` computed from `dt_qualifying_hypercapnia_hours`.
+- Updated contract logic to remove tri-state consistency checks and related summary fields.
+- Updated notebook/contract tests for removed timing tri-state references.
+- Updated README timing policy text to reflect dt-driven timing contract.
+- Verification complete:
   - `make lint` passed.
-  - `make test` passed (`92 passed`).
-  - `make contracts-check STAGE=all` passed with `status=warning` (only `gas_source_other_rate_high`, `first_hco3_coverage_low`).
-  - `make quarto-pipeline` completed under warning-mode run settings (`PIPELINE_CONTRACT_MODE=warn`, `COHORT_OTHER_RELATIVE_REDUCTION_MIN=0`) for this cycle.
-  - baseline refreshed: `artifacts/baselines/jupyter/20260220_152137_post_residual_integrity/`.
-  - `make quarto-parity-check BASELINE=latest` passed against refreshed baseline.
-- Added versioned blood-gas manifest: `specs/blood_gas_itemids.json`.
-- Refactored cohort core gas extraction in `MIMICIV_hypercap_EXT_cohort.qmd`:
-  - strict LAB pCO2/pH/specimen itemid allowlists + blood-fluid guard,
-  - specimen-first site assignment with metadata fallback,
-  - POC OTHER quarantine from enrollment thresholds (`other_hypercap_threshold` now LAB-only OTHER),
-  - `first_gas_time` anchor now requires pCO2-qualified panel.
-- Added cohort provenance/audit outputs:
-  - `YYYY-MM-DD blood_gas_itemid_manifest_audit.csv`
-  - `YYYY-MM-DD pco2_source_distribution_audit.csv`
-  - `YYYY-MM-DD other_route_quarantine_audit.csv`
-  - `YYYY-MM-DD first_gas_anchor_audit.csv`
-  - plus new QA summary keys under `qa_summary.json`.
-- Added cohort columns:
-  - `first_other_src_detail`
-  - `first_gas_anchor_has_pco2`
-  - `first_gas_anchor_source_validated`
-- Tightened classifier safeguards in `Hypercap CC NLP Classifier.qmd`:
-  - hard fail when authoritative ABG positives exist but `hypercap_by_abg` is all-zero,
-  - added `classifier_hypercap_flags_audit.csv`.
-- Updated contracts/tests:
-  - `src/hypercap_cc_nlp/pipeline_contracts.py` now checks first-gas anchor integrity, POC-other leakage, required new audit artifacts.
-  - `src/hypercap_cc_nlp/classifier_quality.py` now errors on `abg_all_zero_with_authoritative_positive`.
-  - Updated tests in `tests/test_pipeline_contracts.py`, `tests/test_classifier_quality.py`, `tests/test_notebook_output_contracts.py`.
-- Updated docs:
-  - `README.md` now documents manifest-based blood-gas extraction and new audit artifacts.
-- Validation completed:
-  - `make lint` passed.
-  - `make test` passed (`85 passed`).
-  - `make quarto-cohort` passed.
+  - `uv run pytest -q tests/test_pipeline_contracts.py tests/test_notebook_output_contracts.py tests/test_workflow_contracts.py` passed (`44 passed`).
+  - `COHORT_OTHER_RELATIVE_REDUCTION_MIN=0 make quarto-cohort` passed.
   - `make quarto-classifier` passed.
   - `make quarto-analysis` passed.
-  - `make contracts-check STAGE=all` passed with `status=warning` (only `gas_source_other_rate_high`).
-  - `make quarto-parity-check BASELINE=latest` returned `fail` due expected intentional cohort/ID drift vs older baseline.
-- Post-rerun spot checks from canonical workbooks:
-  - cohort rows `11,769`; classifier rows `11,769`
-  - `first_other_src`: only `LAB_BG_UNKNOWN` (no POC contribution)
-  - `first_other_pco2` median (`LAB_BG_UNKNOWN`) = `48.0` (n=`2,499`)
-  - `poc_other_paco2` non-null count = `0`
-  - `poc_leak_other_threshold_n` = `0`
-  - `first_gas_without_pco2_anchor_n` = `0`
-  - `flag_abg_hypercapnia_sum` = `7,276`; `hypercap_by_abg_sum` = `7,276`; union mismatch = `0`
-  - `abnormal_loss_rows` = `0` in abnormal-lab phrase subset.
-- Implemented notebook-embedded ED vitals cleaning in `MIMICIV_hypercap_EXT_cohort.qmd`:
-  - Celsius-like temperature normalization to Fahrenheit (`20–50` -> `°F` conversion),
-  - pain sentinel `13` handling + range validation,
-  - conservative BP/SpO2 range validation with additive flag columns,
-  - backward-compatible `*_model` aliases mapped to cleaned fields.
-- Added ED vitals audit artifacts:
-  - `MIMIC tabular data/prior runs/YYYY-MM-DD ed_vitals_distribution_summary.csv`
-  - `MIMIC tabular data/prior runs/YYYY-MM-DD ed_vitals_extreme_examples.csv`
-  - `MIMIC tabular data/prior runs/YYYY-MM-DD ed_vitals_model_delta.csv`
-- Added cleaned-vitals cohort contract checks in `src/hypercap_cc_nlp/pipeline_contracts.py`.
-- Updated `Hypercap CC NLP Analysis.qmd` with cleaned-vitals preference selector and QC summary section.
-- Added QA tests:
-  - `tests/test_ed_vitals_cleaning.py`
-  - updates in `tests/test_notebook_output_contracts.py`
-  - updates in `tests/test_pipeline_contracts.py`
-- Verification completed:
-  - `uv run pytest -q tests/test_ed_vitals_cleaning.py tests/test_notebook_output_contracts.py tests/test_pipeline_contracts.py` passed (`20 passed`)
-  - `uv run --with ruff ruff check src tests` passed
-  - `make quarto-cohort` completed (with `COHORT_OTHER_RELATIVE_REDUCTION_MIN=0`, `COHORT_ALLOW_OMR_QUERY_FAILURE=1`, `BQ_QUERY_TIMEOUT_SECS=600`, `PIPELINE_CONTRACT_MODE=warn`)
-  - `make quarto-analysis` completed
-  - `make contracts-check STAGE=cohort` completed with `status=warning` (only `gas_source_other_rate_high`)
-- Canonical cohort workbook now includes requested ED-vitals cleaned/flag columns; cleaned bounds spot-checks passed (`bad=0` for SpO2/SBP/DBP bounds, no cleaned temp values remaining in 20–50 band).
-- Updated `AGENTS.md` with notebook-embedded-core non-negotiable policy.
-- Inlined core phase logic into:
-  - `MIMICIV_hypercap_EXT_cohort.qmd`
-  - `Hypercap CC NLP Classifier.qmd`
-  - `Rater Agreement Analysis.qmd`
-  - `Hypercap CC NLP Analysis.qmd`
-- Added requested analysis outputs (OTHER row, ICD+ subset table, ICD performance table, UpSet outputs).
-- Added notebook-local longtable helpers and LaTeX support for full PDF table visibility.
-- Added/updated tests for notebook-output contract + parity/audit handling and ran lint/tests/check-resources successfully.
-- Re-ran staged Quarto notebooks successfully after fixing encountered runtime issues.
-- Verified no residual long-running audit/parity processes after interruption; repository state preserved.
-- Re-ran standard checks successfully:
-  - `make lint` passed
-  - `make test` passed (`74 passed`)
-  - `make check-resources` passed
-- Re-ran parity successfully:
-  - `make quarto-parity-check BASELINE=latest` => `status=warning`, `P0=0`, `P1=0`, `P2-only` expected drift/new-output findings.
-- Re-ran contracts successfully:
-  - `uv run python scripts/run_contract_checks.py --mode fail --stage all` => `status=warning` with only `gas_source_other_rate_high`.
-- Confirmed requested artifacts exist (4 root PDFs, canonical workbooks, ICD performance files, UpSet outputs).
-- Executed strict rerun attempt:
-  - `make quarto-pipeline` failed at cohort gas-source reduction gate (`COHORT_OTHER_RELATIVE_REDUCTION_MIN=0.10` not met; observed reduction `0.0000`).
-- Executed full rerun in warning mode:
-  - `PIPELINE_CONTRACT_MODE=warn make quarto-pipeline` completed all 4 stages and produced refreshed PDFs/artifacts under `artifacts/reports/20260217_012510/`.
-- Refreshed post-rerun checks:
-  - `uv run python scripts/run_contract_checks.py --mode fail --stage all` => `status=warning` (only `gas_source_other_rate_high`).
-  - `make quarto-parity-check BASELINE=latest` => `status=warning`, `P0=0`, `P1=0`, `P2=11`.
-- Workbook spot-checks before this implementation pass:
-  - `hypercap_by_abg` sum = `11023` (non-zero) and union mismatch = `0`
-  - pseudo-missing RFV blank leakage not reproduced in current canonical workbook
-  - "abnormal labs" normalization issue reproduced via `segment_preds` (`abnormal loss`)
-  - ICU/POC `first_other_pco2` issue reproduced (`POC median ~90`, `%>=50 ~96.5%`)
-- Implemented P0 ICU/POC extraction tightening in `MIMICIV_hypercap_EXT_cohort.qmd`:
-  - removed unit-only ICU pCO2 candidacy in cohort SQL paths,
-  - added explicit PO2/O2 exclusion patterns,
-  - added ICU itemid prefilter CTEs for BigQuery performance and precision.
-- Added ICU itemid audit artifacts:
-  - `MIMIC tabular data/prior runs/YYYY-MM-DD icu_poc_itemid_map.csv`
-  - `MIMIC tabular data/prior runs/YYYY-MM-DD icu_poc_itemid_usage.csv`
-- Implemented P0 classifier text normalization fix in `Hypercap CC NLP Classifier.qmd`:
-  - protected `lab/labs` spell tokens,
-  - explicit `abnormal labs?` rule to `RVC-TEST`,
-  - added `classifier_phrase_audit.csv` and fail-fast assertion on `abnormal loss`.
-- Implemented hard-coded external QA thresholds in `pipeline_contracts.py`:
-  - `COHORT_POC_PCO2_MEDIAN_MIN = 45`
-  - `COHORT_POC_PCO2_MEDIAN_MAX = 80`
-  - `COHORT_POC_PCO2_FAIL_ENABLED = 1`
-- Updated `Makefile` and `README.md` so Quarto stage/pipeline targets do not auto-run contract checks; QA runs explicitly via dedicated commands.
-- Validation commands:
-  - `make lint` passed
-  - `make test` passed (`76 passed`)
-  - `make check-resources` passed
-- Stage reruns completed (same report run id):
-  - `make quarto-cohort REPORT_RUN_ID=20260217_071617`
-  - `make quarto-classifier REPORT_RUN_ID=20260217_071617`
-  - `make quarto-rater REPORT_RUN_ID=20260217_071617`
-  - `make quarto-analysis REPORT_RUN_ID=20260217_071617`
-- Post-rerun checks:
-  - `make contracts-check STAGE=all` => `status=warning` (only `gas_source_other_rate_high`)
-  - `make quarto-parity-check BASELINE=latest` => `status=fail` (expected major cohort/ID drift vs pre-migration baseline)
-  - `make quarto-pipeline-audit BASELINE=latest` was attempted; stalled at cohort stage and terminated.
-- Post-rerun workbook spot checks:
-  - rows reduced to `27,975` (from `41,322` baseline run),
-  - `first_other_pco2` now LAB-only (`POC n=0`),
-  - `abnormal loss` rows in abnormal-labs subset: `0`,
-  - `RFV1` abnormal-test dominance in abnormal-labs subset improved (`432/940` top category),
-  - `hypercap_by_abg` sum `5,242`, union mismatch `0`,
-  - pseudo-missing blank-RFV leakage `0`.
-- Captured refreshed baseline snapshot:
-  - `artifacts/baselines/jupyter/20260218_144053_post_specimen_contract_refresh/`
-- Parity check vs refreshed baseline:
-  - `uv run python scripts/compare_pipeline_baseline.py --baseline latest`
-  - `status=pass`
-  - report: `debug/pipeline_parity/20260218_144137/parity_report.json`
-- Contract check after baseline refresh:
-  - `make contracts-check STAGE=all`
-  - `status=warning` (only `gas_source_other_rate_high`, no fail-severity findings).
-- Full 4-stage rerun for abnormality assessment:
-  - Initial strict run (`RUN_ID=20260218_075533`) failed at cohort stage due OTHER-rate reduction gate (target `0.10` not met; reduction `0.0000`).
-  - Completed rerun with diagnostic override (`COHORT_OTHER_RELATIVE_REDUCTION_MIN=0`, `RUN_ID=20260218_075804`) and captured per-stage logs in `debug/recheck/20260218_075804/logs/`.
-- Post-rerun checks:
-  - `make contracts-check STAGE=all` => `status=warning` (only `gas_source_other_rate_high`; no fail-severity findings).
-  - `make quarto-parity-check BASELINE=latest` => `status=warning`, `P0=0`, `P1=0`, `P2=1` (`rater_match_count_delta`, baseline matched rows `150` vs current `60`).
-- PDF parse check performed for all four rendered PDFs via `pdftotext` under `debug/recheck/20260218_075804/pdf_text/`:
-  - expected key sections/tables are present (OTHER threshold row, sensitivity/PPV table, UpSet section, cohort Data Generation + QA sections),
-  - no render/parse evidence of LaTeX execution errors.
-- Revalidated current implementation after latest user confirmation:
+  - `make contracts-check STAGE=cohort` passed with warning-only status (known warnings unchanged: missing exported gas-source diagnostic columns by design, low `first_hco3` coverage).
+  - Canonical outputs:
+    - cohort workbook no longer includes `qualifying_gas_observed`, `presenting_hypercapnia_tri`, `late_hypercapnia_tri`.
+    - cohort workbook retains `dt_qualifying_hypercapnia_hours` and `hypercap_timing_class`.
+- Implemented classifier missingness export narrowing:
+  - `Hypercap CC NLP Classifier.qmd` now exports `df_export` with `cc_missing_flag` and `cc_pseudomissing_flag` removed from final workbook.
+  - Notebook contract validation now runs on the exported dataframe.
+  - Local notebook contract logic now requires `cc_missing_reason` and treats the two flag columns as optional diagnostics.
+  - `src/hypercap_cc_nlp/classifier_quality.py` updated to the same contract behavior.
+  - Tests updated (`tests/test_classifier_quality.py`, `tests/test_pipeline_contracts.py`, `tests/test_notebook_output_contracts.py`) for optional flag columns in exported classifier output.
+  - `README.md` updated to document final export keeps `cc_missing_reason` and keeps flag columns in diagnostics/audits only.
+- Verification complete (this task):
   - `make lint` passed.
-  - `uv run pytest -q tests/test_pipeline_contracts.py tests/test_notebook_output_contracts.py tests/test_classifier_quality.py` passed (`31 passed`).
-- Executed classifier rerun (`artifacts/reports/20260218_161249/Hypercap-CC-NLP-Classifier.pdf`) with dual-mode comparison active:
-  - `classifier_spell_mode_comparison.csv` shows `strict` and `disabled` both at `integrity_violation_total=0`.
-  - `strict` selected (`cc_spell_mode_selected='strict'` for all rows) due tie-breaker preference.
-- Executed full pipeline rerun with gate override:
-  - default `make quarto-pipeline` failed as expected at OTHER relative-reduction gate (`target=0.10`, observed `0.0000`).
-  - `COHORT_OTHER_RELATIVE_REDUCTION_MIN=0 make quarto-pipeline` completed successfully (run dir `artifacts/reports/20260218_162048/`).
-- Post-rerun QA:
-  - `make contracts-check STAGE=all` => `status=warning` with findings:
-    - `gas_source_other_rate_high` (`0.5357`)
-    - `first_hco3_coverage_low` (`0.0115`)
-  - `make quarto-parity-check BASELINE=latest` => `status=warning` (no P0/P1).
-- Post-rerun workbook spot checks:
-  - cohort rows `11,769`; classifier rows `11,769`.
-  - `first_other_src`: only `LAB_BG_UNKNOWN` + null; `poc_other_paco2` non-null count `0`.
-  - `flag_abg_hypercapnia_sum = 7,276`; `hypercap_by_abg_sum = 7,276`; BG union mismatch `0`.
-  - abnormal-labs subset: `abnormal_loss_rows = 0`; top RFV1 remains `Abnormal test result`.
-- Verified latest PDF/data alignment claim:
-  - Root PDFs and `artifacts/reports/20260218_162048/*.pdf` contain `11,769` row-count traces and `EXPORT_SHAPE` lines matching canonical workbook hashes/counts.
-  - Root PDFs are byte-identical to run-dir PDFs (same SHA256 prefixes and mtimes).
-  - Older report dirs still contain legacy PDFs with `41,322` and some `115,179` traces (e.g., `artifacts/reports/20260216_222038/`), which explains external reviewer mismatch when those files are analyzed instead of latest run artifacts.
-- Generated reproducibility inventories for latest run:
-  - `debug/recheck/20260218_162048/run_inventory.tsv` (per-stage manifest outputs + report PDFs + root PDFs, with mtime/size/SHA256).
-  - `debug/recheck/20260218_162048/report_dir_rowcount_signatures.tsv` (quick signature matrix showing which report dirs contain 11,769 vs 41,322/115,179 text traces).
-- Verified current canonical classifier output for residual normalization corruption:
-  - `fall` raw encounters = `640`; `fall -> small` conversions = `0`.
-  - `head` raw encounters = `110`; `head -> heart` conversions = `0`.
-  - cleaned pre-2020 `covid` hallucinations = `0`.
-  - checks performed on both `cc_cleaned_str` and `cc_cleaned_canon_str` in `MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx`.
-  - conclusion: issue no longer active in current canonical workbook; prior reports likely reflected older artifacts.
-- Verified secondary residual-issue status on current canonical workbook (`11,769` rows):
-  - qualifying gas timing encoding issue remains active: `dt_first_qualifying_gas_hours` missing for `4,168`, and all such rows have `presenting_hypercapnia=0` and `late_hypercapnia=0`.
-  - timestamp integrity issues remain active: `hospital_los_hours<0` for `17`; `admittime<ed_intime` for `15`.
-  - ventilation timing integrity remains active: `dt_first_imv_hours<0` for `6`; `dt_first_niv_hours<0` for `1`; `dt_first_imv_hours>hospital_los_hours` for `74` (`57` even when LOS>=0); `dt_first_niv_hours>hospital_los_hours` for `33` (`29` with LOS>=0).
-  - anthropometric outliers remain active despite improved coverage:
-    - BMI non-null `7,245`; `BMI<=0`=`32`; `BMI>100`=`81`; max `537.67`.
-    - Height non-null `7,249`; `<100`=`32`; `>250`=`1`; max `419.1`.
-  - POC structural emptiness remains active by design:
-    - `16` `poc_*` columns total; `15` are all-null; only non-null one is `poc_other_quarantined_hypercap_threshold` (`11,769`, derived quarantine indicator), while core POC gas values (`poc_abg_paco2`, `poc_vbg_paco2`, `poc_other_paco2`, pH variants) are all `0` non-null.
-  - snapshot artifact written: `debug/recheck/20260218_162048/secondary_issue_check.json`.
+  - `uv run pytest -q tests/test_classifier_quality.py tests/test_pipeline_contracts.py tests/test_notebook_output_contracts.py` passed (`42 passed`).
+  - `make quarto-classifier` passed.
+  - `make contracts-check STAGE=classifier` passed.
+  - Canonical NLP workbook check:
+    - `cc_missing_reason` present,
+    - `cc_missing_flag` absent,
+    - `cc_pseudomissing_flag` absent.
+- Created output bundle for latest run:
+  - zip: `outputs20260223_075423.zip`
+  - includes canonical classifier workbook, classifier run manifest/audits, classifier render PDF, run-manifest git diff, and latest classifier contract report.
+  - bundle staging files recorded under `debug/output_bundle_20260223_075423/`.
 
 Now:
-- Residual-integrity implementation is in progress from interrupted state; cohort notebook changes are partially landed and need completion in QA summary/export contracts/tests.
+- Await user review.
 
 Next:
-- Complete remaining plan scope:
-  - propagate new timing/vent/anthro/provenance fields into contract checks and notebook output contracts,
-  - add analysis QC summary rows for timing/vent anomalies and POC inclusion status,
-  - refresh README for the new fields/audits/gating behavior,
-  - rerun `make quarto-pipeline`, `make contracts-check STAGE=all`, and `make quarto-parity-check BASELINE=latest`.
+- None.
 
 Open questions (UNCONFIRMED if needed):
-- UNCONFIRMED: exact final allowlists for all blood-gas itemids beyond currently known high-confidence IDs.
+- None.
 
 Working set (files/ids/commands):
-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/AGENTS.md`
-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMICIV_hypercap_EXT_cohort.qmd`
-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Hypercap CC NLP Classifier.qmd`
-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Rater Agreement Analysis.qmd`
-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Hypercap CC NLP Analysis.qmd`
-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/_quarto.yml`
-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/quarto-pdf-header.tex`
-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/README.md`
-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/pyproject.toml`
-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/uv.lock`
-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/src/hypercap_cc_nlp/pipeline_contracts.py`
-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/tests/test_ed_vitals_cleaning.py`
-- `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/tests/test_pipeline_contracts.py`
+- Files:
+  - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMICIV_hypercap_EXT_cohort.qmd`
+  - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Hypercap CC NLP Analysis.qmd`
+  - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/src/hypercap_cc_nlp/pipeline_contracts.py`
+  - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/README.md`
+  - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/tests/test_pipeline_contracts.py`
+  - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/tests/test_notebook_output_contracts.py`
+  - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/src/hypercap_cc_nlp/classifier_quality.py`
+  - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/tests/test_classifier_quality.py`
 - Commands:
-  - `make quarto-pipeline`
-  - `uv run python scripts/run_contract_checks.py --mode fail --stage all`
-  - `make quarto-parity-check BASELINE=latest`
-  - `uv run python scripts/run_pipeline_audit.py --pipeline-mode quarto --baseline latest --strictness fail_on_key_anomalies` (best-effort)
+  - `make lint`
+  - `uv run pytest -q tests/test_pipeline_contracts.py tests/test_notebook_output_contracts.py tests/test_workflow_contracts.py`
+  - `COHORT_OTHER_RELATIVE_REDUCTION_MIN=0 make quarto-cohort`
+  - `make quarto-classifier`
+  - `make quarto-analysis`
+  - `make contracts-check STAGE=cohort`
+  - `make quarto-classifier`
+  - `make contracts-check STAGE=classifier`

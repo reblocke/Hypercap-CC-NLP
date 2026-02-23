@@ -130,7 +130,7 @@ COHORT_FAIL_ON_ALL_OTHER_SOURCE=1  # fail cohort run if gas source attribution c
 COHORT_WARN_OTHER_RATE=0.50  # warn when mean gas_source_other_rate is high
 COHORT_FAIL_OTHER_RATE=      # optional hard fail threshold for gas_source_other_rate (unset = disabled)
 COHORT_GAS_SOURCE_INFERENCE_MODE=metadata_only  # enforce metadata/text-only source inference
-COHORT_OTHER_RELATIVE_REDUCTION_MIN=0.10  # require >=10% relative OTHER-rate reduction vs latest baseline audit (strict mode)
+COHORT_OTHER_RELATIVE_REDUCTION_MIN=0.10  # require >=10% relative UNKNOWN-rate reduction vs latest comparable-mode baseline audit
 COHORT_FAIL_ON_OMR_ATTACH_INCONSISTENCY=1  # fail when OMR +/-365-day candidates exist but attached outputs are all null
 COHORT_ALLOW_EMPTY_OMR=0  # set 1 to bypass strict OMR attach guard for intentional reruns
 COHORT_ALLOW_OMR_QUERY_FAILURE=0  # set 1 to continue with empty OMR when OMR query fails
@@ -141,6 +141,7 @@ CLASSIFIER_STRICT_RESOURCE_HASH=1  # fail on resource-manifest hash mismatch (se
 CC_SPELL_CORRECTION_MODE=auto  # auto compares disabled vs strict spell correction and selects lower-risk mode
 PIPELINE_CONTRACT_MODE=fail  # fail|warn contract enforcement mode
 RUN_MANIFEST_STAGE_SCOPE=all  # per-stage run manifests are written for cohort/classifier/rater/analysis
+RUN_MANIFEST_REQUIRE_CLEAN_GIT=0  # set 1 to fail if repo is dirty; default 0 captures git diff artifact + hash in manifest
 ```
 
 Hard-coded QA-only POC sanity contract (not a runtime notebook env setting):
@@ -150,9 +151,17 @@ Hard-coded QA-only POC sanity contract (not a runtime notebook env setting):
 - Enforced by `make contracts-check` / pipeline audit checks against exported cohort artifacts.
 
 Blood-gas item selection is versioned in `specs/blood_gas_itemids.json`:
-- LAB pCO2/pH/HCO3/specimen-type extraction uses manifest allowlists (blood-only fluid guard).
-- POC OTHER is quarantined from enrollment thresholds in this release.
+- LAB + POC definitive pCO2 extraction uses manifest allowlists and explicit exclusions.
+- Source classes are ABG/VBG/UNKNOWN; UNKNOWN means definitive pCO2 with unresolved sample type.
+- UNKNOWN remains cohort-eligible for pCO2-threshold inclusion.
 - ICU HCO3 fallback is explicit-itemid only (no regex fallback).
+- Blood-gas triplet capture now pairs `pCO2 + pH + pO2` from the same draw context:
+  - LAB uses specimen/panel context.
+  - POC uses exact `charttime` pairing first, then nearest match within ±10 minutes in the same stay/site.
+- Final cohort export adds only first-by-site pO2 fields: `first_abg_po2`, `first_vbg_po2`, `first_other_po2`.
+- pH units are normalized to `unitless` when pH values are present.
+- Triplet completeness diagnostics are written per run at:
+  - `MIMIC tabular data/prior runs/<date> blood_gas_triplet_completeness_audit.csv`.
 - Update this manifest (not ad-hoc notebook regex) when itemids need to change.
 
 `GOOGLE_APPLICATION_CREDENTIALS` is also supported (optional) when you prefer service-account auth over ADC login.
@@ -312,28 +321,32 @@ Canonical execution chain:
 - `Hypercap CC NLP Analysis.qmd` reads the canonical NLP workbook above (ordered after rater in `make quarto-pipeline`, but does not consume rater artifacts).
 
 Anthropometric timing policy:
-- OMR anthropometrics use a tiered fallback: pre-ED (within 365 days) first, then post-ED (within 365 days).
-- Charted fallback can fill remaining missing values with nearest-anytime records when enabled.
+- Anthropometric candidates are sourced from ED charting, ICU charting, and hospital OMR records; OMR is normalized to `HOSPITAL` provenance.
+- Metric selection is deterministic per metric (nearest to ED intime, then earlier timestamp, then source priority `ED > ICU > HOSPITAL`).
+- Canonical units are enforced before selection: weight=`kg`, height=`cm`, BMI=`kg/m2`; unknown units are excluded and tracked in diagnostics.
+- When BMI is missing, it is backfilled from selected height+weight only when both units are canonical and measurement times are within 7 days.
+- Canonical unit/time columns are exported as `*_closest_pre_ed_uom` and `*_closest_pre_ed_time` for BMI/height/weight.
 - Output provenance columns indicate uncertainty: `anthro_timing_tier`, `anthro_days_offset`, `anthro_chartdate`, `anthro_timing_uncertain`, `anthro_source`, `anthro_obstime`, `anthro_hours_offset`, `anthro_timing_basis`.
 - Conservative model-cleaned anthropometric fields are exported as `bmi_closest_pre_ed_model`, `height_closest_pre_ed_model`, `weight_closest_pre_ed_model` with paired outlier flags.
 
 Hypercapnia timing + integrity policy:
-- Legacy boolean timing flags are retained for compatibility, and additive tri-state fields are exported: `qualifying_gas_observed`, `presenting_hypercapnia_tri`, `late_hypercapnia_tri`, `hypercap_timing_class`.
+- Timing is anchored on `dt_qualifying_hypercapnia_hours`; derived compatibility flags remain `presenting_hypercapnia`, `late_hypercapnia`, with categorical `hypercap_timing_class`.
 - Timestamp integrity and ventilation-window sanitation are additive (`hospital_los_negative_flag`, `admittime_before_ed_intime_flag`, `dt_first_imv_hours_model`, `dt_first_niv_hours_model`, `imv_time_outside_window_flag`, `niv_time_outside_window_flag`).
 - Blood-gas provenance fields are exported for first-gas anchor auditability (`first_gas_specimen_type`, `first_gas_specimen_present`, `first_gas_pco2_itemid`, `first_gas_pco2_fluid`, `co2_other_is_blood_asserted`).
 
 Classifier CC missingness policy:
-- Pseudo-missing CC tokens (e.g., `-`, `--`, `N`, `UNKNOWN`, redaction underscores) are retained but flagged via `cc_pseudomissing_flag` and `cc_missing_flag`.
+- Pseudo-missing CC tokens (e.g., `-`, `--`, `N`, `UNKNOWN`, redaction underscores) are retained and tracked in diagnostics.
 - Pseudo-missing rows are forced to uncodable primary output (`RFV1="uncodable"`, `RFV1_name="Uncodable/Unknown"`).
-- Exported missingness audit columns are `cc_missing_flag`, `cc_missing_reason`, `cc_pseudomissing_flag`, and `cc_text_for_nlp`.
+- Final workbook exports `cc_missing_reason` (plus `cc_text_for_nlp`); `cc_missing_flag` and `cc_pseudomissing_flag` remain in classifier diagnostics/audits only.
 
 Annotation workbook curation remains an independent manual workflow.
 
 ## Methods summary (BigQuery pipeline)
 - Query MIMIC‑IV HOSP/ICU/ED in BigQuery and assemble an **ED‑stay** cohort anchored to the first ED visit per hospitalization.
 - Define hypercapnia via ICD codes and blood‑gas thresholds (ABG/VBG), then take the union.
-- Source assignment for enrollment thresholds is specimen-driven; `OTHER` is constrained to LAB blood-gas pCO2 with unknown specimen class.
-- POC inclusion is gated by manifest+QC (`poc_inclusion_enabled` / `poc_inclusion_reason`); when gates fail, POC remains audited but excluded from threshold union.
+- Source assignment for enrollment thresholds is specimen-driven with deterministic classes `arterial`, `venous`, `unknown`.
+- Definitive pCO2 values with `unknown` sample class remain cohort-eligible and are explicitly reported as the UNKNOWN stratum.
+- POC pCO2 extraction is manifest-driven with itemid-level QC/audit and ABG/VBG inference by validated itemids or specimen text.
 - Join ED triage data and ED vitals; derive ED chief‑complaint subsets and time‑anchored features.
 - Manually annotate ED chief complaints to NHAMCS 17 top‑level RVC groups.
 - Quantify agreement with set‑based metrics and chance‑corrected scores (e.g., Gwet’s AC1).
@@ -365,7 +378,7 @@ ED vitals cleaning policy (cohort stage):
 | Blood-gas manifest itemid audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD blood_gas_itemid_manifest_audit.csv` |
 | pCO2 itemid QC audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD pco2_itemid_qc_audit.csv` |
 | pCO2 source distribution audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD pco2_source_distribution_audit.csv` |
-| OTHER-route quarantine audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD other_route_quarantine_audit.csv` |
+| UNKNOWN-route accounting audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD other_route_quarantine_audit.csv` |
 | First-gas anchor audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD first_gas_anchor_audit.csv` |
 | Timing integrity audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD timing_integrity_audit.csv` |
 | Ventilation timing audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD ventilation_timing_audit.csv` |
@@ -390,9 +403,12 @@ ED vitals cleaning policy (cohort stage):
 | Manual agreement metrics | `Rater Agreement Analysis.qmd` | `Annotation/Full Annotations/Agreement Metrics/` (pairwise set metrics, binary stats, AC1 summary) |
 | NLP vs R3 agreement outputs | `Rater Agreement Analysis.qmd` | `annotation_agreement_outputs_nlp/R3_vs_NLP_set_metrics_by_visit.csv`, `annotation_agreement_outputs_nlp/R3_vs_NLP_binary_stats_by_category.csv`, `annotation_agreement_outputs_nlp/R3_vs_NLP_summary.txt` |
 | R3/NLP join audit | `Rater Agreement Analysis.qmd` | `annotation_agreement_outputs_nlp/R3_vs_NLP_join_audit.json`, `annotation_agreement_outputs_nlp/R3_vs_NLP_unmatched_adjudicated_keys.csv`, `annotation_agreement_outputs_nlp/R3_vs_NLP_unmatched_nlp_keys.csv` |
+| R3/NLP key inventory | `Rater Agreement Analysis.qmd` | `annotation_agreement_outputs_nlp/R3_vs_NLP_key_inventory.csv` |
+| R3/NLP label mapping audit | `Rater Agreement Analysis.qmd` | `annotation_agreement_outputs_nlp/R3_vs_NLP_label_mapping_audit.csv` |
 | NLP‑augmented workbook | `Hypercap CC NLP Classifier.qmd` | Canonical: `MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx`; optional archive (`WRITE_ARCHIVE_XLSX_EXPORTS=1`): `MIMIC tabular data/prior runs/YYYY-MM-DD MIMICIV all with CC_with_NLP.xlsx` |
 | Classifier CC missingness audit | `Hypercap CC NLP Classifier.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD classifier_cc_missing_audit.csv` |
 | Classifier phrase regression audit | `Hypercap CC NLP Classifier.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD classifier_phrase_audit.csv` |
+| Classifier spellfix guardrail audit | `Hypercap CC NLP Classifier.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD classifier_spellfix_guardrail_audit.csv` |
 | Classifier spell-mode comparison audit | `Hypercap CC NLP Classifier.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD classifier_spell_mode_comparison.csv` |
 | Classifier spellfix row audit | `Hypercap CC NLP Classifier.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD classifier_spellfix_log.csv` |
 | Classifier hypercap flags audit | `Hypercap CC NLP Classifier.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD classifier_hypercap_flags_audit.csv` |
@@ -403,6 +419,11 @@ ED vitals cleaning policy (cohort stage):
 | Analysis gas-source overlap export | `Hypercap CC NLP Analysis.qmd` | `Symptom_Composition_by_Gas_Source_Overlap.xlsx` |
 | ICD diagnostic performance export | `Hypercap CC NLP Analysis.qmd` | `ICD_vs_Gas_Performance.xlsx` |
 | ICD-positive subset breakdown export | `Hypercap CC NLP Analysis.qmd` | `ICD_Positive_Subset_Breakdown.xlsx` |
+
+`qa_summary.json` contract synchronization:
+- `qa_status` remains the local cohort QA status.
+- `contract_status`, `contract_warning_codes`, and `contract_error_codes` are copied from the latest cohort contract report.
+- `qa_status_final` is the max severity across local QA and contract findings (`pass|warning|fail`).
 | Ascertainment overlap UpSet outputs | `Hypercap CC NLP Analysis.qmd` | `Ascertainment_Overlap_UpSet.png`, `Ascertainment_Overlap_Intersections.xlsx` |
 | Analysis run manifest | `Hypercap CC NLP Analysis.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD analysis_run_manifest.json` |
 | Rater input manifest | `Rater Agreement Analysis.qmd` | `annotation_agreement_outputs_nlp/R3_vs_NLP_input_manifest.json` |
@@ -410,18 +431,21 @@ ED vitals cleaning policy (cohort stage):
 | Rater run manifest | `Rater Agreement Analysis.qmd` | `annotation_agreement_outputs_nlp/R3_vs_NLP_run_manifest.json` |
 
 Rater join policy:
-- Rater/NLP agreement is computed on matched `(hadm_id, subject_id)` rows.
-- Unmatched adjudicated and unmatched NLP keys are exported for audit, and the notebook continues when at least one matched row exists.
-- `R3_vs_NLP_join_audit.json` now includes `join_interpretation` and `severity`:
-  - `severity=info` when adjudicated rows are fully covered (`matched_rate_vs_adjudicated == 1.0`) and NLP has expected extras.
-  - `severity=warning` for partial adjudicated overlap.
+- Rater/NLP agreement is computed on matched keys using deterministic key-strategy selection (`ed_stay_id` when present on both sources, otherwise `(hadm_id, subject_id)` fallback).
+- Unmatched adjudicated and unmatched NLP keys are exported for audit; the stage fails only when `matched_rows == 0`.
+- Coverage target is recorded in `R3_vs_NLP_join_audit.json`:
+  - `target_sample_n=160`
+  - `gate_policy="warn_below_target_fail_on_zero"`
+  - `coverage_status` is `ok|warning|fail` (warning when `0 < matched_rows < 160`).
+- Agreement metrics are computed on canonical RVC codes, with label normalization/mapping exported in `R3_vs_NLP_label_mapping_audit.csv`.
 
 Schema transition note:
 - Classifier intake now applies transitional aliases (`age`, `hr`, `rr`, `sbp`, `dbp`, `temp`, `spo2`, `race`) from canonical source columns when alias columns are absent.
 - Source columns are preserved; aliases are compatibility scaffolding and may be deprecated after full downstream migration.
 
 Anthropometric provenance note:
-- `bmi_closest_pre_ed`, `height_closest_pre_ed`, and `weight_closest_pre_ed` may come from either pre-ED or bounded post-ED OMR fallback windows.
+- `anthro_source` is standardized to `ED`, `ICU`, `HOSPITAL`, or `missing`.
+- Unit conversion and dropped-candidate diagnostics are reported in `MIMIC tabular data/prior runs/YYYY-MM-DD anthropometrics_coverage_audit.json` and `... anthropometric_cleaning_audit.csv`.
 - Use `anthro_timing_uncertain` (and `anthro_timing_tier`) for sensitivity analyses when restricting to temporally cleaner baseline measurements.
 
 ## Quality checks / tests
@@ -475,6 +499,7 @@ Reproducibility checklist:
 - Capture a fresh Jupyter baseline when needed: `make baseline-capture-jupyter`
 - Run `make quarto-pipeline-audit` and archive the generated `debug/pipeline_audit/<run_id>/` folder with results.
 - Run `make quarto-parity-check BASELINE=latest` and archive `debug/pipeline_parity/<run_id>/`.
+- For dirty working trees, manifests record `debug/run_manifests/<run_id>_git.diff` plus SHA256; set `RUN_MANIFEST_REQUIRE_CLEAN_GIT=1` to fail instead of capturing a diff.
 
 Legacy compatibility:
 - `make notebook-pipeline` and `make notebook-pipeline-audit` remain available during transition.

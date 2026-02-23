@@ -233,6 +233,28 @@ import hashlib
 
 from hypercap_cc_nlp.pipeline_audit import collect_run_manifest
 
+RVC_CODE_TO_LABEL: dict[str, str] = {
+    "RVC-INJ": "Injuries & adverse effects",
+    "RVC-SYM-RESP": "Symptom – Respiratory",
+    "RVC-SYM-CIRC": "Symptom – Circulatory",
+    "RVC-SYM-NERV": "Symptom – Nervous",
+    "RVC-SYM-DIG": "Symptom – Digestive",
+    "RVC-SYM-GU": "Symptom – Genitourinary",
+    "RVC-SYM-MSK": "Symptom – Musculoskeletal",
+    "RVC-SYM-SKIN": "Symptom – Skin/Hair/Nails",
+    "RVC-SYM-EYE": "Symptom – Eye/Ear",
+    "RVC-SYM-GEN": "Symptom – General",
+    "RVC-SYM-PSY": "Symptom – Psychological",
+    "RVC-DIS": "Diseases (patient-stated)",
+    "RVC-TEST": "Abnormal test result",
+    "RVC-DIAG": "Diagnostic/Screening/Preventive",
+    "RVC-TREAT": "Treatment/Medication",
+    "RVC-ADMIN": "Administrative",
+    "RVC-UNCL": "Uncodable/Unknown",
+}
+R3_NLP_TARGET_SAMPLE_N = 160
+R3_NLP_GATE_POLICY = "warn_below_target_fail_on_zero"
+
 
 def normalize_join_keys(df: pd.DataFrame, key_cols: list[str]) -> pd.DataFrame:
     validate_required_columns(df, key_cols, "rater join input")
@@ -264,10 +286,75 @@ def _anti_join_keys(left_df: pd.DataFrame, right_df: pd.DataFrame, key_cols: lis
     return only_left
 
 
+def select_join_key_columns(
+    df_r3: pd.DataFrame,
+    df_nlp: pd.DataFrame,
+) -> tuple[list[str], str]:
+    preferred_candidates: list[tuple[list[str], str]] = [
+        (["ed_stay_id"], "ed_stay_id"),
+        (["hadm_id", "subject_id"], "hadm_id_subject_id"),
+        (["hadm_id"], "hadm_id"),
+    ]
+    for key_cols, strategy in preferred_candidates:
+        if not set(key_cols).issubset(df_r3.columns) or not set(key_cols).issubset(df_nlp.columns):
+            continue
+        r3_nonnull = df_r3[key_cols].notna().all(axis=1)
+        nlp_nonnull = df_nlp[key_cols].notna().all(axis=1)
+        if int(r3_nonnull.sum()) == 0 or int(nlp_nonnull.sum()) == 0:
+            continue
+        return key_cols, strategy
+    raise ValueError(
+        "Unable to find a valid join key strategy. Expected shared non-null keys from "
+        "['ed_stay_id'] or ['hadm_id','subject_id'] or ['hadm_id']."
+    )
+
+
+def build_join_key_inventory(
+    df_r3: pd.DataFrame,
+    df_nlp: pd.DataFrame,
+    key_cols: list[str],
+    *,
+    strategy: str,
+) -> pd.DataFrame:
+    normalized_r3 = normalize_join_keys(df_r3, key_cols)
+    normalized_nlp = normalize_join_keys(df_nlp, key_cols)
+    r3_keys = normalized_r3[key_cols].drop_duplicates()
+    nlp_keys = normalized_nlp[key_cols].drop_duplicates()
+    overlap_keys = r3_keys.merge(nlp_keys, on=key_cols, how="inner")
+    rows = [
+        {
+            "source": "adjudicated_r3",
+            "join_key_strategy": strategy,
+            "join_key_columns": "|".join(key_cols),
+            "rows": int(len(normalized_r3)),
+            "unique_keys": int(len(r3_keys)),
+        },
+        {
+            "source": "nlp_output",
+            "join_key_strategy": strategy,
+            "join_key_columns": "|".join(key_cols),
+            "rows": int(len(normalized_nlp)),
+            "unique_keys": int(len(nlp_keys)),
+        },
+        {
+            "source": "key_overlap",
+            "join_key_strategy": strategy,
+            "join_key_columns": "|".join(key_cols),
+            "rows": int(len(overlap_keys)),
+            "unique_keys": int(len(overlap_keys)),
+        },
+    ]
+    return pd.DataFrame(rows)
+
+
 def build_r3_nlp_join_audit(
     df_r3: pd.DataFrame,
     df_nlp: pd.DataFrame,
     key_cols: list[str],
+    *,
+    target_sample_n: int = R3_NLP_TARGET_SAMPLE_N,
+    gate_policy: str = R3_NLP_GATE_POLICY,
+    key_strategy: str = "hadm_id_subject_id",
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, object]]:
     normalized_r3 = normalize_join_keys(df_r3, key_cols)
     normalized_nlp = normalize_join_keys(df_nlp, key_cols)
@@ -289,6 +376,9 @@ def build_r3_nlp_join_audit(
 
     audit: dict[str, object] = {
         "key_columns": key_cols,
+        "key_strategy": key_strategy,
+        "target_sample_n": int(target_sample_n),
+        "gate_policy": gate_policy,
         "r3_rows": r3_rows,
         "nlp_rows": nlp_rows,
         "matched_rows": matched_rows,
@@ -307,13 +397,14 @@ def build_r3_nlp_join_audit(
             "Check key consistency between annotation and NLP workbooks."
         )
 
-    matched_rate_vs_adjudicated = audit["matched_rate_vs_adjudicated"]
-    if matched_rate_vs_adjudicated == 1.0:
-        audit["join_interpretation"] = "adjudicated_fully_covered_subset"
-        audit["severity"] = "info"
-    else:
-        audit["join_interpretation"] = "partial_adjudicated_overlap"
+    if matched_rows < int(target_sample_n):
+        audit["coverage_status"] = "warning"
+        audit["join_interpretation"] = "below_target_overlap_nonzero"
         audit["severity"] = "warning"
+    else:
+        audit["coverage_status"] = "ok"
+        audit["join_interpretation"] = "target_overlap_met"
+        audit["severity"] = "info"
 
     return matched, unmatched_adjudicated, unmatched_nlp, audit
 
@@ -415,6 +506,38 @@ def normalize_label(value: object) -> str | None:
     return text
 
 
+RVC_LABEL_TO_CODE: dict[str, str] = {
+    normalize_label(label): code
+    for code, label in RVC_CODE_TO_LABEL.items()
+    if normalize_label(label) is not None
+}
+RVC_LABEL_TO_CODE.update(
+    {
+        "Diseases (patient–stated diagnosis)": "RVC-DIS",
+        "Diseases (patient-stated diagnosis)": "RVC-DIS",
+        "Diseases (patient-stated)": "RVC-DIS",
+        "Diseases (patient stated)": "RVC-DIS",
+        "Uncodable / Unknown": "RVC-UNCL",
+        "Uncodable/Unknown": "RVC-UNCL",
+    }
+)
+
+
+def canonicalize_rvc_code(value: object) -> str | None:
+    normalized = normalize_label(value)
+    if normalized is None:
+        return None
+    upper = normalized.upper()
+    if upper in RVC_CODE_TO_LABEL:
+        return upper
+    return RVC_LABEL_TO_CODE.get(normalized)
+
+
+def canonical_label_for_code(code: object) -> str:
+    normalized_code = str(code).strip().upper()
+    return RVC_CODE_TO_LABEL.get(normalized_code, normalized_code)
+
+
 def load_categories_from_sheet(
     xlsx_path: Path,
     sheet: str = "Data",
@@ -423,17 +546,24 @@ def load_categories_from_sheet(
     cat_df = read_sheet_checked(xlsx_path, sheet)
     validate_required_columns(cat_df, [column], f"{xlsx_path.name}:{sheet}")
 
-    # Reuse the same normalization as annotation labels so category matching
-    # is internally consistent across all downstream metrics.
-    categories = [
-        normalize_label(c)
-        for c in cat_df[column].dropna().astype(str).tolist()
-        if normalize_label(c)
-    ]
+    categories: list[str] = []
+    unmapped_categories: list[str] = []
+    for raw_value in cat_df[column].dropna().astype(str).tolist():
+        code = canonicalize_rvc_code(raw_value)
+        if code is None:
+            unmapped_categories.append(str(raw_value))
+            continue
+        categories.append(code)
 
     if not categories:
         raise ValueError(
             f"No categories found in column '{column}' of sheet '{sheet}' ({xlsx_path})."
+        )
+    if unmapped_categories:
+        sample = sorted(set(unmapped_categories))[:10]
+        raise ValueError(
+            "Unmapped canonical categories found in category sheet: "
+            f"{sample}. Update RVC label-to-code mapping."
         )
 
     if len(set(categories)) != len(categories):
@@ -469,9 +599,9 @@ def extract_rater_sets_from_df(
     for _, row in df[cols].iterrows():
         labels: Set[str] = set()
         for col in cols:
-            lab = normalize_label(row[col])
-            if lab:
-                labels.add(lab)
+            code = canonicalize_rvc_code(row[col])
+            if code:
+                labels.add(code)
         sets.append(labels)
     return sets
 
@@ -495,8 +625,8 @@ def extract_nlp_sets_from_df(
             name_col = f"RFV{i}_name"
             if name_col not in df_nlp.columns:
                 continue
-            name_val = normalize_label(row[name_col])
-            if not name_val:
+            code = canonicalize_rvc_code(row[name_col])
+            if not code:
                 continue
 
             if use_sim:
@@ -504,9 +634,64 @@ def extract_nlp_sets_from_df(
                 sim_val = row.get(sim_col, np.nan)
                 if pd.isna(sim_val) or float(sim_val) < float(min_sim):
                     continue
-            labels.add(name_val)
+            labels.add(code)
         sets.append(labels)
     return sets
+
+
+def build_label_mapping_audit(
+    df_r3: pd.DataFrame,
+    df_nlp: pd.DataFrame,
+    *,
+    r3_label_cols: list[str],
+    nlp_label_cols: list[str],
+) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    for source_name, frame, cols in (
+        ("adjudicated_r3", df_r3, r3_label_cols),
+        ("nlp_output", df_nlp, nlp_label_cols),
+    ):
+        for col in cols:
+            if col not in frame.columns:
+                continue
+            series = frame[col].dropna().astype(str)
+            if series.empty:
+                continue
+            for raw_label, row_count in series.value_counts(dropna=False).items():
+                normalized_label = normalize_label(raw_label)
+                canonical_code = canonicalize_rvc_code(raw_label)
+                rows.append(
+                    {
+                        "source": source_name,
+                        "column": col,
+                        "raw_label": raw_label,
+                        "normalized_label": normalized_label,
+                        "canonical_code": canonical_code,
+                        "canonical_label": canonical_label_for_code(canonical_code)
+                        if canonical_code
+                        else None,
+                        "mapped": bool(canonical_code),
+                        "row_count": int(row_count),
+                    }
+                )
+    if not rows:
+        return pd.DataFrame(
+            columns=[
+                "source",
+                "column",
+                "raw_label",
+                "normalized_label",
+                "canonical_code",
+                "canonical_label",
+                "mapped",
+                "row_count",
+            ]
+        )
+    return (
+        pd.DataFrame(rows)
+        .sort_values(["source", "mapped", "row_count", "raw_label"], ascending=[True, True, False, True])
+        .reset_index(drop=True)
+    )
 
 
 # --- Set-level agreement metrics (order-invariant multi-label) ----------------
@@ -902,12 +1087,15 @@ pw12 = pairwise_binary_agreement_stats(bin_mats["r1"], bin_mats["r2"])
 pw13 = pairwise_binary_agreement_stats(bin_mats["r1"], bin_mats["r3"])
 pw23 = pairwise_binary_agreement_stats(bin_mats["r2"], bin_mats["r3"])
 
-name_map = {i: c for i, c in enumerate(CANONICAL_CATS)}
+category_code_map = {i: c for i, c in enumerate(CANONICAL_CATS)}
+category_label_map = {i: canonical_label_for_code(c) for i, c in enumerate(CANONICAL_CATS)}
 for df_pw in (pw12, pw13, pw23):
-    df_pw["category_name"] = df_pw["category"].map(name_map)
+    df_pw["category_code"] = df_pw["category"].map(category_code_map)
+    df_pw["category_name"] = df_pw["category"].map(category_label_map)
 
 multi_ac1 = multirater_ac1_per_category([bin_mats["r1"], bin_mats["r2"], bin_mats["r3"]])
-multi_ac1["category_name"] = multi_ac1["category"].map(name_map)
+multi_ac1["category_code"] = multi_ac1["category"].map(category_code_map)
+multi_ac1["category_name"] = multi_ac1["category"].map(category_label_map)
 
 pair12_chance = summarize_kappa_ac1(pw12)
 pair13_chance = summarize_kappa_ac1(pw13)
@@ -932,12 +1120,20 @@ assert_rate_bounds(three_summary[["full_rate", "partial_rate", "none_rate"]], "t
 assert int(three_summary["N_items"]) == len(df), "three_summary N_items mismatch"
 
 for label, df_pw in (("pw12", pw12), ("pw13", pw13), ("pw23", pw23)):
-    assert_expected_columns(df_pw, ["category", "N", "percent_agreement", "cohen_kappa", "gwet_ac1", "category_name"], label)
+    assert_expected_columns(
+        df_pw,
+        ["category", "N", "percent_agreement", "cohen_kappa", "gwet_ac1", "category_code", "category_name"],
+        label,
+    )
     assert len(df_pw) == len(CANONICAL_CATS), f"{label} row count mismatch with categories"
     assert_rate_bounds(df_pw["percent_agreement"], f"{label} percent_agreement")
     assert_rate_bounds(df_pw["gwet_ac1"], f"{label} gwet_ac1")
 
-assert_expected_columns(multi_ac1, ["category", "percent_agreement", "gwet_ac1", "prevalence", "category_name"], "multi_ac1")
+assert_expected_columns(
+    multi_ac1,
+    ["category", "percent_agreement", "gwet_ac1", "prevalence", "category_code", "category_name"],
+    "multi_ac1",
+)
 assert len(multi_ac1) == len(CANONICAL_CATS), "multi_ac1 row count mismatch with categories"
 assert_rate_bounds(multi_ac1["percent_agreement"], "multi_ac1 percent_agreement")
 assert_rate_bounds(multi_ac1["gwet_ac1"], "multi_ac1 gwet_ac1")
@@ -1013,32 +1209,56 @@ import json
 
 # Step 1: Load adjudicator labels and validate keys/columns.
 df = read_sheet_checked(ANNOTATION_PATH, ANNOTATION_SHEET)
-r3_key_cols = ["hadm_id", "subject_id"]
+r3_key_candidates = ["hadm_id", "subject_id", "ed_stay_id"]
 r3_label_cols = [
     c for c in df.columns
     if c.startswith("annot3_rvs") and c.endswith("_cat")
 ]
-r3_cols = r3_key_cols + r3_label_cols
+r3_present_keys = [column for column in r3_key_candidates if column in df.columns]
+r3_cols = r3_present_keys + r3_label_cols
 validate_required_columns(df, r3_cols, "Annotation sheet for R3")
-validate_unique_keys(df, r3_key_cols, "Annotation sheet for R3")
-
 df_r3 = df[r3_cols].copy()
 
 # Step 2: Load NLP outputs and validate key columns.
 df_nlp = read_sheet_checked(NLP_PATH, NLP_SHEET)
-nlp_key_cols = ["hadm_id", "subject_id"]
+nlp_key_candidates = ["hadm_id", "subject_id", "ed_stay_id"]
 nlp_name_cols = [f"RFV{i}_name" for i in range(1, 6)]
 present_name_cols = [c for c in nlp_name_cols if c in df_nlp.columns]
-validate_required_columns(df_nlp, nlp_key_cols, "NLP sheet")
+nlp_present_keys = [column for column in nlp_key_candidates if column in df_nlp.columns]
+validate_required_columns(df_nlp, nlp_present_keys, "NLP sheet")
 if not present_name_cols:
     raise KeyError("NLP file must contain RFV*_name columns.")
-validate_unique_keys(df_nlp, nlp_key_cols, "NLP sheet")
+
+r3_join_keys, join_key_strategy = select_join_key_columns(df_r3, df_nlp)
+validate_unique_keys(df_r3, r3_join_keys, "Annotation sheet for R3")
+validate_unique_keys(df_nlp, r3_join_keys, "NLP sheet")
+key_inventory = build_join_key_inventory(
+    df_r3,
+    df_nlp,
+    r3_join_keys,
+    strategy=join_key_strategy,
+)
+label_mapping_audit = build_label_mapping_audit(
+    df_r3,
+    df_nlp,
+    r3_label_cols=r3_label_cols,
+    nlp_label_cols=present_name_cols,
+)
+unmapped_label_count = int((~label_mapping_audit["mapped"].fillna(False)).sum())
+if unmapped_label_count > 0:
+    print(
+        "WARNING: Unmapped category labels detected in R3/NLP mapping audit:",
+        unmapped_label_count,
+    )
 
 # Step 3: Build key-normalized join plus explicit overlap audit.
 df_join, unmatched_adjudicated, unmatched_nlp, join_audit = build_r3_nlp_join_audit(
     df_r3,
     df_nlp,
-    r3_key_cols,
+    r3_join_keys,
+    target_sample_n=R3_NLP_TARGET_SAMPLE_N,
+    gate_policy=R3_NLP_GATE_POLICY,
+    key_strategy=join_key_strategy,
 )
 
 n_before = len(df_r3)
@@ -1053,7 +1273,7 @@ def _fmt_rate(value: float | None) -> str:
     return "NA" if value is None else f"{value:.1%}"
 
 print(
-    "Joined R3 to NLP on (hadm_id, subject_id): "
+    f"Joined R3 to NLP on {join_audit['key_columns']}: "
     f"{n_after} matched ({_fmt_rate(join_audit['matched_rate_vs_adjudicated'])}); "
     f"{n_dropped} adjudicated rows had no NLP match "
     f"({_fmt_rate(join_audit['unmatched_rate_vs_adjudicated'])}); "
@@ -1061,7 +1281,14 @@ print(
     f"({_fmt_rate(join_audit['unmatched_rate_vs_nlp'])})."
 )
 join_severity = str(join_audit.get("severity", "warning")).lower()
-join_interpretation = str(join_audit.get("join_interpretation", "partial_adjudicated_overlap"))
+join_interpretation = str(join_audit.get("join_interpretation", "below_target_overlap_nonzero"))
+coverage_status = str(join_audit.get("coverage_status", "warning"))
+target_sample_n = int(join_audit.get("target_sample_n", R3_NLP_TARGET_SAMPLE_N))
+if coverage_status == "warning":
+    print(
+        "WARNING: R3/NLP overlap is below target sample size "
+        f"(matched={n_after}, target={target_sample_n}); metrics remain valid on matched rows."
+    )
 if n_dropped > 0 or n_unmatched_nlp > 0:
     if join_severity == "info":
         print(
@@ -1098,7 +1325,7 @@ for a, b in zip(r3_sets_join, nlp_sets):
     missed.append("; ".join(m))
     added.append("; ".join(ad))
 
-visit_metrics = df_join[r3_key_cols].copy()
+visit_metrics = df_join[r3_join_keys].copy()
 visit_metrics["exact"] = pair_df["exact"]
 visit_metrics["partial"] = pair_df["partial"]
 visit_metrics["none"] = pair_df["none"]
@@ -1112,9 +1339,8 @@ visit_metrics["added_by_nlp"] = added
 
 assert_expected_columns(
     visit_metrics,
-    [
-        "hadm_id",
-        "subject_id",
+    r3_join_keys
+    + [
         "exact",
         "partial",
         "none",
@@ -1143,6 +1369,8 @@ pw_stats = pairwise_binary_agreement_stats(
     categories=CANONICAL_CATS,
     include_confusion_counts=True,
 )
+pw_stats["category_code"] = pw_stats["category"].astype("string")
+pw_stats["category_label"] = pw_stats["category_code"].map(canonical_label_for_code)
 chance_summary = summarize_kappa_ac1(pw_stats)
 
 assert_expected_columns(
@@ -1150,6 +1378,8 @@ assert_expected_columns(
     [
         "category_ix",
         "category",
+        "category_code",
+        "category_label",
         "N",
         "tp",
         "tn",
@@ -1181,8 +1411,16 @@ unmatched_nlp.to_csv(
 (NLP_OUTPUT_DIR / "R3_vs_NLP_join_audit.json").write_text(
     json.dumps(join_audit, indent=2)
 )
+key_inventory.to_csv(
+    NLP_OUTPUT_DIR / "R3_vs_NLP_key_inventory.csv",
+    index=False,
+)
+label_mapping_audit.to_csv(
+    NLP_OUTPUT_DIR / "R3_vs_NLP_label_mapping_audit.csv",
+    index=False,
+)
 
-matched_key_hashes = hash_join_keys(df_join[r3_key_cols], key_cols=r3_key_cols)
+matched_key_hashes = hash_join_keys(df_join[r3_join_keys], key_cols=r3_join_keys)
 matched_key_hashes.to_csv(
     NLP_OUTPUT_DIR / "R3_vs_NLP_matched_key_hashes.csv",
     index=False,
@@ -1200,9 +1438,11 @@ input_manifest = {
         "unmatched_adjudicated_rows": int(len(unmatched_adjudicated)),
         "unmatched_nlp_rows": int(len(unmatched_nlp)),
     },
-    "key_columns": r3_key_cols,
+    "key_columns": r3_join_keys,
+    "key_strategy": join_key_strategy,
     "join_audit": join_audit,
     "matched_key_hash_count": int(len(matched_key_hashes)),
+    "unmapped_label_count": unmapped_label_count,
 }
 (NLP_OUTPUT_DIR / "R3_vs_NLP_input_manifest.json").write_text(
     json.dumps(input_manifest, indent=2)
@@ -1223,6 +1463,8 @@ rater_run_manifest["join_audit"] = join_audit
 rater_run_manifest["outputs"] = {
     "summary_path": str(NLP_OUTPUT_DIR / "R3_vs_NLP_summary.txt"),
     "join_audit_path": str(NLP_OUTPUT_DIR / "R3_vs_NLP_join_audit.json"),
+    "key_inventory_path": str(NLP_OUTPUT_DIR / "R3_vs_NLP_key_inventory.csv"),
+    "label_mapping_audit_path": str(NLP_OUTPUT_DIR / "R3_vs_NLP_label_mapping_audit.csv"),
     "input_manifest_path": str(NLP_OUTPUT_DIR / "R3_vs_NLP_input_manifest.json"),
     "matched_key_hashes_path": str(NLP_OUTPUT_DIR / "R3_vs_NLP_matched_key_hashes.csv"),
 }

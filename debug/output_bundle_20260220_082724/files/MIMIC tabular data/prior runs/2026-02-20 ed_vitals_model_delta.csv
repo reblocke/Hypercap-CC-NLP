@@ -1,0 +1,11 @@
+vital_name,raw_column,clean_column,raw_n,clean_n,raw_removed_n,raw_removed_pct,converted_celsius_like_n
+triage_temp,ed_triage_temp,ed_triage_temp_f_clean,8343,8342,1,0.00011986096128490951,20
+first_temp,ed_first_temp,ed_first_temp_f_clean,6911,6911,0,0.0,55
+triage_pain,ed_triage_pain,ed_triage_pain_clean,8151,7595,556,0.06821248926512084,0
+first_pain,ed_first_pain,ed_first_pain_clean,7077,7077,0,0.0,0
+triage_sbp,ed_triage_sbp,ed_triage_sbp_clean,8777,8771,6,0.0006836048763814515,0
+triage_dbp,ed_triage_dbp,ed_triage_dbp_clean,8738,8727,11,0.0012588693064774549,0
+first_sbp,ed_first_sbp,ed_first_sbp_clean,9161,9155,6,0.0006549503329330859,0
+first_dbp,ed_first_dbp,ed_first_dbp_clean,9161,9152,9,0.000982425499399629,0
+triage_o2sat,ed_triage_o2sat,ed_triage_o2sat_clean,8680,8679,1,0.0001152073732718894,0
+first_o2sat,ed_first_o2sat,ed_first_o2sat_clean,8920,8919,1,0.00011210762331838565,0

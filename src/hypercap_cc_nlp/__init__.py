@@ -11,7 +11,6 @@ from .analysis_core import (
     to_binary_flag,
 )
 from .classifier_quality import (
-    add_hypercapnia_flags,
     annotate_cc_missingness,
     apply_blank_primary_uncodable_policy,
     apply_pseudomissing_uncodable_policy,
@@ -84,7 +83,6 @@ from .workflow_contracts import (
 __all__ = [
     "binary_crosstab_yes_no",
     "classify_gas_source_overlap",
-    "add_hypercapnia_flags",
     "annotate_cc_missingness",
     "apply_blank_primary_uncodable_policy",
     "apply_pseudomissing_uncodable_policy",

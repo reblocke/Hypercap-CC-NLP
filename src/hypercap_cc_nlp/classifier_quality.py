@@ -33,109 +33,6 @@ def _canonicalize_cc_text(value: object) -> str:
     return " ".join(text.split())
 
 
-def _to_numeric_series(df: pd.DataFrame, column_name: str) -> pd.Series:
-    if column_name in df.columns:
-        return pd.to_numeric(df[column_name], errors="coerce")
-    return pd.Series(math.nan, index=df.index)
-
-
-def _to_text_series(df: pd.DataFrame, column_name: str) -> pd.Series:
-    if column_name in df.columns:
-        return df[column_name].astype("string")
-    return pd.Series(pd.NA, index=df.index, dtype="string")
-
-
-def _to_binary_indicator(df: pd.DataFrame, column_name: str) -> pd.Series:
-    if column_name not in df.columns:
-        return pd.Series(pd.NA, index=df.index, dtype="Float64")
-    numeric = pd.to_numeric(df[column_name], errors="coerce")
-    return (numeric > 0).astype("Float64").where(numeric.notna(), pd.NA)
-
-
-def add_hypercapnia_flags(
-    df: pd.DataFrame,
-    *,
-    art_col: str = "first_abg_pco2",
-    art_uom_col: str = "first_abg_pco2_uom",
-    vbg_col: str = "first_vbg_pco2",
-    vbg_uom_col: str = "first_vbg_pco2_uom",
-    fallback_art_col: str = "poc_abg_paco2",
-    fallback_art_uom_col: str = "poc_abg_paco2_uom",
-    fallback_vbg_col: str = "poc_vbg_paco2",
-    fallback_vbg_uom_col: str = "poc_vbg_paco2_uom",
-    authoritative_abg_col: str = "flag_abg_hypercapnia",
-    authoritative_vbg_col: str = "flag_vbg_hypercapnia",
-    out_abg: str = "hypercap_by_abg",
-    out_vbg: str = "hypercap_by_vbg",
-    out_any: str = "hypercap_by_bg",
-) -> pd.DataFrame:
-    """Add ABG/VBG hypercapnia flags using cohort-schema defaults.
-
-    Precedence is applied per-row:
-    1) authoritative route flags from cohort (`flag_*_hypercapnia`) when present,
-    2) first-route pCO2 values (`first_abg_pco2` / `first_vbg_pco2`),
-    3) fallback POC pCO2 values.
-    """
-
-    def to_mmhg(values: pd.Series, uoms: pd.Series) -> pd.Series:
-        numeric = pd.to_numeric(values, errors="coerce")
-        unit_text = uoms.astype("string").str.strip().str.lower()
-        is_kpa = unit_text.str.contains("kpa", na=False)
-        converted = numeric.copy()
-        converted.loc[is_kpa] = converted.loc[is_kpa] * 7.50062
-        return converted
-
-    def derive_from_value(
-        *,
-        value_col: str,
-        uom_col: str,
-        threshold: float,
-    ) -> pd.Series:
-        values = _to_numeric_series(out, value_col)
-        units = _to_text_series(out, uom_col)
-        mmhg = to_mmhg(values, units)
-        derived = (mmhg >= threshold).astype("Float64")
-        return derived.where(mmhg.notna(), pd.NA)
-
-    out = df.copy()
-    abg_flag = _to_binary_indicator(out, authoritative_abg_col)
-    if abg_flag.isna().any():
-        primary_abg = derive_from_value(
-            value_col=art_col,
-            uom_col=art_uom_col,
-            threshold=45.0,
-        )
-        abg_flag = abg_flag.where(abg_flag.notna(), primary_abg)
-    if abg_flag.isna().any():
-        fallback_abg = derive_from_value(
-            value_col=fallback_art_col,
-            uom_col=fallback_art_uom_col,
-            threshold=45.0,
-        )
-        abg_flag = abg_flag.where(abg_flag.notna(), fallback_abg)
-
-    vbg_flag = _to_binary_indicator(out, authoritative_vbg_col)
-    if vbg_flag.isna().any():
-        primary_vbg = derive_from_value(
-            value_col=vbg_col,
-            uom_col=vbg_uom_col,
-            threshold=50.0,
-        )
-        vbg_flag = vbg_flag.where(vbg_flag.notna(), primary_vbg)
-    if vbg_flag.isna().any():
-        fallback_vbg = derive_from_value(
-            value_col=fallback_vbg_col,
-            uom_col=fallback_vbg_uom_col,
-            threshold=50.0,
-        )
-        vbg_flag = vbg_flag.where(vbg_flag.notna(), fallback_vbg)
-
-    out[out_abg] = abg_flag.fillna(0).astype("int8")
-    out[out_vbg] = vbg_flag.fillna(0).astype("int8")
-    out[out_any] = ((out[out_abg] == 1) | (out[out_vbg] == 1)).astype("int8")
-    return out
-
-
 def annotate_cc_missingness(
     df: pd.DataFrame,
     *,
@@ -468,96 +365,7 @@ def validate_classifier_contract(
                 }
             )
 
-    if {"hypercap_by_abg", "hypercap_by_vbg", "hypercap_by_bg"}.issubset(df.columns):
-        abg = pd.to_numeric(df["hypercap_by_abg"], errors="coerce").fillna(0).astype(int)
-        vbg = pd.to_numeric(df["hypercap_by_vbg"], errors="coerce").fillna(0).astype(int)
-        bg = pd.to_numeric(df["hypercap_by_bg"], errors="coerce").fillna(0).astype(int)
-        mismatch = int(((abg | vbg) != bg).sum())
-        if mismatch:
-            findings.append(
-                {
-                    "severity": "error",
-                    "code": "bg_union_mismatch",
-                    "message": f"hypercap_by_bg mismatch in {mismatch} rows.",
-                }
-            )
-        abg_sum = int(abg.sum())
-        abg_authoritative_positive = 0
-        if "flag_abg_hypercapnia" in df.columns:
-            abg_authoritative_numeric = pd.to_numeric(
-                df["flag_abg_hypercapnia"], errors="coerce"
-            )
-            abg_authoritative_positive = int(
-                (abg_authoritative_numeric.fillna(0).astype(int) > 0).sum()
-            )
-        if abg_sum == 0:
-            if abg_authoritative_positive > 0:
-                findings.append(
-                    {
-                        "severity": "error",
-                        "code": "abg_all_zero_with_authoritative_positive",
-                        "message": (
-                            "hypercap_by_abg has zero positives despite non-zero "
-                            f"flag_abg_hypercapnia positives ({abg_authoritative_positive})."
-                        ),
-                    }
-                )
-            else:
-                findings.append(
-                    {
-                        "severity": "warning",
-                        "code": "abg_all_zero",
-                        "message": "hypercap_by_abg has zero positives.",
-                    }
-                )
-        if "flag_abg_hypercapnia" in df.columns:
-            abg_authoritative = pd.to_numeric(
-                df["flag_abg_hypercapnia"], errors="coerce"
-            )
-            valid_abg = abg_authoritative.notna()
-            if bool(valid_abg.any()):
-                authoritative_binary = (
-                    abg_authoritative.loc[valid_abg].fillna(0).astype(int) > 0
-                ).astype(int)
-                disagreement = int((abg.loc[valid_abg] != authoritative_binary).sum())
-                rate = float(disagreement / int(valid_abg.sum()))
-                if rate > authoritative_disagreement_tolerance:
-                    findings.append(
-                        {
-                            "severity": "error",
-                            "code": "abg_authoritative_disagreement",
-                            "message": (
-                                "hypercap_by_abg disagrees with flag_abg_hypercapnia in "
-                                f"{disagreement} rows ({rate:.4%}), tolerance="
-                                f"{authoritative_disagreement_tolerance:.4%}."
-                            ),
-                        }
-                    )
-        if "flag_vbg_hypercapnia" in df.columns:
-            vbg_authoritative = pd.to_numeric(
-                df["flag_vbg_hypercapnia"], errors="coerce"
-            )
-            valid_vbg = vbg_authoritative.notna()
-            if bool(valid_vbg.any()):
-                authoritative_binary = (
-                    vbg_authoritative.loc[valid_vbg].fillna(0).astype(int) > 0
-                ).astype(int)
-                disagreement = int((vbg.loc[valid_vbg] != authoritative_binary).sum())
-                rate = float(disagreement / int(valid_vbg.sum()))
-                if rate > authoritative_disagreement_tolerance:
-                    findings.append(
-                        {
-                            "severity": "error",
-                            "code": "vbg_authoritative_disagreement",
-                            "message": (
-                                "hypercap_by_vbg disagrees with flag_vbg_hypercapnia in "
-                                f"{disagreement} rows ({rate:.4%}), tolerance="
-                                f"{authoritative_disagreement_tolerance:.4%}."
-                            ),
-                        }
-                    )
-
-    required_cc_columns = {missing_reason_column, pseudo_flag_column, missing_flag_column}
+    required_cc_columns = {missing_reason_column}
     missing_cc_columns = sorted(required_cc_columns.difference(df.columns))
     if missing_cc_columns:
         findings.append(
@@ -588,8 +396,40 @@ def validate_classifier_contract(
             )
 
     pseudo_count = 0
-    if pseudo_flag_column in df.columns:
-        pseudo_count = int(df[pseudo_flag_column].fillna(False).sum())
+    if missing_reason_column in df.columns:
+        pseudo_count = int(df[missing_reason_column].astype(str).eq("pseudo_missing_token").sum())
+
+    if pseudo_flag_column in df.columns and missing_reason_column in df.columns:
+        pseudo_flag_series = df[pseudo_flag_column].fillna(False).astype(bool)
+        pseudo_expected_series = df[missing_reason_column].astype(str).eq("pseudo_missing_token")
+        pseudo_flag_mismatch = int((pseudo_flag_series != pseudo_expected_series).sum())
+        if pseudo_flag_mismatch:
+            findings.append(
+                {
+                    "severity": "warning",
+                    "code": "cc_pseudomissing_flag_mismatch",
+                    "message": (
+                        "cc_pseudomissing_flag mismatches cc_missing_reason pseudo_missing_token rows: "
+                        f"{pseudo_flag_mismatch}"
+                    ),
+                }
+            )
+
+    if missing_flag_column in df.columns and missing_reason_column in df.columns:
+        missing_flag_series = df[missing_flag_column].fillna(False).astype(bool)
+        missing_expected_series = df[missing_reason_column].astype(str).ne("valid")
+        missing_flag_mismatch = int((missing_flag_series != missing_expected_series).sum())
+        if missing_flag_mismatch:
+            findings.append(
+                {
+                    "severity": "warning",
+                    "code": "cc_missing_flag_mismatch",
+                    "message": (
+                        "cc_missing_flag mismatches cc_missing_reason non-valid rows: "
+                        f"{missing_flag_mismatch}"
+                    ),
+                }
+            )
 
     error_count = sum(1 for finding in findings if finding["severity"] == "error")
     warning_count = sum(1 for finding in findings if finding["severity"] == "warning")

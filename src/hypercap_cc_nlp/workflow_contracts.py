@@ -27,7 +27,7 @@ CLASSIFIER_TRANSITIONAL_ALIASES: dict[str, tuple[str, ...]] = {
         "ed_triage_o2sat_model",
         "ed_triage_o2sat",
     ),
-    "race": ("race_ed_raw",),
+    "race": ("ed_race", "race_ed_raw", "hosp_race", "race_hosp_raw"),
 }
 
 

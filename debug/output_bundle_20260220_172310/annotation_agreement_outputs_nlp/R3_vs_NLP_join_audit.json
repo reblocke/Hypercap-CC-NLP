@@ -1,0 +1,16 @@
+{
+  "key_columns": [
+    "hadm_id",
+    "subject_id"
+  ],
+  "r3_rows": 160,
+  "nlp_rows": 12020,
+  "matched_rows": 61,
+  "unmatched_adjudicated_rows": 99,
+  "unmatched_nlp_rows": 11959,
+  "matched_rate_vs_adjudicated": 0.38125,
+  "unmatched_rate_vs_adjudicated": 0.61875,
+  "unmatched_rate_vs_nlp": 0.9949251247920133,
+  "join_interpretation": "partial_adjudicated_overlap",
+  "severity": "warning"
+}

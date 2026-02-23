@@ -1,34 +1,38 @@
 === R3 vs NLP join audit ===
 
-key_columns                            [hadm_id, subject_id]
-r3_rows                                                  160
-nlp_rows                                               11769
-matched_rows                                              60
-unmatched_adjudicated_rows                               100
-unmatched_nlp_rows                                     11709
-matched_rate_vs_adjudicated                            0.375
-unmatched_rate_vs_adjudicated                          0.625
-unmatched_rate_vs_nlp                               0.994902
-join_interpretation              partial_adjudicated_overlap
-severity                                             warning
+key_columns                               [hadm_id, subject_id]
+key_strategy                                 hadm_id_subject_id
+target_sample_n                                             160
+gate_policy                      warn_below_target_fail_on_zero
+r3_rows                                                     160
+nlp_rows                                                   7152
+matched_rows                                                 33
+unmatched_adjudicated_rows                                  127
+unmatched_nlp_rows                                         7119
+matched_rate_vs_adjudicated                             0.20625
+unmatched_rate_vs_adjudicated                           0.79375
+unmatched_rate_vs_nlp                                  0.995386
+coverage_status                                         warning
+join_interpretation                below_target_overlap_nonzero
+severity                                                warning
 
 === R3 (adjudicator) vs NLP: set-level (order-invariant) ===
 
-N_items         60.000000
-exact_rate       0.683333
-partial_rate     0.133333
-none_rate        0.183333
-mean_jaccard     0.745833
-mean_overlap     0.775000
-mean_f1_set      0.765952
-micro_f1_set     0.792899
-mean_len_a       1.400000
-mean_len_b       1.416667
+N_items         33.000000
+exact_rate       0.818182
+partial_rate     0.060606
+none_rate        0.121212
+mean_jaccard     0.848485
+mean_overlap     0.863636
+mean_f1_set      0.857576
+micro_f1_set     0.876404
+mean_len_a       1.333333
+mean_len_b       1.363636
 
 
 === R3 vs NLP: chance-corrected (binary per category) ===
 
-macro_cohen_kappa          0.562515
-macro_gwet_ac1             0.966130
-macro_percent_agreement    0.971569
-micro_percent_agreement    0.971569
+macro_cohen_kappa          NaN
+macro_gwet_ac1             1.0
+macro_percent_agreement    1.0
+micro_percent_agreement    1.0

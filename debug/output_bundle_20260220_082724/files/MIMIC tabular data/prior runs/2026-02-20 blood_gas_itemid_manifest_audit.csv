@@ -1,0 +1,5 @@
+source_branch,analyte,itemid,label,category,fluid,cohort_row_count,manifest_version
+LAB,gas_pco2,50818,pCO2,Blood Gas,Blood,494716,2026-02-17
+LAB,gas_ph,50820,pH,Blood Gas,Blood,523650,2026-02-17
+LAB,gas_hco3,50803,"Calculated Bicarbonate, Whole Blood",Blood Gas,Blood,5417,2026-02-17
+LAB,gas_specimen,52033,Specimen Type,Blood Gas,Blood,561569,2026-02-17

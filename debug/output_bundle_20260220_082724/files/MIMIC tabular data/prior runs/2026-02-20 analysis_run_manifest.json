@@ -1,0 +1,98 @@
+{
+  "run_id": "analysis_20260220_081904",
+  "generated_utc": "2026-02-20T15:19:04.417649+00:00",
+  "work_dir": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP",
+  "python_version": "3.11.10 (main, Oct 16 2024, 08:56:36) [Clang 18.1.8 ]",
+  "uv_version": "uv 0.9.28 (Homebrew 2026-01-29)",
+  "git": {
+    "branch": "main",
+    "commit": "0707c583856e97729353655cf99e0aa39487e846",
+    "dirty": true
+  },
+  "package_versions": {
+    "pandas": "2.2.2",
+    "numpy": "2.3.5",
+    "spacy": "3.8.11",
+    "torch": "2.10.0",
+    "sentence-transformers": "5.2.2"
+  },
+  "env_knobs": {
+    "WORK_DIR": "<unset>",
+    "CLASSIFIER_INPUT_FILENAME": "<unset>",
+    "RATER_NLP_INPUT_FILENAME": "<unset>",
+    "RATER_ANNOTATION_PATH": "<unset>",
+    "ANALYSIS_INPUT_FILENAME": "<unset>",
+    "BQ_QUERY_TIMEOUT_SECS": "<unset>",
+    "WRITE_ARCHIVE_XLSX_EXPORTS": "<unset>",
+    "COHORT_FAIL_ON_ALL_OTHER_SOURCE": "<unset>",
+    "COHORT_WARN_OTHER_RATE": "<unset>",
+    "COHORT_FAIL_OTHER_RATE": "<unset>",
+    "COHORT_GAS_SOURCE_INFERENCE_MODE": "<unset>",
+    "COHORT_FAIL_ON_OMR_ATTACH_INCONSISTENCY": "<unset>",
+    "COHORT_ALLOW_EMPTY_OMR": "<unset>",
+    "COHORT_ANTHRO_MIN_BMI_COVERAGE": "<unset>",
+    "RUN_MANIFEST_STAGE_SCOPE": "<unset>",
+    "GOOGLE_APPLICATION_CREDENTIALS": "<unset>",
+    "HF_TOKEN": "<unset>"
+  },
+  "stage": "analysis",
+  "analysis_input_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx",
+  "outputs": {
+    "definition_output_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Symptom_Composition_by_Hypercapnia_Definition.xlsx",
+    "pivot_output_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Symptom_Composition_Pivot_ChartReady.xlsx",
+    "abg_vbg_overlap_output_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Symptom_Composition_by_ABG_VBG_Overlap.xlsx",
+    "gas_source_overlap_output_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Symptom_Composition_by_Gas_Source_Overlap.xlsx",
+    "icd_gas_overlap_output_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Symptom_Composition_by_ICD_Gas_Overlap.xlsx",
+    "icd_subset_output_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/ICD_Positive_Subset_Breakdown.xlsx",
+    "icd_performance_output_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/ICD_vs_Gas_Performance.xlsx",
+    "upset_output_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Ascertainment_Overlap_UpSet.png",
+    "intersection_output_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Ascertainment_Overlap_Intersections.xlsx"
+  },
+  "output_verification": [
+    {
+      "path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Symptom_Composition_by_Hypercapnia_Definition.xlsx",
+      "exists": true,
+      "size_bytes": 7363
+    },
+    {
+      "path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Symptom_Composition_Pivot_ChartReady.xlsx",
+      "exists": true,
+      "size_bytes": 5557
+    },
+    {
+      "path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Symptom_Composition_by_ABG_VBG_Overlap.xlsx",
+      "exists": true,
+      "size_bytes": 5367
+    },
+    {
+      "path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Symptom_Composition_by_Gas_Source_Overlap.xlsx",
+      "exists": true,
+      "size_bytes": 5612
+    },
+    {
+      "path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Symptom_Composition_by_ICD_Gas_Overlap.xlsx",
+      "exists": true,
+      "size_bytes": 5381
+    },
+    {
+      "path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/ICD_Positive_Subset_Breakdown.xlsx",
+      "exists": true,
+      "size_bytes": 5856
+    },
+    {
+      "path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/ICD_vs_Gas_Performance.xlsx",
+      "exists": true,
+      "size_bytes": 5571
+    },
+    {
+      "path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Ascertainment_Overlap_UpSet.png",
+      "exists": true,
+      "size_bytes": 146181
+    },
+    {
+      "path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Ascertainment_Overlap_Intersections.xlsx",
+      "exists": true,
+      "size_bytes": 5284
+    }
+  ]
+}

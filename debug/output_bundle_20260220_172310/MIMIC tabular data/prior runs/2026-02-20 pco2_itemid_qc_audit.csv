@@ -1,0 +1,3 @@
+itemid,label,category,source_branch,sample_type_hint,row_count,non_null_count,units_observed,p50_mmhg,p95_mmhg,max_mmhg,label_include_ok,label_exclude_hit,unit_ok,median_in_expected_range,contamination_flag,manifest_whitelisted
+220235,Arterial CO2 Pressure,Labs,POC,ABG,14130,14130,mmhg,43.0,73.0,181.0,False,False,True,False,True,1
+226062,Venous CO2 Pressure,Labs,POC,VBG,6402,6402,mmhg,51.0,85.0,999998.0,False,False,True,True,True,1

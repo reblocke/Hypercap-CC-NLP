@@ -1,0 +1,3 @@
+itemid,row_count,analyte,label,category
+220235,14130,pco2,Arterial CO2 Pressure,Labs
+226062,6402,pco2,Venous CO2 Pressure,Labs

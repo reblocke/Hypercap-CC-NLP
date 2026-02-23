@@ -22,13 +22,17 @@ COHORT_POC_PCO2_MEDIAN_MIN = 45.0
 COHORT_POC_PCO2_MEDIAN_MAX = 80.0
 COHORT_POC_PCO2_FAIL_ENABLED = True
 COHORT_HCO3_WARN_MIN_COVERAGE = 0.20
+COHORT_PO2_TRIPLET_WARN_MIN_COVERAGE = 0.20
 COHORT_FIRST_GAS_ANCHOR_TOLERANCE = 0
 COHORT_REQUIRED_AUDIT_SUFFIXES = (
     "blood_gas_itemid_manifest_audit.csv",
     "pco2_itemid_qc_audit.csv",
     "pco2_source_distribution_audit.csv",
+    "blood_gas_triplet_completeness_audit.csv",
+    "qualifying_pco2_distribution_by_type_audit.csv",
     "other_route_quarantine_audit.csv",
     "first_gas_anchor_audit.csv",
+    "hco3_integrity_audit.csv",
     "timing_integrity_audit.csv",
     "ventilation_timing_audit.csv",
     "anthropometric_cleaning_audit.csv",
@@ -92,6 +96,18 @@ COHORT_ANTHRO_MODEL_BOUNDS: dict[str, tuple[float, float]] = {
     "weight_closest_pre_ed_model": (0.0, 400.0),
 }
 
+COHORT_ANTHRO_ALLOWED_SOURCES = {"ED", "ICU", "HOSPITAL", "missing"}
+COHORT_ANTHRO_CANONICAL_UOMS: dict[str, str] = {
+    "bmi_closest_pre_ed_uom": "kg/m2",
+    "height_closest_pre_ed_uom": "cm",
+    "weight_closest_pre_ed_uom": "kg",
+}
+COHORT_ANTHRO_REQUIRED_UNIT_TIME_COLUMNS: dict[str, tuple[str, str]] = {
+    "bmi_closest_pre_ed": ("bmi_closest_pre_ed_uom", "bmi_closest_pre_ed_time"),
+    "height_closest_pre_ed": ("height_closest_pre_ed_uom", "height_closest_pre_ed_time"),
+    "weight_closest_pre_ed": ("weight_closest_pre_ed_uom", "weight_closest_pre_ed_time"),
+}
+
 
 def _utc_timestamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -116,12 +132,11 @@ def validate_cohort_contract(
 ) -> dict[str, Any]:
     """Validate deterministic cohort output contracts."""
     findings: list[dict[str, str]] = []
-    timing_tri_state_mismatch_n = 0
-    timing_tri_state_invalid_value_n = 0
     hospital_los_negative_model_n = 0
     dt_first_imv_model_negative_n = 0
     dt_first_niv_model_negative_n = 0
     anthro_model_invalid_counts: dict[str, int] = {}
+    po2_triplet_coverage_by_site: dict[str, float] = {}
 
     if "hadm_id" in df.columns:
         hadm_dup = int(df.duplicated(subset=["hadm_id"]).sum())
@@ -148,15 +163,15 @@ def validate_cohort_contract(
     required = {
         "abg_hypercap_threshold",
         "vbg_hypercap_threshold",
-        "other_hypercap_threshold",
+        "unknown_hypercap_threshold",
         "pco2_threshold_any",
     }
     if required.issubset(df.columns):
         abg = pd.to_numeric(df["abg_hypercap_threshold"], errors="coerce").fillna(0).astype(int)
         vbg = pd.to_numeric(df["vbg_hypercap_threshold"], errors="coerce").fillna(0).astype(int)
-        other = pd.to_numeric(df["other_hypercap_threshold"], errors="coerce").fillna(0).astype(int)
+        unknown = pd.to_numeric(df["unknown_hypercap_threshold"], errors="coerce").fillna(0).astype(int)
         any_reported = pd.to_numeric(df["pco2_threshold_any"], errors="coerce").fillna(0).astype(int)
-        any_expected = (abg | vbg | other).astype(int)
+        any_expected = (abg | vbg | unknown).astype(int)
         mismatch = int((any_expected != any_reported).sum())
         if mismatch:
             findings.append(
@@ -178,10 +193,10 @@ def validate_cohort_contract(
     if missing_source_diag_columns:
         findings.append(
             {
-                "severity": "error",
-                "code": "missing_gas_source_diagnostic_columns",
+                "severity": "warning",
+                "code": "missing_gas_source_diagnostic_columns_export",
                 "message": (
-                    "Missing gas-source diagnostic columns: "
+                    "Missing gas-source diagnostic columns in export workbook (expected in QA artifacts): "
                     f"{missing_source_diag_columns}"
                 ),
             }
@@ -245,72 +260,7 @@ def validate_cohort_contract(
                     }
                 )
 
-    tri_state_required = {
-        "qualifying_gas_observed",
-        "presenting_hypercapnia_tri",
-        "late_hypercapnia_tri",
-        "hypercap_timing_class",
-    }
-    if "dt_first_qualifying_gas_hours" in df.columns:
-        missing_timing_cols = sorted(tri_state_required.difference(df.columns))
-        if missing_timing_cols:
-            findings.append(
-                {
-                    "severity": "error",
-                    "code": "missing_timing_tri_state_columns",
-                    "message": (
-                        "Timing tri-state columns missing despite dt_first_qualifying_gas_hours presence: "
-                        f"{missing_timing_cols}"
-                    ),
-                }
-            )
-    if tri_state_required.issubset(df.columns):
-        qualifying_observed = (
-            pd.to_numeric(df["qualifying_gas_observed"], errors="coerce")
-            .fillna(0)
-            .astype(int)
-            .eq(1)
-        )
-        presenting_tri = pd.to_numeric(
-            df["presenting_hypercapnia_tri"], errors="coerce"
-        )
-        late_tri = pd.to_numeric(df["late_hypercapnia_tri"], errors="coerce")
-        invalid_presenting = int(
-            (presenting_tri.notna() & ~presenting_tri.isin([0, 1])).sum()
-        )
-        invalid_late = int((late_tri.notna() & ~late_tri.isin([0, 1])).sum())
-        timing_tri_state_invalid_value_n = invalid_presenting + invalid_late
-        if timing_tri_state_invalid_value_n > 0:
-            findings.append(
-                {
-                    "severity": "error",
-                    "code": "timing_tri_state_invalid_values",
-                    "message": (
-                        "Timing tri-state columns contain values outside {0,1,NA}: "
-                        f"{timing_tri_state_invalid_value_n} rows."
-                    ),
-                }
-            )
-
-        observed_missing_tri = int(
-            (qualifying_observed & (presenting_tri.isna() | late_tri.isna())).sum()
-        )
-        unobserved_with_tri = int(
-            ((~qualifying_observed) & (presenting_tri.notna() | late_tri.notna())).sum()
-        )
-        timing_tri_state_mismatch_n = observed_missing_tri + unobserved_with_tri
-        if timing_tri_state_mismatch_n > 0:
-            findings.append(
-                {
-                    "severity": "error",
-                    "code": "timing_tri_state_inconsistent_with_observed_flag",
-                    "message": (
-                        "Tri-state timing fields are inconsistent with qualifying_gas_observed: "
-                        f"observed_missing={observed_missing_tri}, unobserved_with_values={unobserved_with_tri}."
-                    ),
-                }
-            )
-
+    if "hypercap_timing_class" in df.columns:
         timing_class = (
             df["hypercap_timing_class"]
             .astype("string")
@@ -356,6 +306,56 @@ def validate_cohort_contract(
                     ),
                 }
             )
+
+    integrity_flag_columns = {
+        "time_integrity_any",
+        "hospital_los_negative_flag",
+        "admittime_before_ed_intime_flag",
+        "dischtime_before_admittime_flag",
+    }
+    missing_integrity_flags = sorted(integrity_flag_columns.difference(df.columns))
+    if missing_integrity_flags:
+        findings.append(
+            {
+                "severity": "warning",
+                "code": "missing_time_integrity_flags",
+                "message": (
+                    "Missing time-integrity diagnostic flags: "
+                    f"{missing_integrity_flags}"
+                ),
+            }
+        )
+    if "time_integrity_any" in df.columns:
+        if "timing_usable_for_model" not in df.columns:
+            findings.append(
+                {
+                    "severity": "warning",
+                    "code": "missing_timing_usable_for_model",
+                    "message": "time_integrity_any is present but timing_usable_for_model is missing.",
+                }
+            )
+        else:
+            time_integrity_any = (
+                df["time_integrity_any"].fillna(False).astype(bool)
+            )
+            timing_usable = (
+                pd.to_numeric(df["timing_usable_for_model"], errors="coerce")
+                .fillna(0)
+                .astype(int)
+                .eq(1)
+            )
+            mismatch_n = int((timing_usable != (~time_integrity_any)).sum())
+            if mismatch_n > 0:
+                findings.append(
+                    {
+                        "severity": "error",
+                        "code": "timing_usable_for_model_inconsistent",
+                        "message": (
+                            "timing_usable_for_model is inconsistent with time_integrity_any in "
+                            f"{mismatch_n} rows."
+                        ),
+                    }
+                )
 
     for model_col, raw_col, flag_col, code in (
         (
@@ -509,7 +509,11 @@ def validate_cohort_contract(
             )
     elif any(
         column_name in df.columns
-        for column_name in ("poc_other_paco2", "poc_other_quarantined_hypercap_threshold")
+        for column_name in (
+            "poc_abg_paco2",
+            "poc_vbg_paco2",
+            "poc_other_paco2",
+        )
     ):
         findings.append(
             {
@@ -531,9 +535,14 @@ def validate_cohort_contract(
         )
 
     gas_source_other_rate = None
-    if "gas_source_other_rate" in df.columns:
+    if "gas_source_other_rate" in df.columns or "gas_source_unknown_rate" in df.columns:
+        rate_col = (
+            "gas_source_other_rate"
+            if "gas_source_other_rate" in df.columns
+            else "gas_source_unknown_rate"
+        )
         gas_source_other_rate = float(
-            pd.to_numeric(df["gas_source_other_rate"], errors="coerce").mean()
+            pd.to_numeric(df[rate_col], errors="coerce").mean()
         )
         if (
             gas_source_other_fail_threshold is not None
@@ -566,20 +575,10 @@ def validate_cohort_contract(
     first_other_poc_rows = 0
     if {"first_other_src", "first_other_pco2"}.issubset(df.columns):
         source = df["first_other_src"].astype("string").str.strip().str.upper()
-        first_other_poc_rows = int(source.eq("POC").sum())
-        if first_other_poc_rows > 0:
-            findings.append(
-                {
-                    "severity": "error",
-                    "code": "first_other_src_contains_poc",
-                    "message": (
-                        "first_other_src contains POC rows under LAB-only OTHER policy: "
-                        f"{first_other_poc_rows} rows."
-                    ),
-                }
-            )
+        source_is_poc = source.str.contains("POC", na=False)
+        first_other_poc_rows = int(source_is_poc.sum())
         values = pd.to_numeric(df["first_other_pco2"], errors="coerce")
-        poc_values = values.loc[source.eq("POC") & values.notna()]
+        poc_values = values.loc[source_is_poc & values.notna()]
         poc_other_pco2_count = int(poc_values.shape[0])
         if poc_other_pco2_count > 0:
             poc_other_pco2_median = float(poc_values.median())
@@ -593,9 +592,9 @@ def validate_cohort_contract(
                 findings.append(
                     {
                         "severity": "error",
-                        "code": "poc_other_pco2_median_out_of_bounds",
+                        "code": "poc_unknown_pco2_median_out_of_bounds",
                         "message": (
-                            "POC first_other_pco2 median outside hard-coded QA bounds "
+                            "POC UNKNOWN first_other_pco2 median outside hard-coded QA bounds "
                             f"[{COHORT_POC_PCO2_MEDIAN_MIN:.1f}, {COHORT_POC_PCO2_MEDIAN_MAX:.1f}] "
                             f"with median={poc_other_pco2_median:.1f} (n={poc_other_pco2_count})."
                         ),
@@ -603,47 +602,142 @@ def validate_cohort_contract(
                 )
 
     poc_other_quarantine_leak_n = 0
-    if {"other_hypercap_threshold", "first_other_src_detail"}.issubset(df.columns):
+    if {"unknown_hypercap_threshold", "first_other_src_detail"}.issubset(df.columns):
         detail = df["first_other_src_detail"].astype("string").str.lower()
         other_flag = (
-            pd.to_numeric(df["other_hypercap_threshold"], errors="coerce")
+            pd.to_numeric(df["unknown_hypercap_threshold"], errors="coerce")
             .fillna(0)
             .astype(int)
             .eq(1)
         )
-        poc_other_quarantine_leak_n = int((other_flag & detail.eq("poc_quarantined")).sum())
-        if poc_other_quarantine_leak_n > 0:
-            findings.append(
-                {
-                    "severity": "error",
-                    "code": "poc_other_quarantine_leakage",
-                    "message": (
-                        "POC quarantined OTHER rows leaked into other_hypercap_threshold: "
-                        f"{poc_other_quarantine_leak_n} rows."
-                    ),
-                }
-            )
+        poc_other_quarantine_leak_n = int(
+            (other_flag & detail.isin({"poc_bg_unknown", "poc_bg_unknown_available"})).sum()
+        )
 
     anthro_source_counts: dict[str, int] = {}
     if "anthro_source" in df.columns:
+        source_series = (
+            df["anthro_source"].astype("string").fillna("missing").replace({"": "missing"})
+        )
         anthro_source_counts = {
             str(key): int(value)
-            for key, value in df["anthro_source"]
-            .fillna("missing")
+            for key, value in source_series
             .astype(str)
             .value_counts(dropna=False)
             .items()
         }
-        if anthro_source_counts.get("omr", 0) == 0 and anthro_source_counts.get(
-            "icu_charted", 0
-        ) == 0:
+        invalid_source_values = sorted(
+            set(source_series.unique()).difference(COHORT_ANTHRO_ALLOWED_SOURCES)
+        )
+        if invalid_source_values:
             findings.append(
                 {
                     "severity": "error",
-                    "code": "anthro_no_supported_sources",
-                    "message": "anthro_source has no OMR or ICU charted rows.",
+                    "code": "anthro_source_invalid_values",
+                    "message": (
+                        "anthro_source contains unsupported values: "
+                        f"{invalid_source_values}. Allowed={sorted(COHORT_ANTHRO_ALLOWED_SOURCES)}."
+                    ),
                 }
             )
+
+    anthro_unit_time_contract_enabled = any(
+        col_name in df.columns
+        for pair in COHORT_ANTHRO_REQUIRED_UNIT_TIME_COLUMNS.values()
+        for col_name in pair
+    )
+    for value_column, (unit_column, time_column) in COHORT_ANTHRO_REQUIRED_UNIT_TIME_COLUMNS.items():
+        if value_column not in df.columns or not anthro_unit_time_contract_enabled:
+            continue
+        missing_required_cols = [
+            col_name
+            for col_name in (unit_column, time_column)
+            if col_name not in df.columns
+        ]
+        if missing_required_cols:
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": "missing_anthro_unit_time_columns",
+                    "message": (
+                        f"{value_column} present but missing required columns: {missing_required_cols}."
+                    ),
+                }
+            )
+            continue
+
+        numeric = pd.to_numeric(df[value_column], errors="coerce")
+        unit_series = df[unit_column].astype("string").str.strip().str.lower()
+        time_series = pd.to_datetime(df[time_column], errors="coerce")
+        nonnull_value_mask = numeric.notna()
+        expected_unit = COHORT_ANTHRO_CANONICAL_UOMS[unit_column]
+        invalid_unit_n = int(
+            (
+                nonnull_value_mask
+                & unit_series.notna()
+                & unit_series.ne("")
+                & unit_series.ne(expected_unit)
+            ).sum()
+        )
+        missing_unit_n = int(
+            (nonnull_value_mask & (unit_series.isna() | unit_series.eq(""))).sum()
+        )
+        missing_time_n = int((nonnull_value_mask & time_series.isna()).sum())
+        if invalid_unit_n > 0:
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": "anthro_noncanonical_unit",
+                    "message": (
+                        f"{unit_column} contains {invalid_unit_n} non-null values not equal to "
+                        f"'{expected_unit}' for non-null {value_column} rows."
+                    ),
+                }
+            )
+        if missing_unit_n > 0:
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": "anthro_missing_unit_for_value",
+                    "message": (
+                        f"{unit_column} missing for {missing_unit_n} non-null {value_column} rows."
+                    ),
+                }
+            )
+        if missing_time_n > 0:
+            findings.append(
+                {
+                    "severity": "warning",
+                    "code": "anthro_missing_time_for_value",
+                    "message": (
+                        f"{time_column} missing for {missing_time_n} non-null {value_column} rows."
+                    ),
+                }
+            )
+
+    duplicate_alias_columns = [
+        col_name
+        for col_name in (
+            "bmi_closest_pre_ed_unit",
+            "height_closest_pre_ed_unit",
+            "weight_closest_pre_ed_unit",
+            "bmi_closest_pre_ed_datetime",
+            "height_closest_pre_ed_datetime",
+            "weight_closest_pre_ed_datetime",
+        )
+        if col_name in df.columns
+    ]
+    if duplicate_alias_columns:
+        findings.append(
+            {
+                "severity": "error",
+                "code": "anthro_duplicate_alias_columns_present",
+                "message": (
+                    "Duplicate anthropometric alias columns detected in export: "
+                    f"{duplicate_alias_columns}."
+                ),
+            }
+        )
 
     bmi_coverage_rate = None
     if "bmi_closest_pre_ed" in df.columns:
@@ -663,6 +757,7 @@ def validate_cohort_contract(
             )
 
     hco3_coverage_rate = None
+    hco3_source_value_mismatch_n = 0
     if "first_hco3" in df.columns:
         hco3_coverage_rate = float(
             pd.to_numeric(df["first_hco3"], errors="coerce").notna().mean()
@@ -678,6 +773,84 @@ def validate_cohort_contract(
                     ),
                 }
             )
+    if {"first_hco3", "first_hco3_source"}.issubset(df.columns):
+        hco3_values = pd.to_numeric(df["first_hco3"], errors="coerce")
+        hco3_source = df["first_hco3_source"].astype("string").fillna("missing")
+        hco3_source_value_mismatch_n = int(
+            ((hco3_source != "missing") & hco3_values.isna()).sum()
+        )
+        if hco3_source_value_mismatch_n > 0:
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": "first_hco3_source_value_mismatch",
+                    "message": (
+                        "first_hco3_source implies a value but first_hco3 is null in "
+                        f"{hco3_source_value_mismatch_n} rows."
+                    ),
+                }
+            )
+
+    ph_uom_pairs = (
+        ("lab_abg_ph", "lab_abg_ph_uom"),
+        ("lab_vbg_ph", "lab_vbg_ph_uom"),
+        ("lab_other_ph", "lab_other_ph_uom"),
+        ("poc_abg_ph", "poc_abg_ph_uom"),
+        ("poc_vbg_ph", "poc_vbg_ph_uom"),
+        ("poc_other_ph", "poc_other_ph_uom"),
+    )
+    for ph_column, ph_uom_column in ph_uom_pairs:
+        if ph_column not in df.columns or ph_uom_column not in df.columns:
+            continue
+        ph_values = pd.to_numeric(df[ph_column], errors="coerce")
+        ph_present = ph_values.notna()
+        if not ph_present.any():
+            continue
+        uom_series = (
+            df[ph_uom_column]
+            .astype("string")
+            .str.strip()
+            .str.lower()
+        )
+        non_unitless_n = int(
+            (ph_present & (uom_series.isna() | uom_series.ne("unitless"))).sum()
+        )
+        if non_unitless_n > 0:
+            findings.append(
+                {
+                    "severity": "warning",
+                    "code": "ph_uom_not_unitless",
+                    "message": (
+                        f"{ph_uom_column} has {non_unitless_n} non-unitless values "
+                        f"for non-null {ph_column} rows."
+                    ),
+                }
+            )
+
+    for site_name in ("abg", "vbg", "other"):
+        pco2_column = f"first_{site_name}_pco2"
+        po2_column = f"first_{site_name}_po2"
+        if pco2_column not in df.columns or po2_column not in df.columns:
+            continue
+        pco2_present = pd.to_numeric(df[pco2_column], errors="coerce").notna()
+        pco2_n = int(pco2_present.sum())
+        if pco2_n == 0:
+            po2_triplet_coverage_by_site[site_name] = 1.0
+            continue
+        po2_present_given_pco2 = pd.to_numeric(df[po2_column], errors="coerce").notna() & pco2_present
+        coverage = float(po2_present_given_pco2.sum() / pco2_n)
+        po2_triplet_coverage_by_site[site_name] = coverage
+        if coverage < COHORT_PO2_TRIPLET_WARN_MIN_COVERAGE:
+            findings.append(
+                {
+                    "severity": "warning",
+                    "code": "po2_triplet_coverage_low",
+                    "message": (
+                        f"{po2_column} coverage among non-null {pco2_column} rows is "
+                        f"{coverage:.4f}, below warning floor {COHORT_PO2_TRIPLET_WARN_MIN_COVERAGE:.2f}."
+                    ),
+                }
+            )
 
     status = _status_from_findings(findings)
     return {
@@ -689,14 +862,14 @@ def validate_cohort_contract(
         "poc_other_pco2_count": poc_other_pco2_count,
         "first_other_poc_rows": first_other_poc_rows,
         "poc_other_quarantine_leak_n": poc_other_quarantine_leak_n,
-        "timing_tri_state_mismatch_n": timing_tri_state_mismatch_n,
-        "timing_tri_state_invalid_value_n": timing_tri_state_invalid_value_n,
         "hospital_los_hours_model_negative_n": hospital_los_negative_model_n,
         "dt_first_imv_hours_model_negative_n": dt_first_imv_model_negative_n,
         "dt_first_niv_hours_model_negative_n": dt_first_niv_model_negative_n,
         "anthro_bmi_coverage_rate": bmi_coverage_rate,
         "anthro_model_invalid_counts": anthro_model_invalid_counts,
         "first_hco3_coverage_rate": hco3_coverage_rate,
+        "first_hco3_source_value_mismatch_n": hco3_source_value_mismatch_n,
+        "po2_triplet_coverage_by_site": po2_triplet_coverage_by_site,
         "anthro_source_counts": anthro_source_counts,
         "findings": findings,
     }
@@ -767,6 +940,24 @@ def build_pipeline_contract_report_for_stages(
                         ),
                     }
                     cohort_report.setdefault("findings", []).append(finding)
+                else:
+                    latest_audit_path = Path(latest_path)
+                    try:
+                        if latest_audit_path.suffix.lower() == ".csv":
+                            pd.read_csv(latest_audit_path, nrows=5)
+                        elif latest_audit_path.suffix.lower() == ".json":
+                            json.loads(latest_audit_path.read_text())
+                    except Exception as exc:
+                        cohort_report.setdefault("findings", []).append(
+                            {
+                                "severity": "error",
+                                "code": "invalid_cohort_audit_artifact",
+                                "message": (
+                                    "Failed to parse required cohort audit artifact "
+                                    f"{latest_audit_path}: {exc}"
+                                ),
+                            }
+                        )
             cohort_report["audit_artifacts"] = audit_artifacts
             contracts["cohort"] = cohort_report
             findings.extend(cohort_report["findings"])

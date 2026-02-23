@@ -1,0 +1,92 @@
+{
+  "row_count": 11786,
+  "field_nonnull_counts": {
+    "bmi_closest_pre_ed": 7257,
+    "height_closest_pre_ed": 7261,
+    "weight_closest_pre_ed": 10210
+  },
+  "field_nonnull_rates": {
+    "bmi_closest_pre_ed": 0.615730527744782,
+    "height_closest_pre_ed": 0.6160699134566435,
+    "weight_closest_pre_ed": 0.866282029526557
+  },
+  "source_counts": {
+    "icu_charted": 10192,
+    "missing": 1575,
+    "omr": 19
+  },
+  "source_rates": {
+    "icu_charted": 0.86475479382318,
+    "missing": 0.1336331240454777,
+    "omr": 0.0016120821313422705
+  },
+  "timing_basis_counts": {
+    "nearest_anytime": 10192,
+    "missing": 1575,
+    "post": 19
+  },
+  "timing_basis_rates": {
+    "nearest_anytime": 0.86475479382318,
+    "missing": 0.1336331240454777,
+    "post": 0.0016120821313422705
+  },
+  "omr": {
+    "window_days": 365,
+    "source_rows_prepared": 46494,
+    "parsed_value_rows": 46489,
+    "ed_rows": 11786,
+    "ed_rows_eligible_for_join": 11786,
+    "subject_overlap_count": 626,
+    "candidate_rows_after_subject_join": 1940,
+    "days_before_min": -4034,
+    "days_before_max": -275,
+    "nonnegative_candidate_rows": 0,
+    "pre_window_candidate_rows": 0,
+    "post_window_candidate_rows": 21,
+    "closest_absolute_candidate_rows": 21,
+    "within_window_candidate_rows": 0,
+    "eligible_ed_stays_with_candidates": 19,
+    "attached_non_null_counts": {
+      "bmi_closest_pre_ed": 8,
+      "height_closest_pre_ed": 1,
+      "weight_closest_pre_ed": 13
+    },
+    "attached_any_non_null_rows": 19,
+    "selected_tier_counts": {
+      "pre_ed_365": 0,
+      "post_ed_365": 19,
+      "missing": 11767
+    },
+    "selected_tier_rates": {
+      "pre_ed_365": 0.0,
+      "post_ed_365": 0.0016120821313422705,
+      "missing": 0.9983879178686578
+    },
+    "timing_uncertain_count": 19,
+    "anthro_source_counts": {
+      "missing": 11767,
+      "omr": 19
+    },
+    "source_rows_raw": 46494,
+    "prepared_rows": 46494
+  },
+  "charted_fallback": {
+    "charted_rows_input": 421296,
+    "charted_rows_usable": 421296,
+    "nearest_anytime": true,
+    "filled_counts": {
+      "bmi_closest_pre_ed": 0,
+      "height_closest_pre_ed": 7260,
+      "weight_closest_pre_ed": 10197
+    },
+    "rows_with_any_charted_fill": 10207,
+    "subject_overlap_count": 7911,
+    "fallback_source_counts": {
+      "icu_charted": 10192,
+      "omr": 15
+    },
+    "bmi_filled_from_height_weight": 7249,
+    "enabled": true
+  },
+  "cleaning_audit_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-20 anthropometric_cleaning_audit.csv"
+}

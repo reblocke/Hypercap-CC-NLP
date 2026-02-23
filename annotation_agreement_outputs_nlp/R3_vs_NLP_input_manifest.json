@@ -5,30 +5,36 @@
   "nlp_sheet": 0,
   "row_counts": {
     "annotation_r3_rows": 160,
-    "nlp_rows": 11769,
-    "matched_rows": 60,
-    "unmatched_adjudicated_rows": 100,
-    "unmatched_nlp_rows": 11709
+    "nlp_rows": 7152,
+    "matched_rows": 33,
+    "unmatched_adjudicated_rows": 127,
+    "unmatched_nlp_rows": 7119
   },
   "key_columns": [
     "hadm_id",
     "subject_id"
   ],
+  "key_strategy": "hadm_id_subject_id",
   "join_audit": {
     "key_columns": [
       "hadm_id",
       "subject_id"
     ],
+    "key_strategy": "hadm_id_subject_id",
+    "target_sample_n": 160,
+    "gate_policy": "warn_below_target_fail_on_zero",
     "r3_rows": 160,
-    "nlp_rows": 11769,
-    "matched_rows": 60,
-    "unmatched_adjudicated_rows": 100,
-    "unmatched_nlp_rows": 11709,
-    "matched_rate_vs_adjudicated": 0.375,
-    "unmatched_rate_vs_adjudicated": 0.625,
-    "unmatched_rate_vs_nlp": 0.9949018608208005,
-    "join_interpretation": "partial_adjudicated_overlap",
+    "nlp_rows": 7152,
+    "matched_rows": 33,
+    "unmatched_adjudicated_rows": 127,
+    "unmatched_nlp_rows": 7119,
+    "matched_rate_vs_adjudicated": 0.20625,
+    "unmatched_rate_vs_adjudicated": 0.79375,
+    "unmatched_rate_vs_nlp": 0.9953859060402684,
+    "coverage_status": "warning",
+    "join_interpretation": "below_target_overlap_nonzero",
     "severity": "warning"
   },
-  "matched_key_hash_count": 60
+  "matched_key_hash_count": 33,
+  "unmapped_label_count": 0
 }

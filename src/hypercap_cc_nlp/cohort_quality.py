@@ -798,21 +798,25 @@ def assert_gas_source_coverage(
 
 
 def build_gas_source_overlap_summary(ed_df: pd.DataFrame) -> pd.DataFrame:
-    """Build ABG/VBG/OTHER overlap counts and percentages."""
+    """Build ABG/VBG/UNKNOWN overlap counts and percentages."""
     frame = ed_df.copy()
-    abg = pd.to_numeric(frame.get("flag_abg_hypercapnia", 0), errors="coerce").fillna(0).astype(int)
-    vbg = pd.to_numeric(frame.get("flag_vbg_hypercapnia", 0), errors="coerce").fillna(0).astype(int)
-    other = pd.to_numeric(frame.get("flag_other_hypercapnia", 0), errors="coerce").fillna(0).astype(int)
+    abg = pd.to_numeric(frame.get("abg_hypercap_threshold", 0), errors="coerce").fillna(0).astype(int)
+    vbg = pd.to_numeric(frame.get("vbg_hypercap_threshold", 0), errors="coerce").fillna(0).astype(int)
+    unknown = (
+        pd.to_numeric(frame.get("unknown_hypercap_threshold", 0), errors="coerce")
+        .fillna(0)
+        .astype(int)
+    )
 
     labels = []
-    for a, v, o in zip(abg.tolist(), vbg.tolist(), other.tolist(), strict=False):
+    for a, v, u in zip(abg.tolist(), vbg.tolist(), unknown.tolist(), strict=False):
         parts: list[str] = []
         if a == 1:
             parts.append("ABG")
         if v == 1:
             parts.append("VBG")
-        if o == 1:
-            parts.append("OTHER")
+        if u == 1:
+            parts.append("UNKNOWN")
         labels.append("+".join(parts) if parts else "NO_GAS")
 
     counts = pd.Series(labels, dtype="string").value_counts(dropna=False).rename_axis("gas_overlap").reset_index(name="count")
