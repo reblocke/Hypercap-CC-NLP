@@ -322,6 +322,31 @@ def test_validate_cohort_contract_warns_on_low_first_hco3_coverage() -> None:
     )
     report = validate_cohort_contract(df)
     codes = {finding["code"] for finding in report["findings"]}
+    assert report["status"] == "fail"
+    assert "first_hco3_coverage_low" in codes
+
+
+def test_validate_cohort_contract_warns_when_hco3_gas_positive_between_warn_and_fail() -> None:
+    df = pd.DataFrame(
+        {
+            "hadm_id": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+            "ed_stay_id": [11, 22, 33, 44, 55, 66, 77, 88, 99, 110],
+            "abg_hypercap_threshold": [1] * 10,
+            "vbg_hypercap_threshold": [0] * 10,
+            "unknown_hypercap_threshold": [0] * 10,
+            "pco2_threshold_0_24h": [1] * 10,
+            "gas_source_other_rate": [0.2] * 10,
+            "gas_source_inference_primary_tier": ["specimen_text"] * 10,
+            "gas_source_hint_conflict_rate": [0.0] * 10,
+            "gas_source_resolved_rate": [1.0] * 10,
+            "bmi_closest_pre_ed": [30.0] * 10,
+            "anthro_source": ["HOSPITAL"] * 10,
+            "first_hco3": [24.0, 23.0, 25.0, 21.0, 26.0, 22.0, 24.0, pd.NA, pd.NA, pd.NA],
+        }
+    )
+    report = validate_cohort_contract(df)
+    codes = {finding["code"] for finding in report["findings"]}
+    assert report["status"] == "warning"
     assert "first_hco3_coverage_low" in codes
 
 
@@ -665,6 +690,34 @@ def test_validate_cohort_contract_flags_anthro_model_out_of_bounds() -> None:
             "bmi_closest_pre_ed_model": [150.0],
             "height_closest_pre_ed_model": [90.0],
             "weight_closest_pre_ed_model": [500.0],
+            "bmi_outlier_flag": [True],
+            "height_outlier_flag": [True],
+            "weight_outlier_flag": [True],
+        }
+    )
+    report = validate_cohort_contract(df)
+    codes = {finding["code"] for finding in report["findings"]}
+    assert "anthro_model_out_of_bounds" in codes
+
+
+def test_validate_cohort_contract_flags_low_end_anthro_model_out_of_bounds() -> None:
+    df = pd.DataFrame(
+        {
+            "hadm_id": [1],
+            "ed_stay_id": [11],
+            "abg_hypercap_threshold": [1],
+            "vbg_hypercap_threshold": [0],
+            "unknown_hypercap_threshold": [0],
+            "pco2_threshold_0_24h": [1],
+            "gas_source_other_rate": [0.1],
+            "gas_source_inference_primary_tier": ["specimen_text"],
+            "gas_source_hint_conflict_rate": [0.0],
+            "gas_source_resolved_rate": [1.0],
+            "bmi_closest_pre_ed": [30.0],
+            "anthro_source": ["HOSPITAL"],
+            "bmi_closest_pre_ed_model": [9.5],
+            "height_closest_pre_ed_model": [231.0],
+            "weight_closest_pre_ed_model": [24.9],
             "bmi_outlier_flag": [True],
             "height_outlier_flag": [True],
             "weight_outlier_flag": [True],

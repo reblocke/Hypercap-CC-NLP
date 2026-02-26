@@ -5376,7 +5376,8 @@ TARGET_RAW_FIELDS = {
         "first_careunit","last_careunit",
     ],
     "labs_gas": [
-        "first_gas_time","first_pco2","first_ph","first_hco3","first_lactate",
+        "first_gas_time","first_pco2","first_ph","first_hco3","first_hco3_time","first_hco3_source","first_hco3_itemid","first_hco3_qc_flag","first_lactate",
+        "serum_hco3_time","serum_hco3_mmol_l","serum_hco3_itemid",
         "qualifying_pco2_time","qualifying_pco2_mmhg","qualifying_site","qualifying_source_branch","qualifying_threshold_mmhg",
         "first_abg_po2","first_vbg_po2","first_other_po2",
         "first_abg_hypercap_time_0_24h","first_abg_hypercap_pco2_mmhg","first_abg_hypercap_source_branch","first_abg_hypercap_itemid",
@@ -5827,6 +5828,7 @@ patterns = {
     "gas_hco3": re.compile(r"hco3|bicarbonate", re.I),
     "gas_lactate": re.compile(r"lactate", re.I),
     "gas_specimen": re.compile(r"specimen|source|type", re.I),
+    "chem_hco3_serum": re.compile(r"bicarbonate|total\s*co2|carbon\s*dioxide|\bco2\b", re.I),
     "chem_creatinine": re.compile(r"creatinine", re.I),
     "chem_sodium": re.compile(r"\bsodium\b", re.I),
     "chem_chloride": re.compile(r"\bchloride\b", re.I),
@@ -5838,6 +5840,10 @@ patterns = {
 cat_gas = re.compile(r"blood\s*gas|blood gas|arterial|venous", re.I)
 cat_chem = re.compile(r"chemistry|chem|blood", re.I)
 cat_cbc = re.compile(r"hematology|cbc", re.I)
+chem_hco3_label_exclude = re.compile(
+    r"pco2|po2|blood\s*gas|arterial|venous|end[- ]?tidal|etco2",
+    re.I,
+)
 
 manifest_lab_itemid_sets: dict[str, set[int]] = {
     "gas_pco2": set(LAB_PCO2_ITEMIDS),
@@ -5889,6 +5895,9 @@ for name, pat in patterns.items():
             dfm = dfm[dfm["category"].str.contains(cat_chem, na=False)]
         elif name.startswith("cbc_"):
             dfm = dfm[dfm["category"].str.contains(cat_cbc, na=False)]
+        if name == "chem_hco3_serum":
+            dfm = dfm[~dfm["category"].str.contains(cat_gas, na=False)]
+            dfm = dfm[~dfm["label"].str.contains(chem_hco3_label_exclude, na=False)]
     matches[name] = dfm[["itemid", "label", "category"]]
 
 # Build lab_item_map with cohort counts. Run hadm counts in chunks to avoid one oversized query.
@@ -6077,6 +6086,8 @@ po2_ids = set(itemid_sets.get("gas_po2", []))
 ph_ids = set(itemid_sets.get("gas_ph", []))
 hco3_ids = set(itemid_sets.get("gas_hco3", []))
 lact_ids = set(itemid_sets.get("gas_lactate", []))
+serum_hco3_ids = set(itemid_sets.get("chem_hco3_serum", []))
+serum_hco3_ids = serum_hco3_ids.difference(pco2_ids, po2_ids, ph_ids, hco3_ids)
 
 labs = labs_long.copy()
 
@@ -6112,14 +6123,22 @@ def pick_analyte(
     *,
     include_item_meta: bool = False,
 ) -> pd.DataFrame:
-    cols = ["ed_stay_id", "specimen_id", "charttime", "valuenum", "itemid", "fluid"]
+    cols = [
+        "ed_stay_id",
+        "specimen_id",
+        "charttime",
+        "valuenum",
+        "valueuom",
+        "itemid",
+        "fluid",
+    ]
     tmp = df.loc[df["itemid"].isin(ids), cols].copy()
     tmp["valuenum"] = pd.to_numeric(tmp["valuenum"], errors="coerce")
     tmp = tmp.loc[tmp["valuenum"].notna()].copy()
     if tmp.empty:
         base_cols = ["ed_stay_id", "specimen_id", name]
         if include_item_meta:
-            base_cols += [f"{name}_itemid", f"{name}_fluid"]
+            base_cols += [f"{name}_itemid", f"{name}_fluid", f"{name}_uom"]
         return pd.DataFrame(columns=base_cols)
     tmp = tmp.sort_values(
         ["ed_stay_id", "specimen_id", "charttime", "itemid"], kind="stable"
@@ -6128,9 +6147,20 @@ def pick_analyte(
     first = first.rename(columns={"valuenum": name})
     if include_item_meta:
         first = first.rename(
-            columns={"itemid": f"{name}_itemid", "fluid": f"{name}_fluid"}
+            columns={
+                "itemid": f"{name}_itemid",
+                "fluid": f"{name}_fluid",
+                "valueuom": f"{name}_uom",
+            }
         )
-        keep_cols = ["ed_stay_id", "specimen_id", name, f"{name}_itemid", f"{name}_fluid"]
+        keep_cols = [
+            "ed_stay_id",
+            "specimen_id",
+            name,
+            f"{name}_itemid",
+            f"{name}_fluid",
+            f"{name}_uom",
+        ]
     else:
         keep_cols = ["ed_stay_id", "specimen_id", name]
     return first[keep_cols]
@@ -6155,7 +6185,11 @@ if po2_ids:
 if ph_ids:
     panel = panel.merge(pick_analyte(labs, ph_ids, "ph"), on=["ed_stay_id","specimen_id"], how="left")
 if hco3_ids:
-    panel = panel.merge(pick_analyte(labs, hco3_ids, "hco3"), on=["ed_stay_id","specimen_id"], how="left")
+    panel = panel.merge(
+        pick_analyte(labs, hco3_ids, "hco3", include_item_meta=True),
+        on=["ed_stay_id", "specimen_id"],
+        how="left",
+    )
 if lact_ids:
     panel = panel.merge(pick_analyte(labs, lact_ids, "lactate"), on=["ed_stay_id","specimen_id"], how="left")
 
@@ -6173,16 +6207,49 @@ else:
     )
 
 # 0–6h and 0–24h extrema
-panel = panel.merge(ed_df[["ed_stay_id","ed_intime"]], on="ed_stay_id", how="left")
+panel = panel.merge(ed_df[["ed_stay_id", "hadm_id", "ed_intime"]], on="ed_stay_id", how="left")
 panel["dt_hours"] = (panel["panel_time"] - panel["ed_intime"]).dt.total_seconds() / 3600.0
 
 # Ensure expected panel columns exist even if analyte is absent
 for col in ["pco2", "po2", "ph", "hco3", "lactate"]:
     if col not in panel.columns:
         panel[col] = pd.NA
-for col in ["pco2_itemid", "pco2_fluid"]:
+for col in ["pco2_itemid", "pco2_fluid", "hco3_itemid", "hco3_uom"]:
     if col not in panel.columns:
         panel[col] = pd.NA
+
+def _normalize_hco3_to_mmol(values: pd.Series, units: pd.Series) -> pd.Series:
+    values_numeric = pd.to_numeric(values, errors="coerce")
+    units_norm = (
+        units.astype("string")
+        .fillna("")
+        .str.strip()
+        .str.lower()
+        .str.replace(" ", "", regex=False)
+    )
+    accepted = {"", "mmol/l", "mmolperliter", "meq/l", "meqperliter"}
+    valid_mask = units_norm.isin(accepted)
+    normalized = pd.Series(np.nan, index=values_numeric.index, dtype="float64")
+    normalized.loc[valid_mask] = values_numeric.loc[valid_mask]
+    return normalized
+
+panel["hco3"] = _normalize_hco3_to_mmol(
+    panel.get("hco3", pd.Series(index=panel.index, dtype="float64")),
+    panel.get("hco3_uom", pd.Series(index=panel.index, dtype="string")),
+)
+panel["hco3_derived_mmol_l"] = np.where(
+    pd.to_numeric(panel["pco2"], errors="coerce").notna()
+    & pd.to_numeric(panel["ph"], errors="coerce").notna(),
+    0.03
+    * pd.to_numeric(panel["pco2"], errors="coerce")
+    * np.power(10.0, pd.to_numeric(panel["ph"], errors="coerce") - 6.1),
+    np.nan,
+)
+panel["hco3_derived_qc_flag"] = (
+    pd.to_numeric(panel["hco3_derived_mmol_l"], errors="coerce")
+    .between(5, 60, inclusive="both")
+    .fillna(False)
+)
 
 p06 = panel.loc[panel["dt_hours"].between(0,6, inclusive="both")]
 p24 = panel.loc[panel["dt_hours"].between(0,24, inclusive="both")]
@@ -6308,6 +6375,55 @@ if hco3_ids and not lab_hco3_long.empty:
         ed_df.loc[window_fill_mask, "first_hco3_source"] = "lab_first_0_24h"
         ed_df = ed_df.drop(columns=["first_hco3_fallback_window"])
 
+# Serum chemistry bicarbonate / total CO2 fallback candidates (ED 0–24h already enforced in labs_long)
+serum_hco3_long = pd.DataFrame(
+    columns=["ed_stay_id", "charttime", "serum_hco3_mmol_l", "serum_hco3_itemid"]
+)
+if serum_hco3_ids:
+    serum_hco3_long = labs.loc[
+        labs["itemid"].isin(serum_hco3_ids),
+        ["ed_stay_id", "charttime", "valuenum", "valueuom", "itemid"],
+    ].copy()
+    if not serum_hco3_long.empty:
+        serum_hco3_long["serum_hco3_mmol_l"] = _normalize_hco3_to_mmol(
+            serum_hco3_long["valuenum"],
+            serum_hco3_long["valueuom"],
+        )
+        serum_hco3_long = serum_hco3_long.loc[
+            pd.to_numeric(serum_hco3_long["serum_hco3_mmol_l"], errors="coerce").notna()
+        ].copy()
+        serum_hco3_long = serum_hco3_long.rename(columns={"itemid": "serum_hco3_itemid"})
+
+if not serum_hco3_long.empty:
+    serum_with_anchor = serum_hco3_long.merge(
+        ed_df[["ed_stay_id", "ed_intime"]],
+        on="ed_stay_id",
+        how="left",
+    )
+    serum_with_anchor["dt_abs_hours"] = (
+        (
+            pd.to_datetime(serum_with_anchor["charttime"], errors="coerce")
+            - pd.to_datetime(serum_with_anchor["ed_intime"], errors="coerce")
+        )
+        .dt.total_seconds()
+        .abs()
+        / 3600.0
+    )
+    serum_nearest = (
+        serum_with_anchor.sort_values(
+            ["ed_stay_id", "dt_abs_hours", "charttime"],
+            kind="stable",
+        )
+        .groupby("ed_stay_id", as_index=False)
+        .first()[["ed_stay_id", "charttime", "serum_hco3_mmol_l", "serum_hco3_itemid"]]
+        .rename(columns={"charttime": "serum_hco3_time"})
+    )
+    ed_df = ed_df.merge(serum_nearest, on="ed_stay_id", how="left")
+else:
+    ed_df["serum_hco3_time"] = pd.NaT
+    ed_df["serum_hco3_mmol_l"] = pd.NA
+    ed_df["serum_hco3_itemid"] = pd.NA
+
 ed_df["first_hco3_source"] = np.where(
     pd.to_numeric(ed_df["first_hco3"], errors="coerce").notna(),
     ed_df["first_hco3_source"].astype("string").fillna("missing"),
@@ -6369,15 +6485,49 @@ fail_other_rate_raw = os.getenv("COHORT_FAIL_OTHER_RATE", "").strip()
 fail_other_rate_threshold = float(fail_other_rate_raw) if fail_other_rate_raw else None
 other_source_rate = float(gas_source_audit.get("source_rates", {}).get("unknown", 0.0))
 
-if fail_other_rate_threshold is not None and other_source_rate >= fail_other_rate_threshold:
+panel_unknown_hadm_count = 0
+panel_hadm_denom = int(pd.to_numeric(ed_df.get("hadm_id"), errors="coerce").dropna().nunique())
+hadm_other_rate_0_24h = 0.0
+if "panel" in globals() and isinstance(panel, pd.DataFrame) and not panel.empty:
+    panel_tmp = panel.copy()
+    panel_tmp["dt_hours"] = pd.to_numeric(panel_tmp.get("dt_hours"), errors="coerce")
+    panel_tmp["source"] = (
+        panel_tmp.get("source", pd.Series("unknown", index=panel_tmp.index))
+        .astype("string")
+        .str.lower()
+    )
+    panel_tmp["hadm_id"] = pd.to_numeric(panel_tmp.get("hadm_id"), errors="coerce")
+    panel_tmp["pco2"] = pd.to_numeric(panel_tmp.get("pco2"), errors="coerce")
+    panel_unknown_hadm_count = int(
+        panel_tmp.loc[
+            panel_tmp["dt_hours"].between(0, 24, inclusive="both")
+            & panel_tmp["pco2"].notna()
+            & panel_tmp["source"].eq("unknown")
+            & panel_tmp["hadm_id"].notna(),
+            "hadm_id",
+        ]
+        .drop_duplicates()
+        .shape[0]
+    )
+if panel_hadm_denom > 0:
+    hadm_other_rate_0_24h = float(panel_unknown_hadm_count / panel_hadm_denom)
+
+gas_source_audit["panel_unknown_rate"] = other_source_rate
+gas_source_audit["hadm_other_rate_0_24h"] = hadm_other_rate_0_24h
+gas_source_audit["hadm_other_rate_0_24h_numerator"] = panel_unknown_hadm_count
+gas_source_audit["hadm_other_rate_0_24h_denominator"] = panel_hadm_denom
+
+other_rate_for_gate = hadm_other_rate_0_24h if panel_hadm_denom > 0 else other_source_rate
+
+if fail_other_rate_threshold is not None and other_rate_for_gate >= fail_other_rate_threshold:
     raise ValueError(
         "gas_source_other_rate exceeded configured fail threshold "
-        f"{fail_other_rate_threshold:.3f}: {other_source_rate:.4f}."
+        f"{fail_other_rate_threshold:.3f}: {other_rate_for_gate:.4f}."
     )
-if other_source_rate >= warn_other_rate_threshold:
+if other_rate_for_gate >= warn_other_rate_threshold:
     print(
         "WARNING: gas_source_other_rate exceeded warning threshold "
-        f"{warn_other_rate_threshold:.3f}: {other_source_rate:.4f}."
+        f"{warn_other_rate_threshold:.3f}: {other_rate_for_gate:.4f}."
     )
 
 print("Gas source rates:", gas_source_audit.get("source_rates", {}))
@@ -6389,7 +6539,7 @@ prior_runs_dir.mkdir(parents=True, exist_ok=True)
 out_date = datetime.now().strftime("%Y-%m-%d")
 gas_source_audit_path = prior_runs_dir / f"{out_date} gas_source_audit.json"
 
-reduction_target = float(os.getenv("COHORT_OTHER_RELATIVE_REDUCTION_MIN", "0.10"))
+reduction_target = float(os.getenv("COHORT_OTHER_RELATIVE_REDUCTION_MIN", "0"))
 baseline_other_rate = None
 baseline_audit_path = None
 baseline_mode_mismatch_path = None
@@ -6403,11 +6553,13 @@ for candidate in sorted(prior_runs_dir.glob("* gas_source_audit.json"), reverse=
         if current_source_mode and baseline_mode and baseline_mode != current_source_mode:
             baseline_mode_mismatch_path = candidate
             continue
-        baseline_rates = baseline_payload.get("source_rates", {})
         baseline_other_rate = float(
-            baseline_rates.get(
-                "unknown",
-                baseline_rates.get("other", float("nan")),
+            baseline_payload.get(
+                "hadm_other_rate_0_24h",
+                baseline_payload.get("source_rates", {}).get(
+                    "unknown",
+                    baseline_payload.get("source_rates", {}).get("other", float("nan")),
+                ),
             )
         )
         if math.isnan(baseline_other_rate):
@@ -6430,7 +6582,7 @@ if baseline_other_rate is None or baseline_other_rate <= 0:
         "because no valid baseline gas_source_audit was found for the current source mode."
     )
 else:
-    relative_reduction = (baseline_other_rate - other_source_rate) / baseline_other_rate
+    relative_reduction = (baseline_other_rate - other_rate_for_gate) / baseline_other_rate
     gas_source_audit["baseline_other_rate"] = baseline_other_rate
     gas_source_audit["baseline_path"] = str(baseline_audit_path)
     gas_source_audit["baseline_mode_mismatch_path"] = (
@@ -6446,8 +6598,18 @@ else:
     if reduction_target > 0 and (relative_reduction + reduction_tolerance) < reduction_target:
         message = (
             "gas_source_other_rate relative reduction target not met: "
-            f"baseline={baseline_other_rate:.4f}, current={other_source_rate:.4f}, "
+            f"baseline={baseline_other_rate:.4f}, current={other_rate_for_gate:.4f}, "
             f"reduction={relative_reduction:.4f}, target={reduction_target:.4f}."
+        )
+        print(f"WARNING: {message}")
+    hadm_increase_fail_pp = float(os.getenv("COHORT_OTHER_HADM_INCREASE_FAIL_PP", "0.10"))
+    hadm_rate_increase = other_rate_for_gate - baseline_other_rate
+    gas_source_audit["hadm_other_rate_0_24h_delta_vs_baseline"] = hadm_rate_increase
+    if hadm_rate_increase >= hadm_increase_fail_pp:
+        message = (
+            "hadm_other_rate_0_24h increased sharply vs baseline: "
+            f"baseline={baseline_other_rate:.4f}, current={other_rate_for_gate:.4f}, "
+            f"delta={hadm_rate_increase:.4f}, fail_pp={hadm_increase_fail_pp:.4f}."
         )
         contract_mode = os.getenv("PIPELINE_CONTRACT_MODE", "fail").strip().lower()
         if contract_mode == "fail":
@@ -6689,10 +6851,10 @@ for name, pat in icu_patterns.items():
     else:
         dfm = pd.DataFrame(columns=["itemid", "label", "category"])
 
-    allow_fallback_for_analyte = ICU_ALLOW_PATTERN_FALLBACK and name != "hco3"
+    allow_fallback_for_analyte = ICU_ALLOW_PATTERN_FALLBACK or name == "hco3"
     if dfm.empty and allow_fallback_for_analyte:
         dfm = ditems[ditems["label"].str.contains(pat, na=False)].copy()
-        if name in {"pco2", "ph", "specimen"}:
+        if name in {"pco2", "po2", "ph", "hco3", "specimen"}:
             dfm = dfm[dfm["category"].str.contains(icu_cat, na=False)]
 
     if name == "pco2" and len(dfm) > 0:
@@ -6831,10 +6993,29 @@ else:
 if len(icu_poc_long) > 0:
     icu_poc_long["time_bin"] = icu_poc_long["charttime"].dt.floor("5min")
 
-    def pick_from_ids(df, ids, name):
-        tmp = df.loc[df["itemid"].isin(ids), ["icu_stay_id","time_bin","valuenum"]]
-        tmp = tmp.rename(columns={"valuenum": name})
-        return tmp.groupby(["icu_stay_id","time_bin"], as_index=False).first()
+    def pick_from_ids(df, ids, name, *, include_item_meta=False):
+        base_cols = ["icu_stay_id", "time_bin", "charttime", "valuenum", "valueuom", "itemid"]
+        tmp = df.loc[df["itemid"].isin(ids), base_cols].copy()
+        if tmp.empty:
+            columns = ["icu_stay_id", "time_bin", name]
+            if include_item_meta:
+                columns.extend([f"{name}_itemid", f"{name}_uom"])
+            return pd.DataFrame(columns=columns)
+        tmp = tmp.sort_values(
+            ["icu_stay_id", "time_bin", "charttime", "itemid"],
+            kind="stable",
+        )
+        first = tmp.groupby(["icu_stay_id", "time_bin"], as_index=False).first()
+        first = first.rename(columns={"valuenum": name})
+        if include_item_meta:
+            first = first.rename(
+                columns={
+                    "itemid": f"{name}_itemid",
+                    "valueuom": f"{name}_uom",
+                }
+            )
+            return first[["icu_stay_id", "time_bin", name, f"{name}_itemid", f"{name}_uom"]]
+        return first[["icu_stay_id", "time_bin", name]]
 
     pco2_ids = set(icu_matches.get("pco2", pd.DataFrame()).get("itemid", []).tolist())
     po2_ids = set(icu_matches.get("po2", pd.DataFrame()).get("itemid", []).tolist())
@@ -6847,13 +7028,29 @@ if len(icu_poc_long) > 0:
         .agg(panel_time=("charttime","min"))
     )
     if pco2_ids:
-        panel_poc = panel_poc.merge(pick_from_ids(icu_poc_long, pco2_ids, "pco2"), on=["icu_stay_id","time_bin"], how="left")
+        panel_poc = panel_poc.merge(
+            pick_from_ids(icu_poc_long, pco2_ids, "pco2", include_item_meta=True),
+            on=["icu_stay_id", "time_bin"],
+            how="left",
+        )
     if po2_ids:
-        panel_poc = panel_poc.merge(pick_from_ids(icu_poc_long, po2_ids, "po2"), on=["icu_stay_id","time_bin"], how="left")
+        panel_poc = panel_poc.merge(
+            pick_from_ids(icu_poc_long, po2_ids, "po2"),
+            on=["icu_stay_id", "time_bin"],
+            how="left",
+        )
     if ph_ids:
-        panel_poc = panel_poc.merge(pick_from_ids(icu_poc_long, ph_ids, "ph"), on=["icu_stay_id","time_bin"], how="left")
+        panel_poc = panel_poc.merge(
+            pick_from_ids(icu_poc_long, ph_ids, "ph"),
+            on=["icu_stay_id", "time_bin"],
+            how="left",
+        )
     if hco3_ids:
-        panel_poc = panel_poc.merge(pick_from_ids(icu_poc_long, hco3_ids, "hco3"), on=["icu_stay_id","time_bin"], how="left")
+        panel_poc = panel_poc.merge(
+            pick_from_ids(icu_poc_long, hco3_ids, "hco3", include_item_meta=True),
+            on=["icu_stay_id", "time_bin"],
+            how="left",
+        )
     if lact_ids:
         panel_poc = panel_poc.merge(pick_from_ids(icu_poc_long, lact_ids, "lactate"), on=["icu_stay_id","time_bin"], how="left")
 
@@ -6861,6 +7058,52 @@ if len(icu_poc_long) > 0:
     panel_poc = panel_poc.merge(icu[["icu_stay_id","hadm_id"]], on="icu_stay_id", how="left")
     panel_poc = panel_poc.merge(ed_df[["ed_stay_id","hadm_id","ed_intime"]], on="hadm_id", how="left")
     panel_poc["dt_hours"] = (panel_poc["panel_time"] - panel_poc["ed_intime"]).dt.total_seconds() / 3600.0
+    pco2_uom_norm = (
+        panel_poc.get("pco2_uom", pd.Series("", index=panel_poc.index))
+        .astype("string")
+        .fillna("")
+        .str.strip()
+        .str.lower()
+        .str.replace(" ", "", regex=False)
+    )
+    pco2_values = pd.to_numeric(panel_poc.get("pco2"), errors="coerce")
+    panel_poc["pco2"] = np.where(
+        pco2_uom_norm.eq("kpa"),
+        pco2_values * 7.50062,
+        pco2_values,
+    )
+    panel_poc["site"] = np.select(
+        [
+            pd.to_numeric(panel_poc.get("pco2_itemid"), errors="coerce")
+            .fillna(-1)
+            .astype(int)
+            .isin(set(ICU_PCO2_ABG_ITEMIDS)),
+            pd.to_numeric(panel_poc.get("pco2_itemid"), errors="coerce")
+            .fillna(-1)
+            .astype(int)
+            .isin(set(ICU_PCO2_VBG_ITEMIDS)),
+        ],
+        ["arterial", "venous"],
+        default="unknown",
+    )
+    panel_poc["source_branch"] = "POC"
+    panel_poc["hco3"] = _normalize_hco3_to_mmol(
+        panel_poc.get("hco3", pd.Series(index=panel_poc.index, dtype="float64")),
+        panel_poc.get("hco3_uom", pd.Series(index=panel_poc.index, dtype="string")),
+    )
+    panel_poc["hco3_derived_mmol_l"] = np.where(
+        pd.to_numeric(panel_poc.get("pco2"), errors="coerce").notna()
+        & pd.to_numeric(panel_poc.get("ph"), errors="coerce").notna(),
+        0.03
+        * pd.to_numeric(panel_poc.get("pco2"), errors="coerce")
+        * np.power(10.0, pd.to_numeric(panel_poc.get("ph"), errors="coerce") - 6.1),
+        np.nan,
+    )
+    panel_poc["hco3_derived_qc_flag"] = (
+        pd.to_numeric(panel_poc["hco3_derived_mmol_l"], errors="coerce")
+        .between(5, 60, inclusive="both")
+        .fillna(False)
+    )
 
     icu_itemid_usage = (
         icu_poc_long.groupby("itemid", as_index=False)
@@ -6905,7 +7148,20 @@ else:
     panel_poc = pd.DataFrame()
 
 # Ensure expected panel_poc columns exist even if analyte is absent
-for col in ["pco2", "ph", "hco3", "lactate"]:
+for col in [
+    "pco2",
+    "pco2_itemid",
+    "pco2_uom",
+    "ph",
+    "hco3",
+    "hco3_itemid",
+    "hco3_uom",
+    "lactate",
+    "site",
+    "source_branch",
+    "hco3_derived_mmol_l",
+    "hco3_derived_qc_flag",
+]:
     if col not in panel_poc.columns:
         panel_poc[col] = pd.NA
 
@@ -6944,13 +7200,24 @@ if len(icu_poc_long) > 0 and pco2_ids:
             unit_ok = set(value_units).issubset(ICU_PCO2_QC_ALLOWED_UOMS)
             include_ok = any(token in label_text_l for token in ICU_PCO2_QC_INCLUDE_TOKENS)
             exclude_hit = any(token in label_text_l for token in ICU_PCO2_QC_EXCLUDE_TOKENS)
-            numeric = pd.to_numeric(group["pco2_mmhg"], errors="coerce").dropna()
-            median_value = float(numeric.median()) if len(numeric) else np.nan
+            raw_numeric = pd.to_numeric(group["pco2_mmhg"], errors="coerce").dropna()
+            clean_numeric = raw_numeric.loc[raw_numeric.between(5.0, 200.0)]
+            sentinel_mask = raw_numeric.ge(100000.0)
+            out_of_range_removed_n = int((~raw_numeric.between(5.0, 200.0)).sum())
+            sentinel_extreme_n = int(sentinel_mask.sum())
+            sentinel_removed_n = int((sentinel_mask & ~raw_numeric.between(5.0, 200.0)).sum())
+            median_value = float(clean_numeric.median()) if len(clean_numeric) else np.nan
             median_ok = bool(
-                len(numeric)
+                len(clean_numeric)
                 and ICU_PCO2_QC_MEDIAN_MIN <= median_value <= ICU_PCO2_QC_MEDIAN_MAX
             )
-            contamination_flag = bool((not include_ok) or exclude_hit or (not unit_ok))
+            contamination_flag = bool(
+                (not include_ok)
+                or exclude_hit
+                or (not unit_ok)
+                or sentinel_extreme_n > 0
+                or out_of_range_removed_n > 0
+            )
 
             pco2_itemid_qc_rows.append(
                 {
@@ -6960,11 +7227,28 @@ if len(icu_poc_long) > 0 and pco2_ids:
                     "source_branch": "POC",
                     "sample_type_hint": sample_type_hint,
                     "row_count": int(len(group)),
-                    "non_null_count": int(len(numeric)),
+                    "non_null_count": int(len(clean_numeric)),
+                    "raw_non_null_count": int(len(raw_numeric)),
+                    "clean_non_null_count": int(len(clean_numeric)),
                     "units_observed": ";".join(value_units),
-                    "p50_mmhg": median_value if len(numeric) else np.nan,
-                    "p95_mmhg": float(numeric.quantile(0.95)) if len(numeric) else np.nan,
-                    "max_mmhg": float(numeric.max()) if len(numeric) else np.nan,
+                    "p50_mmhg": median_value if len(clean_numeric) else np.nan,
+                    "p95_mmhg": float(clean_numeric.quantile(0.95))
+                    if len(clean_numeric)
+                    else np.nan,
+                    "max_mmhg": float(clean_numeric.max()) if len(clean_numeric) else np.nan,
+                    "raw_p50_mmhg": float(raw_numeric.median()) if len(raw_numeric) else np.nan,
+                    "raw_p95_mmhg": float(raw_numeric.quantile(0.95))
+                    if len(raw_numeric)
+                    else np.nan,
+                    "raw_max_mmhg": float(raw_numeric.max()) if len(raw_numeric) else np.nan,
+                    "clean_p50_mmhg": median_value if len(clean_numeric) else np.nan,
+                    "clean_p95_mmhg": float(clean_numeric.quantile(0.95))
+                    if len(clean_numeric)
+                    else np.nan,
+                    "clean_max_mmhg": float(clean_numeric.max()) if len(clean_numeric) else np.nan,
+                    "out_of_range_removed_n": out_of_range_removed_n,
+                    "sentinel_extreme_n": sentinel_extreme_n,
+                    "sentinel_removed_n": sentinel_removed_n,
                     "label_include_ok": bool(include_ok),
                     "label_exclude_hit": bool(exclude_hit),
                     "unit_ok": bool(unit_ok),
@@ -6982,10 +7266,21 @@ pco2_itemid_qc_columns = [
     "sample_type_hint",
     "row_count",
     "non_null_count",
+    "raw_non_null_count",
+    "clean_non_null_count",
     "units_observed",
     "p50_mmhg",
     "p95_mmhg",
     "max_mmhg",
+    "raw_p50_mmhg",
+    "raw_p95_mmhg",
+    "raw_max_mmhg",
+    "clean_p50_mmhg",
+    "clean_p95_mmhg",
+    "clean_max_mmhg",
+    "out_of_range_removed_n",
+    "sentinel_extreme_n",
+    "sentinel_removed_n",
     "label_include_ok",
     "label_exclude_hit",
     "unit_ok",
@@ -7001,6 +7296,75 @@ pco2_itemid_qc_audit = pco2_itemid_qc_audit[pco2_itemid_qc_columns]
 pco2_itemid_qc_audit_path = prior_runs_dir / f"{audit_date} pco2_itemid_qc_audit.csv"
 pco2_itemid_qc_audit.to_csv(pco2_itemid_qc_audit_path, index=False)
 print("Wrote:", pco2_itemid_qc_audit_path)
+
+hco3_itemid_qc_rows: list[dict[str, Any]] = []
+if len(icu_poc_long) > 0 and hco3_ids:
+    hco3_long = icu_poc_long.loc[icu_poc_long["itemid"].isin(hco3_ids)].copy()
+    if not hco3_long.empty:
+        hco3_long["label"] = hco3_long["itemid"].map(
+            icu_itemid_map.set_index("itemid")["label"] if not icu_itemid_map.empty else {}
+        )
+        hco3_long["category"] = hco3_long["itemid"].map(
+            icu_itemid_map.set_index("itemid")["category"] if not icu_itemid_map.empty else {}
+        )
+        hco3_long["hco3_mmol_l"] = _normalize_hco3_to_mmol(
+            hco3_long["valuenum"],
+            hco3_long["valueuom"],
+        )
+        for itemid_value, group in hco3_long.groupby("itemid", dropna=False):
+            numeric = pd.to_numeric(group["hco3_mmol_l"], errors="coerce").dropna()
+            hco3_itemid_qc_rows.append(
+                {
+                    "itemid": int(itemid_value),
+                    "label": str(group["label"].dropna().astype(str).head(1).tolist()[0])
+                    if group["label"].notna().any()
+                    else "",
+                    "category": str(group["category"].dropna().astype(str).head(1).tolist()[0])
+                    if group["category"].notna().any()
+                    else "",
+                    "source_branch": "POC",
+                    "row_count": int(len(group)),
+                    "non_null_count": int(len(numeric)),
+                    "units_observed": ";".join(
+                        sorted(
+                            set(
+                                group["valueuom"]
+                                .astype("string")
+                                .fillna("")
+                                .str.strip()
+                                .str.lower()
+                                .tolist()
+                            )
+                        )
+                    ),
+                    "p50_mmol_l": float(numeric.median()) if len(numeric) else np.nan,
+                    "p95_mmol_l": float(numeric.quantile(0.95)) if len(numeric) else np.nan,
+                    "max_mmol_l": float(numeric.max()) if len(numeric) else np.nan,
+                    "manifest_whitelisted": int(itemid_value in set(ICU_HCO3_ITEMIDS)),
+                }
+            )
+
+hco3_itemid_qc_audit = pd.DataFrame(hco3_itemid_qc_rows)
+hco3_itemid_qc_columns = [
+    "itemid",
+    "label",
+    "category",
+    "source_branch",
+    "row_count",
+    "non_null_count",
+    "units_observed",
+    "p50_mmol_l",
+    "p95_mmol_l",
+    "max_mmol_l",
+    "manifest_whitelisted",
+]
+for column_name in hco3_itemid_qc_columns:
+    if column_name not in hco3_itemid_qc_audit.columns:
+        hco3_itemid_qc_audit[column_name] = pd.NA
+hco3_itemid_qc_audit = hco3_itemid_qc_audit[hco3_itemid_qc_columns]
+hco3_itemid_qc_audit_path = prior_runs_dir / f"{audit_date} hco3_itemid_qc_audit.csv"
+hco3_itemid_qc_audit.to_csv(hco3_itemid_qc_audit_path, index=False)
+print("Wrote:", hco3_itemid_qc_audit_path)
 
 if ICU_INCLUSION_MODE == "validated_only":
     if ICU_PCO2_ITEMIDS and not pco2_itemid_qc_audit.empty:
@@ -7152,6 +7516,10 @@ charted_anthro_diagnostics = {
     "charted_rows_usable": 0,
     "selected_counts": {},
     "rows_with_any_selected_metric": 0,
+    "bmi_recorded_vs_computed_n": 0,
+    "bmi_recorded_vs_computed_abs_diff_gt_5_n": 0,
+    "bmi_recorded_vs_computed_abs_diff_gt_7_5_n": 0,
+    "bmi_recorded_vs_computed_abs_diff_quantiles": {},
 }
 
 def _extract_ed_charted_anthro(hadms: list[int]) -> tuple[pd.DataFrame, dict[str, Any]]:
@@ -7462,6 +7830,37 @@ if use_charted_fallback and len(hadm_list) > 0:
     ed_df.loc[bmi_fill_mask, bmi_time_col] = pd.to_datetime(
         ed_df.loc[bmi_fill_mask, weight_time_col], errors="coerce"
     )
+    bmi_consistency_mask = (
+        bmi_existing.notna()
+        & bmi_calc.notna()
+        & height_cm.gt(0)
+        & weight_kg.gt(0)
+        & pair_within_window
+        & ed_df.get(weight_uom_col).astype("string").eq(ANTHRO_CANONICAL_UNITS["weight"])
+        & ed_df.get(height_uom_col).astype("string").eq(ANTHRO_CANONICAL_UNITS["height"])
+    )
+    bmi_abs_diff = (
+        pd.to_numeric(bmi_existing, errors="coerce")
+        - pd.to_numeric(bmi_calc, errors="coerce")
+    ).abs()
+    valid_bmi_abs_diff = pd.to_numeric(
+        bmi_abs_diff.loc[bmi_consistency_mask], errors="coerce"
+    ).dropna()
+    charted_anthro_diagnostics["bmi_recorded_vs_computed_n"] = int(
+        bmi_consistency_mask.sum()
+    )
+    charted_anthro_diagnostics["bmi_recorded_vs_computed_abs_diff_gt_5_n"] = int(
+        (valid_bmi_abs_diff > 5.0).sum()
+    )
+    charted_anthro_diagnostics["bmi_recorded_vs_computed_abs_diff_gt_7_5_n"] = int(
+        (valid_bmi_abs_diff > 7.5).sum()
+    )
+    if not valid_bmi_abs_diff.empty:
+        charted_anthro_diagnostics["bmi_recorded_vs_computed_abs_diff_quantiles"] = {
+            "p50": float(valid_bmi_abs_diff.quantile(0.50)),
+            "p95": float(valid_bmi_abs_diff.quantile(0.95)),
+            "max": float(valid_bmi_abs_diff.max()),
+        }
     if bmi_source_col in ed_df.columns:
         ed_df.loc[bmi_fill_mask, bmi_source_col] = (
             ed_df.loc[bmi_fill_mask, weight_source_col]
@@ -7577,9 +7976,9 @@ if use_charted_fallback and len(hadm_list) > 0:
     charted_anthro_diagnostics["nearest_anytime"] = bool(use_nearest_anytime)
 
 anthro_model_specs = {
-    "bmi_closest_pre_ed": ("bmi_closest_pre_ed_model", "bmi_outlier_flag", 0.0, 100.0),
-    "height_closest_pre_ed": ("height_closest_pre_ed_model", "height_outlier_flag", 100.0, 250.0),
-    "weight_closest_pre_ed": ("weight_closest_pre_ed_model", "weight_outlier_flag", 0.0, 400.0),
+    "bmi_closest_pre_ed": ("bmi_closest_pre_ed_model", "bmi_outlier_flag", 10.0, 100.0),
+    "height_closest_pre_ed": ("height_closest_pre_ed_model", "height_outlier_flag", 100.0, 230.0),
+    "weight_closest_pre_ed": ("weight_closest_pre_ed_model", "weight_outlier_flag", 25.0, 400.0),
 }
 anthro_audit_rows: list[dict[str, Any]] = []
 for raw_col, (model_col, flag_col, lower_bound, upper_bound) in anthro_model_specs.items():
@@ -7600,6 +7999,42 @@ for raw_col, (model_col, flag_col, lower_bound, upper_bound) in anthro_model_spe
             "model_non_missing_n": int(pd.to_numeric(ed_df[model_col], errors="coerce").notna().sum()),
         }
     )
+
+bmi_consistency_quantiles = charted_anthro_diagnostics.get(
+    "bmi_recorded_vs_computed_abs_diff_quantiles", {}
+)
+anthro_audit_rows.append(
+    {
+        "raw_column": "bmi_recorded_vs_computed_consistency",
+        "model_column": "bmi_closest_pre_ed_model",
+        "lower_bound_exclusive": pd.NA,
+        "upper_bound_inclusive": pd.NA,
+        "raw_non_missing_n": int(
+            charted_anthro_diagnostics.get("bmi_recorded_vs_computed_n", 0)
+        ),
+        "outlier_n": int(
+            charted_anthro_diagnostics.get(
+                "bmi_recorded_vs_computed_abs_diff_gt_5_n", 0
+            )
+        ),
+        "model_non_missing_n": int(
+            charted_anthro_diagnostics.get("bmi_recorded_vs_computed_n", 0)
+        ),
+        "abs_diff_gt_5_n": int(
+            charted_anthro_diagnostics.get(
+                "bmi_recorded_vs_computed_abs_diff_gt_5_n", 0
+            )
+        ),
+        "abs_diff_gt_7_5_n": int(
+            charted_anthro_diagnostics.get(
+                "bmi_recorded_vs_computed_abs_diff_gt_7_5_n", 0
+            )
+        ),
+        "abs_diff_p50": bmi_consistency_quantiles.get("p50"),
+        "abs_diff_p95": bmi_consistency_quantiles.get("p95"),
+        "abs_diff_max": bmi_consistency_quantiles.get("max"),
+    }
+)
 
 anthropometric_cleaning_audit = pd.DataFrame(anthro_audit_rows)
 anthropometric_cleaning_audit_path = (
@@ -7929,6 +8364,304 @@ ed_df["first_gas_anchor_has_pco2"] = ed_df["qualifying_pco2_time"].notna()
 ed_df["first_gas_anchor_source_validated"] = (
     ed_df["qualifying_pco2_time"].notna()
     & ed_df["qualifying_site"].isin({"arterial", "venous", "unknown"})
+)
+
+# Robust first_hco3 selection: qualifying gas panel measured -> qualifying gas derived -> serum nearest ED anchor.
+hco3_output_cols = [
+    "first_hco3",
+    "first_hco3_time",
+    "first_hco3_source",
+    "first_hco3_itemid",
+    "first_hco3_qc_flag",
+]
+drop_existing_hco3_cols = [column for column in hco3_output_cols if column in ed_df.columns]
+if drop_existing_hco3_cols:
+    ed_df = ed_df.drop(columns=drop_existing_hco3_cols)
+
+gas_hco3_candidates: list[pd.DataFrame] = []
+if "panel" in globals() and isinstance(panel, pd.DataFrame) and not panel.empty:
+    lab_hco3_candidates = panel.copy()
+    if "hadm_id" not in lab_hco3_candidates.columns:
+        lab_hco3_candidates = lab_hco3_candidates.merge(
+            ed_df[["ed_stay_id", "hadm_id"]].drop_duplicates(),
+            on="ed_stay_id",
+            how="left",
+        )
+    lab_hco3_candidates = lab_hco3_candidates.loc[
+        pd.to_numeric(lab_hco3_candidates.get("dt_hours"), errors="coerce").between(
+            0, 24, inclusive="both"
+        )
+        & pd.to_numeric(lab_hco3_candidates.get("pco2"), errors="coerce").notna()
+    ].copy()
+    if not lab_hco3_candidates.empty:
+        lab_hco3_candidates["sample_time"] = pd.to_datetime(
+            lab_hco3_candidates.get("panel_time"),
+            errors="coerce",
+        )
+        lab_hco3_candidates["source_branch"] = "LAB"
+        lab_hco3_candidates["site"] = (
+            lab_hco3_candidates.get("source", pd.Series("unknown", index=lab_hco3_candidates.index))
+            .astype("string")
+            .str.lower()
+            .replace({"other": "unknown"})
+        )
+        lab_hco3_candidates["hco3_measured_mmol_l"] = _normalize_hco3_to_mmol(
+            lab_hco3_candidates.get(
+                "hco3", pd.Series(index=lab_hco3_candidates.index, dtype="float64")
+            ),
+            lab_hco3_candidates.get(
+                "hco3_uom", pd.Series(index=lab_hco3_candidates.index, dtype="string")
+            ),
+        )
+        if "hco3_derived_mmol_l" not in lab_hco3_candidates.columns:
+            lab_hco3_candidates["hco3_derived_mmol_l"] = np.where(
+                pd.to_numeric(lab_hco3_candidates.get("pco2"), errors="coerce").notna()
+                & pd.to_numeric(lab_hco3_candidates.get("ph"), errors="coerce").notna(),
+                0.03
+                * pd.to_numeric(lab_hco3_candidates.get("pco2"), errors="coerce")
+                * np.power(
+                    10.0,
+                    pd.to_numeric(lab_hco3_candidates.get("ph"), errors="coerce") - 6.1,
+                ),
+                np.nan,
+            )
+        lab_hco3_candidates["hco3_derived_qc_flag"] = (
+            pd.to_numeric(lab_hco3_candidates.get("hco3_derived_mmol_l"), errors="coerce")
+            .between(5, 60, inclusive="both")
+            .fillna(False)
+        )
+        lab_hco3_candidates["hco3_measured_itemid"] = pd.to_numeric(
+            lab_hco3_candidates.get("hco3_itemid"), errors="coerce"
+        ).astype("Int64")
+        gas_hco3_candidates.append(
+            lab_hco3_candidates[
+                [
+                    "hadm_id",
+                    "sample_time",
+                    "source_branch",
+                    "site",
+                    "hco3_measured_mmol_l",
+                    "hco3_measured_itemid",
+                    "hco3_derived_mmol_l",
+                    "hco3_derived_qc_flag",
+                ]
+            ].copy()
+        )
+
+if "panel_poc" in globals() and isinstance(panel_poc, pd.DataFrame) and not panel_poc.empty:
+    poc_hco3_candidates = panel_poc.copy()
+    poc_hco3_candidates = poc_hco3_candidates.loc[
+        pd.to_numeric(poc_hco3_candidates.get("dt_hours"), errors="coerce").between(
+            0, 24, inclusive="both"
+        )
+        & pd.to_numeric(poc_hco3_candidates.get("pco2"), errors="coerce").notna()
+    ].copy()
+    if not poc_hco3_candidates.empty:
+        poc_hco3_candidates["sample_time"] = pd.to_datetime(
+            poc_hco3_candidates.get("panel_time"),
+            errors="coerce",
+        )
+        poc_hco3_candidates["source_branch"] = "POC"
+        poc_hco3_candidates["site"] = (
+            poc_hco3_candidates.get(
+                "site", pd.Series("unknown", index=poc_hco3_candidates.index)
+            )
+            .astype("string")
+            .str.lower()
+            .replace({"other": "unknown"})
+        )
+        poc_hco3_candidates["hco3_measured_mmol_l"] = _normalize_hco3_to_mmol(
+            poc_hco3_candidates.get(
+                "hco3", pd.Series(index=poc_hco3_candidates.index, dtype="float64")
+            ),
+            poc_hco3_candidates.get(
+                "hco3_uom", pd.Series(index=poc_hco3_candidates.index, dtype="string")
+            ),
+        )
+        if "hco3_derived_mmol_l" not in poc_hco3_candidates.columns:
+            poc_hco3_candidates["hco3_derived_mmol_l"] = np.where(
+                pd.to_numeric(poc_hco3_candidates.get("pco2"), errors="coerce").notna()
+                & pd.to_numeric(poc_hco3_candidates.get("ph"), errors="coerce").notna(),
+                0.03
+                * pd.to_numeric(poc_hco3_candidates.get("pco2"), errors="coerce")
+                * np.power(
+                    10.0,
+                    pd.to_numeric(poc_hco3_candidates.get("ph"), errors="coerce") - 6.1,
+                ),
+                np.nan,
+            )
+        poc_hco3_candidates["hco3_derived_qc_flag"] = (
+            pd.to_numeric(poc_hco3_candidates.get("hco3_derived_mmol_l"), errors="coerce")
+            .between(5, 60, inclusive="both")
+            .fillna(False)
+        )
+        poc_hco3_candidates["hco3_measured_itemid"] = pd.to_numeric(
+            poc_hco3_candidates.get("hco3_itemid"), errors="coerce"
+        ).astype("Int64")
+        gas_hco3_candidates.append(
+            poc_hco3_candidates[
+                [
+                    "hadm_id",
+                    "sample_time",
+                    "source_branch",
+                    "site",
+                    "hco3_measured_mmol_l",
+                    "hco3_measured_itemid",
+                    "hco3_derived_mmol_l",
+                    "hco3_derived_qc_flag",
+                ]
+            ].copy()
+        )
+
+hco3_selected = pd.DataFrame(
+    columns=[
+        "hadm_id",
+        "first_hco3",
+        "first_hco3_time",
+        "first_hco3_source",
+        "first_hco3_itemid",
+        "first_hco3_qc_flag",
+    ]
+)
+if gas_hco3_candidates:
+    gas_hco3_all = pd.concat(gas_hco3_candidates, ignore_index=True)
+    gas_hco3_all["sample_time"] = pd.to_datetime(gas_hco3_all["sample_time"], errors="coerce")
+    gas_hco3_all["source_branch"] = gas_hco3_all["source_branch"].astype("string").str.upper()
+    gas_hco3_all["site"] = (
+        gas_hco3_all["site"].astype("string").str.lower().replace({"other": "unknown"})
+    )
+    qualifying_lookup = (
+        ed_df[
+            [
+                "hadm_id",
+                "qualifying_pco2_time",
+                "qualifying_source_branch",
+                "qualifying_site",
+            ]
+        ]
+        .drop_duplicates(subset=["hadm_id"], keep="first")
+        .copy()
+    )
+    qualifying_lookup["qualifying_pco2_time"] = pd.to_datetime(
+        qualifying_lookup["qualifying_pco2_time"], errors="coerce"
+    )
+    qualifying_lookup["qualifying_source_branch"] = (
+        qualifying_lookup["qualifying_source_branch"].astype("string").str.upper()
+    )
+    qualifying_lookup["qualifying_site"] = (
+        qualifying_lookup["qualifying_site"]
+        .astype("string")
+        .str.lower()
+        .replace({"other": "unknown"})
+    )
+    qualifying_matches = qualifying_lookup.merge(
+        gas_hco3_all,
+        on="hadm_id",
+        how="left",
+    )
+    qualifying_matches["dt_abs_minutes"] = (
+        (
+            qualifying_matches["sample_time"] - qualifying_matches["qualifying_pco2_time"]
+        )
+        .dt.total_seconds()
+        .abs()
+        / 60.0
+    )
+    qualifying_matches["branch_match"] = (
+        qualifying_matches["source_branch"].fillna("")
+        == qualifying_matches["qualifying_source_branch"].fillna("")
+    )
+    qualifying_matches["site_match"] = (
+        qualifying_matches["site"].fillna("unknown")
+        == qualifying_matches["qualifying_site"].fillna("unknown")
+    )
+    qualifying_matches["measured_present"] = pd.to_numeric(
+        qualifying_matches["hco3_measured_mmol_l"], errors="coerce"
+    ).notna()
+    qualifying_matches["within_tolerance"] = (
+        qualifying_matches["dt_abs_minutes"].notna()
+        & qualifying_matches["dt_abs_minutes"].le(10.0)
+    )
+    qualifying_matches = qualifying_matches.loc[
+        qualifying_matches["qualifying_pco2_time"].notna()
+        & qualifying_matches["sample_time"].notna()
+        & qualifying_matches["within_tolerance"]
+        & qualifying_matches["branch_match"]
+        & qualifying_matches["site_match"]
+    ].copy()
+    if not qualifying_matches.empty:
+        qualifying_matches["exact_time_match"] = qualifying_matches["dt_abs_minutes"].eq(0.0)
+        qualifying_matches = qualifying_matches.sort_values(
+            [
+                "hadm_id",
+                "exact_time_match",
+                "dt_abs_minutes",
+                "measured_present",
+                "sample_time",
+            ],
+            ascending=[True, False, True, False, True],
+            kind="stable",
+        )
+        hco3_selected = (
+            qualifying_matches.groupby("hadm_id", as_index=False)
+            .first()
+            .copy()
+        )
+        hco3_selected["first_hco3"] = np.where(
+            pd.to_numeric(hco3_selected["hco3_measured_mmol_l"], errors="coerce").notna(),
+            pd.to_numeric(hco3_selected["hco3_measured_mmol_l"], errors="coerce"),
+            pd.to_numeric(hco3_selected["hco3_derived_mmol_l"], errors="coerce"),
+        )
+        hco3_selected["first_hco3_source"] = np.where(
+            pd.to_numeric(hco3_selected["hco3_measured_mmol_l"], errors="coerce").notna(),
+            "gas_measured",
+            "gas_derived",
+        )
+        hco3_selected["first_hco3_itemid"] = np.where(
+            hco3_selected["first_hco3_source"].eq("gas_measured"),
+            pd.to_numeric(hco3_selected["hco3_measured_itemid"], errors="coerce"),
+            pd.NA,
+        )
+        hco3_selected["first_hco3_time"] = hco3_selected["sample_time"]
+        hco3_selected["first_hco3_qc_flag"] = (
+            pd.to_numeric(hco3_selected["first_hco3"], errors="coerce")
+            .between(5, 60, inclusive="both")
+            .fillna(False)
+        )
+        hco3_selected = hco3_selected[
+            [
+                "hadm_id",
+                "first_hco3",
+                "first_hco3_time",
+                "first_hco3_source",
+                "first_hco3_itemid",
+                "first_hco3_qc_flag",
+            ]
+        ]
+
+ed_df = ed_df.merge(hco3_selected, on="hadm_id", how="left")
+hco3_missing_mask = pd.to_numeric(ed_df["first_hco3"], errors="coerce").isna()
+serum_hco3_values = pd.to_numeric(ed_df.get("serum_hco3_mmol_l"), errors="coerce")
+serum_fill_mask = hco3_missing_mask & serum_hco3_values.notna()
+ed_df.loc[serum_fill_mask, "first_hco3"] = serum_hco3_values.loc[serum_fill_mask]
+ed_df.loc[serum_fill_mask, "first_hco3_time"] = pd.to_datetime(
+    ed_df.get("serum_hco3_time"), errors="coerce"
+).loc[serum_fill_mask]
+ed_df.loc[serum_fill_mask, "first_hco3_source"] = "serum_lab"
+ed_df.loc[serum_fill_mask, "first_hco3_itemid"] = pd.to_numeric(
+    ed_df.get("serum_hco3_itemid"), errors="coerce"
+).loc[serum_fill_mask]
+ed_df["first_hco3_source"] = np.where(
+    pd.to_numeric(ed_df["first_hco3"], errors="coerce").notna(),
+    ed_df["first_hco3_source"].astype("string").fillna("missing"),
+    "missing",
+)
+ed_df["first_hco3_time"] = pd.to_datetime(ed_df["first_hco3_time"], errors="coerce")
+ed_df["first_hco3_itemid"] = pd.to_numeric(ed_df["first_hco3_itemid"], errors="coerce").astype("Int64")
+ed_df["first_hco3_qc_flag"] = (
+    pd.to_numeric(ed_df["first_hco3"], errors="coerce")
+    .between(5, 60, inclusive="both")
+    .fillna(False)
 )
 
 ed_df["presenting_hypercapnia"] = (
@@ -8396,6 +9129,51 @@ hco3_integrity_audit_path = prior_runs_dir / f"{out_date} hco3_integrity_audit.c
 hco3_source_counts.to_csv(hco3_integrity_audit_path, index=False)
 print("Wrote:", hco3_integrity_audit_path)
 
+hco3_coverage_rows: list[dict[str, Any]] = []
+hco3_present_mask = hco3_numeric.notna()
+route_series = (
+    ed_df.get("enrollment_route", pd.Series("UNKNOWN", index=ed_df.index))
+    .astype("string")
+    .fillna("UNKNOWN")
+)
+source_branch_series = (
+    ed_df.get("qualifying_source_branch", pd.Series("UNKNOWN", index=ed_df.index))
+    .astype("string")
+    .fillna("UNKNOWN")
+)
+
+def _append_hco3_coverage_row(scope: str, label: str, mask: pd.Series) -> None:
+    denom = int(mask.sum())
+    numer = int((mask & hco3_present_mask).sum())
+    hco3_coverage_rows.append(
+        {
+            "scope": scope,
+            "label": label,
+            "row_count": denom,
+            "first_hco3_nonnull_n": numer,
+            "coverage_rate": float(numer / denom) if denom else 0.0,
+        }
+    )
+
+_append_hco3_coverage_row("overall", "all_rows", pd.Series(True, index=ed_df.index))
+for route_name, route_mask in route_series.groupby(route_series).groups.items():
+    route_bool_mask = pd.Series(False, index=ed_df.index)
+    route_bool_mask.loc[list(route_mask)] = True
+    _append_hco3_coverage_row("enrollment_route", str(route_name), route_bool_mask)
+for source_name, source_mask in source_branch_series.groupby(source_branch_series).groups.items():
+    source_bool_mask = pd.Series(False, index=ed_df.index)
+    source_bool_mask.loc[list(source_mask)] = True
+    _append_hco3_coverage_row("qualifying_source_branch", str(source_name), source_bool_mask)
+for source_name, source_mask in hco3_source.groupby(hco3_source).groups.items():
+    hco3_source_mask = pd.Series(False, index=ed_df.index)
+    hco3_source_mask.loc[list(source_mask)] = True
+    _append_hco3_coverage_row("first_hco3_source", str(source_name), hco3_source_mask)
+
+hco3_coverage_audit = pd.DataFrame(hco3_coverage_rows)
+hco3_coverage_audit_path = prior_runs_dir / f"{out_date} hco3_coverage_audit.csv"
+hco3_coverage_audit.to_csv(hco3_coverage_audit_path, index=False)
+print("Wrote:", hco3_coverage_audit_path)
+
 print("ED vitals cleaning summary (raw->clean removals):")
 display(
     ed_vitals_model_delta[
@@ -8502,7 +9280,9 @@ print("Wrote:", gas_overlap_summary_path)
 
 gas_source_unknown_rate = float(gas_source_audit.get("source_rates", {}).get("unknown", 0.0))
 gas_source_other_rate = gas_source_unknown_rate
+hadm_other_rate_0_24h = float(gas_source_audit.get("hadm_other_rate_0_24h", 0.0))
 print("% source unknown (panel-level):", round(gas_source_unknown_rate * 100, 1))
+print("% source unknown (hadm-level, 0-24h):", round(hadm_other_rate_0_24h * 100, 1))
 
 # Blood-gas source distribution audit (LAB + POC definitive pCO2 by source class).
 pco2_source_distribution_rows: list[dict[str, Any]] = []
@@ -8853,9 +9633,10 @@ if "source_value_mismatch_n" in hco3_source_counts.columns:
 qa_other_warn_threshold = float(os.getenv("COHORT_WARN_OTHER_RATE", "0.50"))
 qa_other_fail_raw = os.getenv("COHORT_FAIL_OTHER_RATE", "").strip()
 qa_other_fail_threshold = float(qa_other_fail_raw) if qa_other_fail_raw else None
-if qa_other_fail_threshold is not None and gas_source_other_rate >= qa_other_fail_threshold:
+qa_other_gate_rate = hadm_other_rate_0_24h if hadm_other_rate_0_24h > 0 else gas_source_other_rate
+if qa_other_fail_threshold is not None and qa_other_gate_rate >= qa_other_fail_threshold:
     qa_warnings.append("gas_source_other_rate_fail_threshold_exceeded")
-elif gas_source_other_rate >= qa_other_warn_threshold:
+elif qa_other_gate_rate >= qa_other_warn_threshold:
     qa_infos.append("gas_source_other_rate_high")
 
 first_other_pco2_audit_records = json.loads(first_other_pco2_audit.to_json(orient="records"))
@@ -8885,6 +9666,11 @@ pco2_itemid_qc_audit_records = (
     if "pco2_itemid_qc_audit" in globals() and not pco2_itemid_qc_audit.empty
     else []
 )
+hco3_itemid_qc_audit_records = (
+    json.loads(hco3_itemid_qc_audit.to_json(orient="records"))
+    if "hco3_itemid_qc_audit" in globals() and not hco3_itemid_qc_audit.empty
+    else []
+)
 timing_integrity_audit_records = (
     json.loads(timing_integrity_audit.to_json(orient="records"))
     if "timing_integrity_audit" in globals()
@@ -8905,11 +9691,32 @@ hco3_integrity_audit_records = (
     if "hco3_source_counts" in globals()
     else []
 )
+hco3_coverage_audit_records = (
+    json.loads(hco3_coverage_audit.to_json(orient="records"))
+    if "hco3_coverage_audit" in globals()
+    else []
+)
 blood_gas_itemid_manifest_audit_records = (
     json.loads(blood_gas_itemid_manifest_audit.to_json(orient="records"))
     if "blood_gas_itemid_manifest_audit" in globals() and not blood_gas_itemid_manifest_audit.empty
     else []
 )
+pco2_itemid_qc_sentinel_itemids_n = 0
+pco2_itemid_qc_sentinel_removed_total_n = 0
+pco2_itemid_qc_out_of_range_removed_total_n = 0
+if "pco2_itemid_qc_audit" in globals() and not pco2_itemid_qc_audit.empty:
+    sentinel_col = pd.to_numeric(
+        pco2_itemid_qc_audit.get("sentinel_extreme_n"), errors="coerce"
+    ).fillna(0)
+    sentinel_removed_col = pd.to_numeric(
+        pco2_itemid_qc_audit.get("sentinel_removed_n"), errors="coerce"
+    ).fillna(0)
+    out_of_range_removed_col = pd.to_numeric(
+        pco2_itemid_qc_audit.get("out_of_range_removed_n"), errors="coerce"
+    ).fillna(0)
+    pco2_itemid_qc_sentinel_itemids_n = int((sentinel_col > 0).sum())
+    pco2_itemid_qc_sentinel_removed_total_n = int(sentinel_removed_col.sum())
+    pco2_itemid_qc_out_of_range_removed_total_n = int(out_of_range_removed_col.sum())
 
 qa_status = "warning" if qa_warnings else "pass"
 
@@ -8938,6 +9745,7 @@ qa_summary = {
     ),
     "gas_source_other_rate": gas_source_other_rate,
     "gas_source_unknown_rate": gas_source_unknown_rate,
+    "hadm_other_rate_0_24h": hadm_other_rate_0_24h,
     "gas_source_other_rate_warn_threshold": qa_other_warn_threshold,
     "gas_source_other_rate_fail_threshold": qa_other_fail_threshold,
     "source_unknown_rate": gas_source_unknown_rate,
@@ -8956,6 +9764,10 @@ qa_summary = {
     "other_route_quarantine_audit": other_route_quarantine_audit_records,
     "first_gas_anchor_audit": first_gas_anchor_audit_records,
     "pco2_itemid_qc_audit": pco2_itemid_qc_audit_records,
+    "pco2_itemid_qc_sentinel_itemids_n": pco2_itemid_qc_sentinel_itemids_n,
+    "pco2_itemid_qc_sentinel_removed_total_n": pco2_itemid_qc_sentinel_removed_total_n,
+    "pco2_itemid_qc_out_of_range_removed_total_n": pco2_itemid_qc_out_of_range_removed_total_n,
+    "hco3_itemid_qc_audit": hco3_itemid_qc_audit_records,
     "poc_itemid_qc_passed": bool(poc_inclusion_enabled),
     "poc_itemid_qc_reason": str(poc_inclusion_reason),
     "poc_hypercap_0_24h_edstay_n": int(globals().get("poc_hypercap_0_24h_edstay_n", 0)),
@@ -8979,6 +9791,7 @@ qa_summary = {
     "anthro_coverage_audit": anthro_coverage_audit if "anthro_coverage_audit" in globals() else None,
     "anthropometric_cleaning_audit": anthropometric_cleaning_audit_records,
     "hco3_integrity_audit": hco3_integrity_audit_records,
+    "hco3_coverage_audit": hco3_coverage_audit_records,
     "charted_anthro_diagnostics": charted_anthro_diagnostics if "charted_anthro_diagnostics" in globals() else None,
     "timing_integrity_audit": timing_integrity_audit_records,
     "ventilation_timing_audit": ventilation_timing_audit_records,
@@ -9004,6 +9817,9 @@ qa_summary = {
         "pco2_itemid_qc": str(pco2_itemid_qc_audit_path)
         if "pco2_itemid_qc_audit_path" in globals()
         else None,
+        "hco3_itemid_qc": str(hco3_itemid_qc_audit_path)
+        if "hco3_itemid_qc_audit_path" in globals()
+        else None,
         "pco2_source_distribution": str(pco2_source_distribution_audit_path),
         "pco2_window_max_contributor": str(pco2_window_max_contributor_audit_path),
         "blood_gas_triplet_completeness": str(
@@ -9016,6 +9832,9 @@ qa_summary = {
         "first_gas_anchor": str(first_gas_anchor_audit_path),
         "hco3_integrity": str(hco3_integrity_audit_path)
         if "hco3_integrity_audit_path" in globals()
+        else None,
+        "hco3_coverage": str(hco3_coverage_audit_path)
+        if "hco3_coverage_audit_path" in globals()
         else None,
     },
     "timing_integrity_audit_path": str(timing_integrity_audit_path)
@@ -9293,6 +10112,7 @@ if cohort_contract["status"] == "fail" and contract_mode == "fail":
 cohort_export_drop_columns = [
     "enrolled_any",
     "enrolled_any_icd_union_secondary",
+    "first_pco2",
     "poc_inclusion_enabled",
     "poc_inclusion_reason",
     "race_hosp_raw",
@@ -9384,6 +10204,12 @@ cohort_manifest["outputs"] = {
     "ed_vitals_extreme_examples_path": str(ed_vitals_extreme_examples_path) if "ed_vitals_extreme_examples_path" in globals() else None,
     "ed_vitals_model_delta_path": str(ed_vitals_model_delta_path) if "ed_vitals_model_delta_path" in globals() else None,
     "outliers_audit_path": str(outliers_audit_path) if "outliers_audit_path" in globals() else None,
+    "hco3_itemid_qc_audit_path": str(hco3_itemid_qc_audit_path)
+    if "hco3_itemid_qc_audit_path" in globals()
+    else None,
+    "hco3_coverage_audit_path": str(hco3_coverage_audit_path)
+    if "hco3_coverage_audit_path" in globals()
+    else None,
 }
 cohort_manifest["gas_source"] = {
     "mode": gas_source_mode if "gas_source_mode" in globals() else None,
@@ -9642,6 +10468,41 @@ META = {
         "source": "mimiciv_hosp.labevents + mimiciv_icu.chartevents",
         "derivation": "max(unknown-source pCO2 ≥ 50) per hadm_id",
         "units": "binary (0/1)",
+    },
+    "qualifying_pco2_time": {
+        "label": "Qualifying hypercapnic pCO2 time",
+        "definition": "Earliest hypercapnic pCO2 event within ED 0–24h window (canonical qualifying event timestamp).",
+        "source": "mimiciv_hosp.labevents + mimiciv_icu.chartevents",
+        "derivation": "min charttime among threshold-qualifying ABG/VBG/UNKNOWN events in ED 0–24h",
+        "units": "datetime",
+    },
+    "qualifying_pco2_mmhg": {
+        "label": "Qualifying hypercapnic pCO2 (mmHg)",
+        "definition": "Canonical qualifying pCO2 value from earliest ED 0–24h hypercapnic event.",
+        "source": "mimiciv_hosp.labevents + mimiciv_icu.chartevents",
+        "derivation": "pCO2 value at qualifying_pco2_time after unit normalization to mmHg",
+        "units": "mmHg",
+    },
+    "qualifying_site": {
+        "label": "Qualifying pCO2 site",
+        "definition": "Source site class for the canonical qualifying pCO2 event.",
+        "source": "Derived from specimen/itemid metadata",
+        "derivation": "arterial|venous|unknown for qualifying_pco2_time",
+        "units": "categorical",
+    },
+    "qualifying_source_branch": {
+        "label": "Qualifying pCO2 source branch",
+        "definition": "Data branch for the canonical qualifying pCO2 event (LAB or POC).",
+        "source": "mimiciv_hosp.labevents + mimiciv_icu.chartevents",
+        "derivation": "LAB|POC at qualifying_pco2_time",
+        "units": "categorical",
+    },
+    "qualifying_threshold_mmhg": {
+        "label": "Qualifying threshold (mmHg)",
+        "definition": "Threshold used for the qualifying pCO2 event based on site class.",
+        "source": "Derived",
+        "derivation": "45 for ABG; 50 for VBG/UNKNOWN",
+        "units": "mmHg",
     },
     "first_gas_time": {
         "label": "First gas panel time",

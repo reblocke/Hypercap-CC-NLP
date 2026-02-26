@@ -71,6 +71,65 @@
       }
     ]
   },
+  "chem_hco3_serum": {
+    "pattern": "bicarbonate|total\\s*co2|carbon\\s*dioxide|\\bco2\\b",
+    "items": [
+      {
+        "itemid": 50882,
+        "label": "Bicarbonate",
+        "category": "Chemistry",
+        "n": 146683
+      },
+      {
+        "itemid": 51076,
+        "label": "Bicarbonate, Urine",
+        "category": "Chemistry",
+        "n": 301
+      },
+      {
+        "itemid": 51027,
+        "label": "Bicarbonate, Other Fluid",
+        "category": "Chemistry",
+        "n": 2
+      },
+      {
+        "itemid": 51061,
+        "label": "Bicarbonate, Stool",
+        "category": "Chemistry",
+        "n": 1
+      },
+      {
+        "itemid": 51739,
+        "label": "Total CO2",
+        "category": "Chemistry",
+        "n": 0
+      },
+      {
+        "itemid": 50837,
+        "label": "Bicarbonate, Ascites",
+        "category": "Chemistry",
+        "n": 0
+      },
+      {
+        "itemid": 51048,
+        "label": "Bicarbonate, Pleural",
+        "category": "Chemistry",
+        "n": 0
+      },
+      {
+        "itemid": 51811,
+        "label": "Bicarbonate,Joint Fluid",
+        "category": "Chemistry",
+        "n": 0
+      },
+      {
+        "itemid": 51782,
+        "label": "Bicarbonate, CSF",
+        "category": "Chemistry",
+        "n": 0
+      }
+    ]
+  },
   "chem_creatinine": {
     "pattern": "creatinine",
     "items": [

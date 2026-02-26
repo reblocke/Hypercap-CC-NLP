@@ -1,18 +1,18 @@
 category,N,percent_agreement,cohen_kappa,gwet_ac1,category_code,category_name
-0,160,1.0,,1.0,RVC-INJ,Injuries & adverse effects
-1,160,1.0,,1.0,RVC-SYM-RESP,Symptom – Respiratory
-2,160,1.0,,1.0,RVC-SYM-CIRC,Symptom – Circulatory
-3,160,1.0,,1.0,RVC-SYM-NERV,Symptom – Nervous
-4,160,1.0,,1.0,RVC-SYM-DIG,Symptom – Digestive
-5,160,1.0,,1.0,RVC-SYM-GU,Symptom – Genitourinary
-6,160,1.0,,1.0,RVC-SYM-MSK,Symptom – Musculoskeletal
-7,160,1.0,,1.0,RVC-SYM-SKIN,Symptom – Skin/Hair/Nails
+0,160,0.96875,0.8708010335917313,0.9587894397939472,RVC-INJ,Injuries & adverse effects
+1,160,0.99375,0.9819004524886878,0.9904537454133229,RVC-SYM-RESP,Symptom – Respiratory
+2,160,0.9875,0.9099606077658979,0.9854862119013063,RVC-SYM-CIRC,Symptom – Circulatory
+3,160,0.93125,0.7933302019727573,0.8972232765920173,RVC-SYM-NERV,Symptom – Nervous
+4,160,0.9875,0.9526066350710902,0.9830238726790451,RVC-SYM-DIG,Symptom – Digestive
+5,160,1.0,1.0,1.0,RVC-SYM-GU,Symptom – Genitourinary
+6,160,0.99375,0.9490445859872614,0.9928763829834599,RVC-SYM-MSK,Symptom – Musculoskeletal
+7,160,1.0,1.0,1.0,RVC-SYM-SKIN,Symptom – Skin/Hair/Nails
 8,160,1.0,,1.0,RVC-SYM-EYE,Symptom – Eye/Ear
-9,160,1.0,,1.0,RVC-SYM-GEN,Symptom – General
+9,160,0.93125,0.5868544600938967,0.9176819999532284,RVC-SYM-GEN,Symptom – General
 10,160,1.0,,1.0,RVC-SYM-PSY,Symptom – Psychological
-11,160,1.0,,1.0,RVC-DIS,Diseases (patient-stated)
-12,160,1.0,,1.0,RVC-TEST,Abnormal test result
-13,160,1.0,,1.0,RVC-DIAG,Diagnostic/Screening/Preventive
-14,160,1.0,,1.0,RVC-TREAT,Treatment/Medication
-15,160,1.0,,1.0,RVC-ADMIN,Administrative
-16,160,1.0,,1.0,RVC-UNCL,Uncodable/Unknown
+11,160,0.9625,0.8802395209580839,0.9454607430973754,RVC-DIS,Diseases (patient-stated)
+12,160,0.9875,0.9099099099099102,0.9854862119013063,RVC-TEST,Abnormal test result
+13,160,0.975,0.0,0.974367190003204,RVC-DIAG,Diagnostic/Screening/Preventive
+14,160,0.98125,0.3939393939393937,0.9806549118387908,RVC-TREAT,Treatment/Medication
+15,160,1.0,1.0,1.0,RVC-ADMIN,Administrative
+16,160,0.99375,0.7969543147208128,0.993551637279597,RVC-UNCL,Uncodable/Unknown

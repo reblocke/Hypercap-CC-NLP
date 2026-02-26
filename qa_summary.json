@@ -18,37 +18,38 @@
     "ICD+GAS": 1077,
     "ICD_ONLY": 910
   },
-  "gas_source_other_rate": 0.6051488712390939,
-  "gas_source_unknown_rate": 0.6051488712390939,
+  "gas_source_other_rate": 0.6051565953950586,
+  "gas_source_unknown_rate": 0.6051565953950586,
+  "hadm_other_rate_0_24h": 0.08668903803131991,
   "gas_source_other_rate_warn_threshold": 0.5,
   "gas_source_other_rate_fail_threshold": null,
-  "source_unknown_rate": 0.6051488712390939,
+  "source_unknown_rate": 0.6051565953950586,
   "gas_source_audit": {
-    "panel_rows": 51118,
+    "panel_rows": 51119,
     "source_present": true,
     "source_counts": {
-      "unknown": 30934,
+      "unknown": 30935,
       "arterial": 12424,
       "venous": 7760
     },
     "source_rates": {
-      "unknown": 0.6051488712390939,
-      "arterial": 0.24304550256269808,
-      "venous": 0.15180562619820806
+      "unknown": 0.6051565953950586,
+      "arterial": 0.24304074805845186,
+      "venous": 0.15180265654648956
     },
     "all_other_or_unknown": false,
     "tier_counts": {
-      "fallback_unknown": 30934,
+      "fallback_unknown": 30935,
       "specimen_text": 20184
     },
     "tier_rates": {
-      "fallback_unknown": 0.6051488712390939,
-      "specimen_text": 0.3948511287609061
+      "fallback_unknown": 0.6051565953950586,
+      "specimen_text": 0.3948434046049414
     },
     "mode": "specimen_only",
     "resolved_rows": 20184,
-    "resolved_rate": 0.3948511287609061,
-    "unresolved_specimen_id_count": 30903,
+    "resolved_rate": 0.3948434046049414,
+    "unresolved_specimen_id_count": 30904,
     "unresolved_specimen_id_examples": [
       1068183,
       2752210,
@@ -72,32 +73,32 @@
       20641624
     ],
     "heuristic_reference": {
-      "panel_rows": 51118,
+      "panel_rows": 51119,
       "source_present": true,
       "source_counts": {
-        "arterial": 21504,
+        "arterial": 21505,
         "venous": 16050,
         "unknown": 13564
       },
       "source_rates": {
-        "arterial": 0.420673735279158,
-        "venous": 0.31397942016510816,
-        "unknown": 0.2653468445557338
+        "arterial": 0.42068506817426005,
+        "venous": 0.3139732780375203,
+        "unknown": 0.26534165378821967
       },
       "all_other_or_unknown": false,
       "tier_counts": {
         "specimen_text": 20184,
-        "cluster_inheritance": 17370,
+        "cluster_inheritance": 17371,
         "fallback_unknown": 13564
       },
       "tier_rates": {
-        "specimen_text": 0.3948511287609061,
-        "cluster_inheritance": 0.33980202668336007,
-        "fallback_unknown": 0.2653468445557338
+        "specimen_text": 0.3948434046049414,
+        "cluster_inheritance": 0.33981494160683895,
+        "fallback_unknown": 0.26534165378821967
       },
       "mode": "metadata_only",
-      "resolved_rows": 37554,
-      "resolved_rate": 0.7346531554442662,
+      "resolved_rows": 37555,
+      "resolved_rate": 0.7346583462117804,
       "unresolved_specimen_id_count": 13549,
       "unresolved_specimen_id_examples": [
         1068183,
@@ -122,45 +123,50 @@
         85376158
       ],
       "unresolved_value_text_top": {
-        "___": 3046,
+        "___": 3254,
         "0.9": 544,
         "0.8": 539,
+        "25": 514,
         "0.7": 507,
+        "24": 500,
+        "26": 487,
         "1.0": 476,
+        "27": 456,
         "139": 451,
+        "23": 443,
         "138": 442,
         "141": 428,
-        "1.1": 414,
-        "140": 409,
-        "0.6": 405,
-        "mix.": 386,
-        "101": 386,
-        "142": 375,
-        "102": 367
+        "22": 415,
+        "1.1": 414
       },
       "unresolved_label_top": {
         "Sodium | Blood": 6004,
         "Chloride | Blood": 5949,
         "Creatinine | Blood": 5878,
+        "Bicarbonate | Blood": 5790,
         "Hemoglobin | Blood": 5217,
         "Lactate | Blood": 1437,
         "pH | Blood": 650,
         "pO2 | Blood": 592,
-        "Calculated Total CO2 | Blood": 591,
         "pCO2 | Blood": 591,
+        "Calculated Total CO2 | Blood": 591,
         "Sodium, Urine | Urine": 448,
         "Creatinine, Urine | Urine": 407,
         "Specimen Type | Blood": 386,
         "Chloride, Urine | Urine": 262,
-        "Sodium, Whole Blood | Blood": 228,
-        "Chloride, Whole Blood | Blood": 148
+        "Sodium, Whole Blood | Blood": 228
       }
     },
-    "baseline_other_rate": 0.6051488712390939,
-    "baseline_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-22 gas_source_audit.json",
+    "panel_unknown_rate": 0.6051565953950586,
+    "hadm_other_rate_0_24h": 0.08668903803131991,
+    "hadm_other_rate_0_24h_numerator": 620,
+    "hadm_other_rate_0_24h_denominator": 7152,
+    "baseline_other_rate": 0.08668903803131991,
+    "baseline_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-23 gas_source_audit.json",
     "baseline_mode_mismatch_path": null,
     "relative_reduction_vs_baseline": 0.0,
-    "relative_reduction_target": 0.0
+    "relative_reduction_target": 0.0,
+    "hadm_other_rate_0_24h_delta_vs_baseline": 0.0
   },
   "gas_source_overlap_summary": [
     {
@@ -376,11 +382,11 @@
       "scope": "ALL_CANDIDATE_PCO2_LAB_POC",
       "source_branch": "POC",
       "source": "venous",
-      "n": 3561,
+      "n": 3562,
       "median": 54.0,
       "p95": 88.0,
       "max": 189.0,
-      "pct_ge_50": 0.7099129458
+      "pct_ge_50": 0.709713644
     }
   ],
   "pco2_source_distribution_scope": "ALL_CANDIDATE_PCO2_LAB_POC",
@@ -467,10 +473,10 @@
       "scope_frame": "final_cc_preview",
       "source_branch": "POC",
       "site": "venous",
-      "pco2_n": 3561,
-      "ph_present_n": 3561,
-      "po2_present_n": 3561,
-      "ph_po2_present_n": 3561,
+      "pco2_n": 3562,
+      "ph_present_n": 3562,
+      "po2_present_n": 3562,
+      "ph_po2_present_n": 3562,
       "ph_present_rate_given_pco2": 1.0,
       "po2_present_rate_given_pco2": 1.0,
       "triplet_present_rate_given_pco2": 1.0
@@ -534,8 +540,8 @@
       "poc_unknown_hadm_n": 0,
       "unknown_hypercap_threshold_hadm_n": 398,
       "unknown_from_poc_detail_hadm_n": 0,
-      "poc_hypercap_0_24h_edstay_n": 3723,
-      "poc_hypercap_0_24h_edstay_rate": 0.5195367011
+      "poc_hypercap_0_24h_edstay_n": 0,
+      "poc_hypercap_0_24h_edstay_rate": 0.0
     }
   ],
   "first_gas_anchor_audit": [
@@ -555,16 +561,27 @@
       "source_branch": "POC",
       "sample_type_hint": "ABG",
       "row_count": 12037,
-      "non_null_count": 12037,
+      "non_null_count": 12035,
+      "raw_non_null_count": 12037,
+      "clean_non_null_count": 12035,
       "units_observed": "mmhg",
       "p50_mmhg": 45.0,
       "p95_mmhg": 75.0,
       "max_mmhg": 181.0,
+      "raw_p50_mmhg": 45.0,
+      "raw_p95_mmhg": 75.0,
+      "raw_max_mmhg": 181.0,
+      "clean_p50_mmhg": 45.0,
+      "clean_p95_mmhg": 75.0,
+      "clean_max_mmhg": 181.0,
+      "out_of_range_removed_n": 2,
+      "sentinel_extreme_n": 0,
+      "sentinel_removed_n": 0,
       "label_include_ok": true,
       "label_exclude_hit": false,
       "unit_ok": true,
       "median_in_expected_range": true,
-      "contamination_flag": false,
+      "contamination_flag": true,
       "manifest_whitelisted": 1
     },
     {
@@ -574,23 +591,38 @@
       "source_branch": "POC",
       "sample_type_hint": "VBG",
       "row_count": 5454,
-      "non_null_count": 5454,
+      "non_null_count": 5452,
+      "raw_non_null_count": 5454,
+      "clean_non_null_count": 5452,
       "units_observed": "mmhg",
       "p50_mmhg": 53.0,
       "p95_mmhg": 88.0,
-      "max_mmhg": 999998.0,
+      "max_mmhg": 189.0,
+      "raw_p50_mmhg": 53.0,
+      "raw_p95_mmhg": 88.0,
+      "raw_max_mmhg": 999998.0,
+      "clean_p50_mmhg": 53.0,
+      "clean_p95_mmhg": 88.0,
+      "clean_max_mmhg": 189.0,
+      "out_of_range_removed_n": 2,
+      "sentinel_extreme_n": 1,
+      "sentinel_removed_n": 1,
       "label_include_ok": true,
       "label_exclude_hit": false,
       "unit_ok": true,
       "median_in_expected_range": true,
-      "contamination_flag": false,
+      "contamination_flag": true,
       "manifest_whitelisted": 1
     }
   ],
-  "poc_itemid_qc_passed": true,
-  "poc_itemid_qc_reason": "validated_itemids_passed_qc",
-  "poc_hypercap_0_24h_edstay_n": 3723,
-  "poc_hypercap_0_24h_edstay_rate": 0.5195367010884734,
+  "pco2_itemid_qc_sentinel_itemids_n": 1,
+  "pco2_itemid_qc_sentinel_removed_total_n": 1,
+  "pco2_itemid_qc_out_of_range_removed_total_n": 4,
+  "hco3_itemid_qc_audit": [],
+  "poc_itemid_qc_passed": false,
+  "poc_itemid_qc_reason": "validated_itemids_failed_qc",
+  "poc_hypercap_0_24h_edstay_n": 0,
+  "poc_hypercap_0_24h_edstay_rate": 0.0,
   "qualifying_source_branch_counts": {
     "LAB": 5392,
     "POC": 864
@@ -806,6 +838,14 @@
         "ICU": 2095,
         "missing": 90
       },
+      "bmi_recorded_vs_computed_n": 3922,
+      "bmi_recorded_vs_computed_abs_diff_gt_5_n": 307,
+      "bmi_recorded_vs_computed_abs_diff_gt_7_5_n": 127,
+      "bmi_recorded_vs_computed_abs_diff_quantiles": {
+        "p50": 0.04480009214529268,
+        "p95": 6.08061317135222,
+        "max": 107813.02454648526
+      },
       "bmi_filled_from_height_weight": 1246,
       "source_input_counts": {
         "HOSPITAL": 4908307,
@@ -849,69 +889,177 @@
       },
       "enabled": true
     },
-    "cleaning_audit_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-23 anthropometric_cleaning_audit.csv"
+    "cleaning_audit_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-26 anthropometric_cleaning_audit.csv"
   },
   "anthropometric_cleaning_audit": [
     {
       "raw_column": "bmi_closest_pre_ed",
       "model_column": "bmi_closest_pre_ed_model",
-      "lower_bound_exclusive": 0.0,
+      "lower_bound_exclusive": 10.0,
       "upper_bound_inclusive": 100.0,
       "raw_non_missing_n": 6213,
-      "outlier_n": 25,
-      "model_non_missing_n": 6188
+      "outlier_n": 34,
+      "model_non_missing_n": 6179,
+      "abs_diff_gt_5_n": null,
+      "abs_diff_gt_7_5_n": null,
+      "abs_diff_p50": null,
+      "abs_diff_p95": null,
+      "abs_diff_max": null
     },
     {
       "raw_column": "height_closest_pre_ed",
       "model_column": "height_closest_pre_ed_model",
       "lower_bound_exclusive": 100.0,
-      "upper_bound_inclusive": 250.0,
+      "upper_bound_inclusive": 230.0,
       "raw_non_missing_n": 6227,
-      "outlier_n": 18,
-      "model_non_missing_n": 6209
+      "outlier_n": 20,
+      "model_non_missing_n": 6207,
+      "abs_diff_gt_5_n": null,
+      "abs_diff_gt_7_5_n": null,
+      "abs_diff_p50": null,
+      "abs_diff_p95": null,
+      "abs_diff_max": null
     },
     {
       "raw_column": "weight_closest_pre_ed",
       "model_column": "weight_closest_pre_ed_model",
-      "lower_bound_exclusive": 0.0,
+      "lower_bound_exclusive": 25.0,
       "upper_bound_inclusive": 400.0,
       "raw_non_missing_n": 7074,
-      "outlier_n": 1,
-      "model_non_missing_n": 7073
+      "outlier_n": 21,
+      "model_non_missing_n": 7053,
+      "abs_diff_gt_5_n": null,
+      "abs_diff_gt_7_5_n": null,
+      "abs_diff_p50": null,
+      "abs_diff_p95": null,
+      "abs_diff_max": null
+    },
+    {
+      "raw_column": "bmi_recorded_vs_computed_consistency",
+      "model_column": "bmi_closest_pre_ed_model",
+      "lower_bound_exclusive": null,
+      "upper_bound_inclusive": null,
+      "raw_non_missing_n": 3922,
+      "outlier_n": 307,
+      "model_non_missing_n": 3922,
+      "abs_diff_gt_5_n": 307.0,
+      "abs_diff_gt_7_5_n": 127.0,
+      "abs_diff_p50": 0.0448000921,
+      "abs_diff_p95": 6.0806131714,
+      "abs_diff_max": 107813.0245464853
     }
   ],
   "hco3_integrity_audit": [
     {
+      "first_hco3_source": "gas_derived",
+      "row_count": 6215,
+      "null_value_count": 0,
+      "nonnull_value_count": 6215,
+      "null_value_rate": 0.0,
+      "source_value_mismatch_n": 0
+    },
+    {
+      "first_hco3_source": "serum_lab",
+      "row_count": 780,
+      "null_value_count": 0,
+      "nonnull_value_count": 780,
+      "null_value_rate": 0.0,
+      "source_value_mismatch_n": 0
+    },
+    {
       "first_hco3_source": "missing",
-      "row_count": 6964,
-      "null_value_count": 6964,
+      "row_count": 131,
+      "null_value_count": 131,
       "nonnull_value_count": 0,
       "null_value_rate": 1.0,
       "source_value_mismatch_n": 0
     },
     {
-      "first_hco3_source": "lab_panel_same_specimen",
-      "row_count": 106,
+      "first_hco3_source": "gas_measured",
+      "row_count": 40,
       "null_value_count": 0,
-      "nonnull_value_count": 106,
+      "nonnull_value_count": 40,
       "null_value_rate": 0.0,
       "source_value_mismatch_n": 0
+    }
+  ],
+  "hco3_coverage_audit": [
+    {
+      "scope": "overall",
+      "label": "all_rows",
+      "row_count": 7166,
+      "first_hco3_nonnull_n": 7035,
+      "coverage_rate": 0.9817192297
     },
     {
-      "first_hco3_source": "lab_nearest_to_anchor",
-      "row_count": 92,
-      "null_value_count": 0,
-      "nonnull_value_count": 92,
-      "null_value_rate": 0.0,
-      "source_value_mismatch_n": 0
+      "scope": "enrollment_route",
+      "label": "GAS_ONLY",
+      "row_count": 5179,
+      "first_hco3_nonnull_n": 5179,
+      "coverage_rate": 1.0
     },
     {
-      "first_hco3_source": "lab_first_0_24h",
-      "row_count": 4,
-      "null_value_count": 0,
-      "nonnull_value_count": 4,
-      "null_value_rate": 0.0,
-      "source_value_mismatch_n": 0
+      "scope": "enrollment_route",
+      "label": "ICD+GAS",
+      "row_count": 1077,
+      "first_hco3_nonnull_n": 1077,
+      "coverage_rate": 1.0
+    },
+    {
+      "scope": "enrollment_route",
+      "label": "ICD_ONLY",
+      "row_count": 910,
+      "first_hco3_nonnull_n": 779,
+      "coverage_rate": 0.856043956
+    },
+    {
+      "scope": "qualifying_source_branch",
+      "label": "LAB",
+      "row_count": 5392,
+      "first_hco3_nonnull_n": 5392,
+      "coverage_rate": 1.0
+    },
+    {
+      "scope": "qualifying_source_branch",
+      "label": "POC",
+      "row_count": 864,
+      "first_hco3_nonnull_n": 864,
+      "coverage_rate": 1.0
+    },
+    {
+      "scope": "qualifying_source_branch",
+      "label": "UNKNOWN",
+      "row_count": 910,
+      "first_hco3_nonnull_n": 779,
+      "coverage_rate": 0.856043956
+    },
+    {
+      "scope": "first_hco3_source",
+      "label": "gas_derived",
+      "row_count": 6215,
+      "first_hco3_nonnull_n": 6215,
+      "coverage_rate": 1.0
+    },
+    {
+      "scope": "first_hco3_source",
+      "label": "gas_measured",
+      "row_count": 40,
+      "first_hco3_nonnull_n": 40,
+      "coverage_rate": 1.0
+    },
+    {
+      "scope": "first_hco3_source",
+      "label": "missing",
+      "row_count": 131,
+      "first_hco3_nonnull_n": 0,
+      "coverage_rate": 0.0
+    },
+    {
+      "scope": "first_hco3_source",
+      "label": "serum_lab",
+      "row_count": 780,
+      "first_hco3_nonnull_n": 780,
+      "coverage_rate": 1.0
     }
   ],
   "charted_anthro_diagnostics": {
@@ -972,6 +1120,14 @@
       "HOSPITAL": 4981,
       "ICU": 2095,
       "missing": 90
+    },
+    "bmi_recorded_vs_computed_n": 3922,
+    "bmi_recorded_vs_computed_abs_diff_gt_5_n": 307,
+    "bmi_recorded_vs_computed_abs_diff_gt_7_5_n": 127,
+    "bmi_recorded_vs_computed_abs_diff_quantiles": {
+      "p50": 0.04480009214529268,
+      "p95": 6.08061317135222,
+      "max": 107813.02454648526
     },
     "bmi_filled_from_height_weight": 1246,
     "source_input_counts": {
@@ -1060,7 +1216,7 @@
       "poc_vbg_paco2_uom": {
         "present": true,
         "paired_value_column": "poc_vbg_paco2",
-        "value_rows": 3561,
+        "value_rows": 3562,
         "missing_uom_when_value_present": 0,
         "non_mmhg_uom_when_value_present": 0,
         "passes": true
@@ -2157,31 +2313,31 @@
     }
   ],
   "ed_vitals_audit_paths": {
-    "distribution_summary": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-23 ed_vitals_distribution_summary.csv",
-    "extreme_examples": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-23 ed_vitals_extreme_examples.csv",
-    "model_delta": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-23 ed_vitals_model_delta.csv"
+    "distribution_summary": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-26 ed_vitals_distribution_summary.csv",
+    "extreme_examples": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-26 ed_vitals_extreme_examples.csv",
+    "model_delta": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-26 ed_vitals_model_delta.csv"
   },
   "blood_gas_audit_paths": {
-    "manifest_itemids": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-23 blood_gas_itemid_manifest_audit.csv",
-    "pco2_itemid_qc": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-23 pco2_itemid_qc_audit.csv",
-    "pco2_source_distribution": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-23 pco2_source_distribution_audit.csv",
-    "pco2_window_max_contributor": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-23 pco2_window_max_contributor_audit.csv",
-    "blood_gas_triplet_completeness": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-23 blood_gas_triplet_completeness_audit.csv",
-    "qualifying_pco2_distribution_by_type": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-23 qualifying_pco2_distribution_by_type_audit.csv",
-    "other_route_quarantine": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-23 other_route_quarantine_audit.csv",
-    "first_gas_anchor": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-23 first_gas_anchor_audit.csv",
-    "hco3_integrity": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-23 hco3_integrity_audit.csv"
+    "manifest_itemids": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-26 blood_gas_itemid_manifest_audit.csv",
+    "pco2_itemid_qc": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-26 pco2_itemid_qc_audit.csv",
+    "hco3_itemid_qc": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-26 hco3_itemid_qc_audit.csv",
+    "pco2_source_distribution": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-26 pco2_source_distribution_audit.csv",
+    "pco2_window_max_contributor": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-26 pco2_window_max_contributor_audit.csv",
+    "blood_gas_triplet_completeness": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-26 blood_gas_triplet_completeness_audit.csv",
+    "qualifying_pco2_distribution_by_type": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-26 qualifying_pco2_distribution_by_type_audit.csv",
+    "other_route_quarantine": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-26 other_route_quarantine_audit.csv",
+    "first_gas_anchor": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-26 first_gas_anchor_audit.csv",
+    "hco3_integrity": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-26 hco3_integrity_audit.csv",
+    "hco3_coverage": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-26 hco3_coverage_audit.csv"
   },
-  "timing_integrity_audit_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-23 timing_integrity_audit.csv",
-  "ventilation_timing_audit_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-23 ventilation_timing_audit.csv",
-  "anthropometric_cleaning_audit_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-23 anthropometric_cleaning_audit.csv",
+  "timing_integrity_audit_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-26 timing_integrity_audit.csv",
+  "ventilation_timing_audit_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-26 ventilation_timing_audit.csv",
+  "anthropometric_cleaning_audit_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMIC tabular data/prior runs/2026-02-26 anthropometric_cleaning_audit.csv",
   "qa_status": "pass",
   "qa_warnings": [],
-  "qa_infos": [
-    "gas_source_other_rate_high"
-  ],
+  "qa_infos": [],
   "run_metadata": {
-    "run_utc": "2026-02-23T17:31:25.181151+00:00",
+    "run_utc": "2026-02-26T15:22:44.858378+00:00",
     "work_project": "mimic-hypercapnia",
     "physionet_project": "physionet-data",
     "datasets": {
@@ -2200,10 +2356,9 @@
   },
   "contract_status": "warning",
   "contract_warning_codes": [
-    "gas_source_other_rate_high",
-    "first_hco3_coverage_low"
+    "gas_source_other_rate_high"
   ],
   "contract_error_codes": [],
   "qa_status_final": "warning",
-  "cohort_contract_report_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/debug/contracts/20260223_173528/contract_report.json"
+  "cohort_contract_report_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/debug/contracts/20260226_152455/contract_report.json"
 }

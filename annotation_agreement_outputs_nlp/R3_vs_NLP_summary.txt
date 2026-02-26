@@ -32,7 +32,7 @@ mean_len_b       1.363636
 
 === R3 vs NLP: chance-corrected (binary per category) ===
 
-macro_cohen_kappa          NaN
-macro_gwet_ac1             1.0
-macro_percent_agreement    1.0
-micro_percent_agreement    1.0
+macro_cohen_kappa          0.678707
+macro_gwet_ac1             0.975872
+macro_percent_agreement    0.980392
+micro_percent_agreement    0.980392

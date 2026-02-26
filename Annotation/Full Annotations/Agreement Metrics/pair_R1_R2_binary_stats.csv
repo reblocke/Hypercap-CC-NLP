@@ -1,18 +1,18 @@
 category,N,percent_agreement,cohen_kappa,gwet_ac1,category_code,category_name
-0,160,1.0,,1.0,RVC-INJ,Injuries & adverse effects
-1,160,1.0,,1.0,RVC-SYM-RESP,Symptom – Respiratory
-2,160,1.0,,1.0,RVC-SYM-CIRC,Symptom – Circulatory
-3,160,1.0,,1.0,RVC-SYM-NERV,Symptom – Nervous
-4,160,1.0,,1.0,RVC-SYM-DIG,Symptom – Digestive
-5,160,1.0,,1.0,RVC-SYM-GU,Symptom – Genitourinary
-6,160,1.0,,1.0,RVC-SYM-MSK,Symptom – Musculoskeletal
-7,160,1.0,,1.0,RVC-SYM-SKIN,Symptom – Skin/Hair/Nails
+0,160,0.95625,0.8257622899813318,0.9416195366050719,RVC-INJ,Injuries & adverse effects
+1,160,0.9875,0.9634285714285715,0.9810089020771514,RVC-SYM-RESP,Symptom – Respiratory
+2,160,0.95625,0.7177419354838713,0.9482547529395459,RVC-SYM-CIRC,Symptom – Circulatory
+3,160,0.975,0.929701230228471,0.9612074190811007,RVC-SYM-NERV,Symptom – Nervous
+4,160,0.975,0.908256880733945,0.9656504937741521,RVC-SYM-DIG,Symptom – Digestive
+5,160,0.99375,0.7969543147208128,0.993551637279597,RVC-SYM-GU,Symptom – Genitourinary
+6,160,0.98125,0.859484777517564,0.978363271653632,RVC-SYM-MSK,Symptom – Musculoskeletal
+7,160,0.96875,-0.01010101010100807,0.9677581863979848,RVC-SYM-SKIN,Symptom – Skin/Hair/Nails
 8,160,1.0,,1.0,RVC-SYM-EYE,Symptom – Eye/Ear
-9,160,1.0,,1.0,RVC-SYM-GEN,Symptom – General
+9,160,0.96875,0.7452229299363058,0.9643819149172993,RVC-SYM-GEN,Symptom – General
 10,160,1.0,,1.0,RVC-SYM-PSY,Symptom – Psychological
-11,160,1.0,,1.0,RVC-DIS,Diseases (patient-stated)
-12,160,1.0,,1.0,RVC-TEST,Abnormal test result
-13,160,1.0,,1.0,RVC-DIAG,Diagnostic/Screening/Preventive
-14,160,1.0,,1.0,RVC-TREAT,Treatment/Medication
-15,160,1.0,,1.0,RVC-ADMIN,Administrative
-16,160,1.0,,1.0,RVC-UNCL,Uncodable/Unknown
+11,160,0.925,0.7427652733118973,0.8945518453427066,RVC-DIS,Diseases (patient-stated)
+12,160,0.96875,0.7455470737913483,0.9643819149172993,RVC-TEST,Abnormal test result
+13,160,0.975,0.0,0.974367190003204,RVC-DIAG,Diagnostic/Screening/Preventive
+14,160,1.0,1.0,1.0,RVC-TREAT,Treatment/Medication
+15,160,1.0,1.0,1.0,RVC-ADMIN,Administrative
+16,160,0.99375,0.7969543147208128,0.993551637279597,RVC-UNCL,Uncodable/Unknown

@@ -838,7 +838,17 @@ def flatten_binary_decisions(
 ) -> Dict[str, np.ndarray]:
     n = len(next(iter(raters_sets.values())))
     k = len(categories)
-    idx = {c: i for i, c in enumerate(categories)}
+    idx: Dict[str, int] = {}
+    for i, category in enumerate(categories):
+        normalized_category = normalize_label(category)
+        if normalized_category is None:
+            continue
+        if normalized_category in idx:
+            raise ValueError(
+                "Duplicate category after normalization in binary expansion: "
+                f"{category}"
+            )
+        idx[normalized_category] = i
 
     out: Dict[str, np.ndarray] = {}
     for rater, sets in raters_sets.items():
@@ -856,7 +866,17 @@ def flatten_binary_decisions_single(
     sets: List[Set[str]],
     categories: List[str],
 ) -> np.ndarray:
-    idx = {c: i for i, c in enumerate(categories)}
+    idx: Dict[str, int] = {}
+    for i, category in enumerate(categories):
+        normalized_category = normalize_label(category)
+        if normalized_category is None:
+            continue
+        if normalized_category in idx:
+            raise ValueError(
+                "Duplicate category after normalization in binary expansion: "
+                f"{category}"
+            )
+        idx[normalized_category] = i
     mat = np.zeros((len(sets), len(categories)), dtype=int)
     for j, labels in enumerate(sets):
         for lab in labels:
@@ -1396,6 +1416,39 @@ assert_expected_columns(
 assert len(pw_stats) == len(CANONICAL_CATS), "pw_stats row count mismatch with categories"
 assert_rate_bounds(pw_stats["percent_agreement"], "pw_stats percent_agreement")
 assert_rate_bounds(pw_stats["gwet_ac1"], "pw_stats gwet_ac1")
+
+# Fail-fast consistency checks: binary per-category tables must reflect
+# non-exact set-level disagreement and non-empty label prevalence.
+non_exact_visit_n = int(
+    (pd.to_numeric(visit_metrics["exact"], errors="coerce").fillna(0).eq(0)).sum()
+)
+binary_disagreement_n = int(
+    pd.to_numeric(pw_stats["fp"], errors="coerce").fillna(0).sum()
+    + pd.to_numeric(pw_stats["fn"], errors="coerce").fillna(0).sum()
+)
+if non_exact_visit_n > 0 and binary_disagreement_n == 0:
+    raise ValueError(
+        "R3-vs-NLP binary expansion is degenerate: set-level disagreements exist "
+        f"(non_exact_visit_n={non_exact_visit_n}) but fp+fn==0 across categories."
+    )
+
+non_empty_set_visit_n = int(
+    (
+        pd.to_numeric(visit_metrics["r3_size"], errors="coerce").fillna(0).gt(0)
+        | pd.to_numeric(visit_metrics["nlp_size"], errors="coerce").fillna(0).gt(0)
+    ).sum()
+)
+category_prevalence_nonzero_n = int(
+    (
+        pd.to_numeric(pw_stats["prevalence_r3"], errors="coerce").fillna(0).gt(0)
+        | pd.to_numeric(pw_stats["prevalence_nlp"], errors="coerce").fillna(0).gt(0)
+    ).sum()
+)
+if non_empty_set_visit_n > 0 and category_prevalence_nonzero_n == 0:
+    raise ValueError(
+        "R3-vs-NLP binary expansion has zero category prevalence despite non-empty "
+        f"label sets (non_empty_set_visit_n={non_empty_set_visit_n})."
+    )
 
 # Step 8: Write outputs using stable filenames for downstream workflows.
 visit_metrics.to_csv(NLP_OUTPUT_DIR / "R3_vs_NLP_set_metrics_by_visit.csv", index=False)

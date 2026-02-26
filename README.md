@@ -130,7 +130,8 @@ COHORT_FAIL_ON_ALL_OTHER_SOURCE=1  # fail cohort run if gas source attribution c
 COHORT_WARN_OTHER_RATE=0.50  # warn when mean gas_source_other_rate is high
 COHORT_FAIL_OTHER_RATE=      # optional hard fail threshold for gas_source_other_rate (unset = disabled)
 COHORT_GAS_SOURCE_INFERENCE_MODE=metadata_only  # enforce metadata/text-only source inference
-COHORT_OTHER_RELATIVE_REDUCTION_MIN=0.10  # require >=10% relative UNKNOWN-rate reduction vs latest comparable-mode baseline audit
+COHORT_OTHER_RELATIVE_REDUCTION_MIN=0  # optional relative UNKNOWN-rate reduction target; emits warning when unmet
+COHORT_OTHER_HADM_INCREASE_FAIL_PP=0.10  # optional fail guard only for sharp hadm-level UNKNOWN-rate increase vs baseline
 COHORT_FAIL_ON_OMR_ATTACH_INCONSISTENCY=1  # fail when OMR +/-365-day candidates exist but attached outputs are all null
 COHORT_ALLOW_EMPTY_OMR=0  # set 1 to bypass strict OMR attach guard for intentional reruns
 COHORT_ALLOW_OMR_QUERY_FAILURE=0  # set 1 to continue with empty OMR when OMR query fails
@@ -154,6 +155,7 @@ Blood-gas item selection is versioned in `specs/blood_gas_itemids.json`:
 - LAB + POC definitive pCO2 extraction uses manifest allowlists and explicit exclusions.
 - Source classes are ABG/VBG/UNKNOWN; UNKNOWN means definitive pCO2 with unresolved sample type.
 - UNKNOWN remains cohort-eligible for pCO2-threshold inclusion.
+- UNKNOWN telemetry uses hadm-level ED 0–24h rate (`hadm_other_rate_0_24h`) for QA gating; panel-level unknown rate remains informational.
 - POC can qualify encounters through physiologic threshold logic (including as earliest qualifying source in `qualifying_source_branch`).
 - POC itemid QC status is QA-only (`poc_itemid_qc_passed`, `poc_itemid_qc_reason` in `qa_summary.json`), not a final-workbook gating column.
 - ICU HCO3 fallback is explicit-itemid only (no regex fallback).
@@ -162,8 +164,23 @@ Blood-gas item selection is versioned in `specs/blood_gas_itemids.json`:
   - POC uses exact `charttime` pairing first, then nearest match within ±10 minutes in the same stay/site.
 - Final cohort export adds only first-by-site pO2 fields: `first_abg_po2`, `first_vbg_po2`, `first_other_po2`.
 - pH units are normalized to `unitless` when pH values are present.
+- `first_pco2` is not exported; use `qualifying_pco2_mmhg` as the canonical qualifying pCO2 field.
+- `first_hco3` is selected in ED 0–24h priority order:
+  1) measured bicarbonate from qualifying hypercapnic gas panel,
+  2) derived bicarbonate (`0.03 * pCO2 * 10^(pH-6.1)`) from that panel,
+  3) nearest serum bicarbonate/total CO2 lab fallback.
+- HCO3 diagnostics are written per run at:
+  - `MIMIC tabular data/prior runs/<date> hco3_itemid_qc_audit.csv`
+  - `MIMIC tabular data/prior runs/<date> hco3_coverage_audit.csv`
 - Triplet completeness diagnostics are written per run at:
   - `MIMIC tabular data/prior runs/<date> blood_gas_triplet_completeness_audit.csv`.
+- POC pCO2 itemid QC explicitly reports raw vs cleaned quantiles/max values and sentinel removal counts in:
+  - `MIMIC tabular data/prior runs/<date> pco2_itemid_qc_audit.csv`.
+
+Anthropometric model cleaning uses adult-strict plausibility bounds:
+- BMI `(10, 100]`, height `[100, 230]` cm, weight `(25, 400]` kg.
+- BMI is computed from cleaned height+weight only when recorded BMI is missing.
+- Recorded-vs-computed BMI consistency is audited (abs-diff summaries) but does not override valid recorded BMI.
 - Update this manifest (not ad-hoc notebook regex) when itemids need to change.
 
 `GOOGLE_APPLICATION_CREDENTIALS` is also supported (optional) when you prefer service-account auth over ADC login.

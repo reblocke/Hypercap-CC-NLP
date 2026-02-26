@@ -21,12 +21,15 @@ from .workflow_contracts import (
 COHORT_POC_PCO2_MEDIAN_MIN = 45.0
 COHORT_POC_PCO2_MEDIAN_MAX = 80.0
 COHORT_POC_PCO2_FAIL_ENABLED = True
-COHORT_HCO3_WARN_MIN_COVERAGE = 0.20
+COHORT_HCO3_GAS_WARN_MIN_COVERAGE = 0.80
+COHORT_HCO3_GAS_FAIL_MIN_COVERAGE = 0.60
+COHORT_HCO3_ICD_ONLY_WARN_MIN_COVERAGE = 0.50
 COHORT_PO2_TRIPLET_WARN_MIN_COVERAGE = 0.20
 COHORT_FIRST_GAS_ANCHOR_TOLERANCE = 0
 COHORT_REQUIRED_AUDIT_SUFFIXES = (
     "blood_gas_itemid_manifest_audit.csv",
     "pco2_itemid_qc_audit.csv",
+    "hco3_itemid_qc_audit.csv",
     "pco2_source_distribution_audit.csv",
     "pco2_window_max_contributor_audit.csv",
     "blood_gas_triplet_completeness_audit.csv",
@@ -34,6 +37,7 @@ COHORT_REQUIRED_AUDIT_SUFFIXES = (
     "other_route_quarantine_audit.csv",
     "first_gas_anchor_audit.csv",
     "hco3_integrity_audit.csv",
+    "hco3_coverage_audit.csv",
     "timing_integrity_audit.csv",
     "ventilation_timing_audit.csv",
     "anthropometric_cleaning_audit.csv",
@@ -92,9 +96,9 @@ COHORT_ED_VITALS_CLEAN_BOUNDS: dict[str, tuple[float, float]] = {
 }
 
 COHORT_ANTHRO_MODEL_BOUNDS: dict[str, tuple[float, float]] = {
-    "bmi_closest_pre_ed_model": (0.0, 100.0),
-    "height_closest_pre_ed_model": (100.0, 250.0),
-    "weight_closest_pre_ed_model": (0.0, 400.0),
+    "bmi_closest_pre_ed_model": (10.0, 100.0),
+    "height_closest_pre_ed_model": (100.0, 230.0),
+    "weight_closest_pre_ed_model": (25.0, 400.0),
 }
 
 COHORT_ANTHRO_ALLOWED_SOURCES = {"ED", "ICU", "HOSPITAL", "missing"}
@@ -589,12 +593,16 @@ def validate_cohort_contract(
                 )
 
     gas_source_other_rate = None
-    if "gas_source_other_rate" in df.columns or "gas_source_unknown_rate" in df.columns:
-        rate_col = (
-            "gas_source_other_rate"
-            if "gas_source_other_rate" in df.columns
-            else "gas_source_unknown_rate"
-        )
+    if any(
+        column_name in df.columns
+        for column_name in ("hadm_other_rate_0_24h", "gas_source_other_rate", "gas_source_unknown_rate")
+    ):
+        if "hadm_other_rate_0_24h" in df.columns:
+            rate_col = "hadm_other_rate_0_24h"
+        elif "gas_source_other_rate" in df.columns:
+            rate_col = "gas_source_other_rate"
+        else:
+            rate_col = "gas_source_unknown_rate"
         gas_source_other_rate = float(
             pd.to_numeric(df[rate_col], errors="coerce").mean()
         )
@@ -607,7 +615,7 @@ def validate_cohort_contract(
                     "severity": "error",
                     "code": "gas_source_other_rate_fail_threshold_exceeded",
                     "message": (
-                        "Mean gas_source_other_rate exceeded fail threshold "
+                        f"Mean {rate_col} exceeded fail threshold "
                         f"{gas_source_other_fail_threshold:.2f}: {gas_source_other_rate:.4f}"
                     ),
                 }
@@ -618,7 +626,7 @@ def validate_cohort_contract(
                     "severity": "warning",
                     "code": "gas_source_other_rate_high",
                     "message": (
-                        "Mean gas_source_other_rate exceeded warning threshold "
+                        f"Mean {rate_col} exceeded warning threshold "
                         f"{gas_source_other_warn_threshold:.2f}: {gas_source_other_rate:.4f}"
                     ),
                 }
@@ -811,22 +819,89 @@ def validate_cohort_contract(
             )
 
     hco3_coverage_rate = None
+    hco3_gas_positive_coverage_rate = None
+    hco3_icd_only_coverage_rate = None
     hco3_source_value_mismatch_n = 0
     if "first_hco3" in df.columns:
         hco3_coverage_rate = float(
             pd.to_numeric(df["first_hco3"], errors="coerce").notna().mean()
         )
-        if hco3_coverage_rate < COHORT_HCO3_WARN_MIN_COVERAGE:
-            findings.append(
-                {
-                    "severity": "warning",
-                    "code": "first_hco3_coverage_low",
-                    "message": (
-                        "first_hco3 coverage below warning floor "
-                        f"{COHORT_HCO3_WARN_MIN_COVERAGE:.2f}: {hco3_coverage_rate:.4f}"
-                    ),
-                }
+    if {"first_hco3", "pco2_threshold_0_24h"}.issubset(df.columns):
+        hco3_values = pd.to_numeric(df["first_hco3"], errors="coerce")
+        gas_positive_mask = (
+            pd.to_numeric(df["pco2_threshold_0_24h"], errors="coerce")
+            .fillna(0)
+            .astype(int)
+            .eq(1)
+        )
+        gas_positive_n = int(gas_positive_mask.sum())
+        if gas_positive_n > 0:
+            hco3_gas_positive_coverage_rate = float(
+                hco3_values.loc[gas_positive_mask].notna().mean()
             )
+            if hco3_gas_positive_coverage_rate < COHORT_HCO3_GAS_FAIL_MIN_COVERAGE:
+                findings.append(
+                    {
+                        "severity": "error",
+                        "code": "first_hco3_coverage_low",
+                        "message": (
+                            "first_hco3 gas-positive coverage below fail floor "
+                            f"{COHORT_HCO3_GAS_FAIL_MIN_COVERAGE:.2f}: "
+                            f"{hco3_gas_positive_coverage_rate:.4f}"
+                        ),
+                    }
+                )
+            elif hco3_gas_positive_coverage_rate < COHORT_HCO3_GAS_WARN_MIN_COVERAGE:
+                findings.append(
+                    {
+                        "severity": "warning",
+                        "code": "first_hco3_coverage_low",
+                        "message": (
+                            "first_hco3 gas-positive coverage below warning floor "
+                            f"{COHORT_HCO3_GAS_WARN_MIN_COVERAGE:.2f}: "
+                            f"{hco3_gas_positive_coverage_rate:.4f}"
+                        ),
+                    }
+                )
+
+    if {"first_hco3", "enrollment_route"}.issubset(df.columns):
+        hco3_values = pd.to_numeric(df["first_hco3"], errors="coerce")
+        icd_only_mask = (
+            df["enrollment_route"]
+            .astype("string")
+            .fillna("NONE")
+            .str.upper()
+            .eq("ICD_ONLY")
+        )
+        icd_only_n = int(icd_only_mask.sum())
+        if icd_only_n > 0:
+            hco3_icd_only_coverage_rate = float(
+                hco3_values.loc[icd_only_mask].notna().mean()
+            )
+            if hco3_icd_only_coverage_rate < COHORT_HCO3_ICD_ONLY_WARN_MIN_COVERAGE:
+                findings.append(
+                    {
+                        "severity": "warning",
+                        "code": "first_hco3_coverage_low",
+                        "message": (
+                            "first_hco3 ICD-only coverage below warning floor "
+                            f"{COHORT_HCO3_ICD_ONLY_WARN_MIN_COVERAGE:.2f}: "
+                            f"{hco3_icd_only_coverage_rate:.4f}"
+                        ),
+                    }
+                )
+    elif hco3_coverage_rate is not None and hco3_coverage_rate < COHORT_HCO3_GAS_WARN_MIN_COVERAGE:
+        # Backward-compatibility fallback when route/threshold flags are unavailable.
+        findings.append(
+            {
+                "severity": "warning",
+                "code": "first_hco3_coverage_low",
+                "message": (
+                    "first_hco3 overall coverage below fallback warning floor "
+                    f"{COHORT_HCO3_GAS_WARN_MIN_COVERAGE:.2f}: {hco3_coverage_rate:.4f}"
+                ),
+            }
+        )
     if {"first_hco3", "first_hco3_source"}.issubset(df.columns):
         hco3_values = pd.to_numeric(df["first_hco3"], errors="coerce")
         hco3_source = df["first_hco3_source"].astype("string").fillna("missing")
@@ -924,6 +999,8 @@ def validate_cohort_contract(
         "anthro_bmi_coverage_rate": bmi_coverage_rate,
         "anthro_model_invalid_counts": anthro_model_invalid_counts,
         "first_hco3_coverage_rate": hco3_coverage_rate,
+        "first_hco3_gas_positive_coverage_rate": hco3_gas_positive_coverage_rate,
+        "first_hco3_icd_only_coverage_rate": hco3_icd_only_coverage_rate,
         "first_hco3_source_value_mismatch_n": hco3_source_value_mismatch_n,
         "po2_triplet_coverage_by_site": po2_triplet_coverage_by_site,
         "anthro_source_counts": anthro_source_counts,

@@ -66,6 +66,8 @@ def test_cohort_notebook_contains_ed_vitals_cleaning_helpers() -> None:
     assert "ALL_CANDIDATE_PCO2_LAB_POC" in cohort_text
     assert "pco2_window_max_contributor_audit.csv" in cohort_text
     assert "blood_gas_triplet_completeness_audit.csv" in cohort_text
+    assert "hco3_itemid_qc_audit.csv" in cohort_text
+    assert "hco3_coverage_audit.csv" in cohort_text
     assert "qualifying_pco2_distribution_by_type_audit.csv" in cohort_text
     assert "other_route_quarantine_audit.csv" in cohort_text
     assert "first_gas_anchor_audit.csv" in cohort_text
@@ -73,6 +75,15 @@ def test_cohort_notebook_contains_ed_vitals_cleaning_helpers() -> None:
     assert "timing_integrity_audit.csv" in cohort_text
     assert "ventilation_timing_audit.csv" in cohort_text
     assert "anthropometric_cleaning_audit.csv" in cohort_text
+    assert "bmi_recorded_vs_computed_abs_diff_gt_5_n" in cohort_text
+    assert "bmi_recorded_vs_computed_abs_diff_gt_7_5_n" in cohort_text
+    assert "bmi_recorded_vs_computed_abs_diff_quantiles" in cohort_text
+    assert "raw_max_mmhg" in cohort_text
+    assert "clean_max_mmhg" in cohort_text
+    assert "sentinel_extreme_n" in cohort_text
+    assert "sentinel_removed_n" in cohort_text
+    assert "pco2_itemid_qc_sentinel_itemids_n" in cohort_text
+    assert "pco2_itemid_qc_sentinel_removed_total_n" in cohort_text
     assert "bmi_closest_pre_ed_uom" in cohort_text
     assert "height_closest_pre_ed_uom" in cohort_text
     assert "weight_closest_pre_ed_uom" in cohort_text
@@ -111,6 +122,7 @@ def test_cohort_notebook_contains_ed_vitals_cleaning_helpers() -> None:
     assert "contract_warning_codes" in cohort_text
     assert "contract_error_codes" in cohort_text
     assert "qa_status_final" in cohort_text
+    assert "hadm_other_rate_0_24h" in cohort_text
     assert "max_pco2_0_24h_lt_qualifying_n" in cohort_text
     assert "max_pco2_0_6h_lt_qualifying_n" in cohort_text
 
@@ -154,6 +166,9 @@ def test_rater_notebook_contains_key_inventory_and_canonical_mapping() -> None:
     assert "target_sample_n" in rater_text
     assert "warn_below_target_fail_on_zero" in rater_text
     assert "canonicalize_rvc_code" in rater_text
+    assert "non_exact_visit_n" in rater_text
+    assert "binary_disagreement_n" in rater_text
+    assert "category_prevalence_nonzero_n" in rater_text
 
 
 def test_cohort_notebook_requires_manifest_hco3_and_poc_fallback_guard() -> None:
@@ -201,6 +216,7 @@ def test_cohort_notebook_uses_unknown_fallback_naming_and_drops_legacy_flags() -
 def test_cohort_notebook_drops_redundant_export_columns() -> None:
     cohort_text = (WORK_DIR / "MIMICIV_hypercap_EXT_cohort.qmd").read_text()
     assert "cohort_export_drop_columns" in cohort_text
+    assert '"first_pco2"' in cohort_text
     assert '"enrolled_any"' in cohort_text
     assert '"enrolled_any_icd_union_secondary"' in cohort_text
     assert '"gas_source_unknown_rate"' in cohort_text
