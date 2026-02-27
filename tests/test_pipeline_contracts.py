@@ -9,6 +9,7 @@ from hypercap_cc_nlp.pipeline_contracts import (
     COHORT_REQUIRED_AUDIT_SUFFIXES,
     COHORT_POC_PCO2_MEDIAN_MAX,
     COHORT_POC_PCO2_MEDIAN_MIN,
+    GAS_SOURCE_DIAGNOSTICS_ARTIFACT_NAME,
     build_pipeline_contract_report,
     validate_cohort_contract,
     write_contract_report,
@@ -44,7 +45,7 @@ def test_validate_cohort_contract_detects_threshold_mismatch() -> None:
     assert "gas_source_other_rate_high" in codes
 
 
-def test_validate_cohort_contract_warns_on_deprecated_threshold_alias() -> None:
+def test_validate_cohort_contract_accepts_canonical_threshold_any() -> None:
     df = pd.DataFrame(
         {
             "hadm_id": [1],
@@ -64,10 +65,10 @@ def test_validate_cohort_contract_warns_on_deprecated_threshold_alias() -> None:
     report = validate_cohort_contract(df)
     codes = {finding["code"] for finding in report["findings"]}
     assert report["status"] == "warning"
-    assert "pco2_threshold_any_deprecated_alias" in codes
+    assert "pco2_threshold_0_24h_fallback_alias" not in codes
 
 
-def test_validate_cohort_contract_warns_when_source_diagnostic_columns_absent() -> None:
+def test_validate_cohort_contract_allows_source_diagnostics_outside_main_export() -> None:
     df = pd.DataFrame(
         {
             "hadm_id": [1],
@@ -83,8 +84,29 @@ def test_validate_cohort_contract_warns_when_source_diagnostic_columns_absent() 
     )
     report = validate_cohort_contract(df)
     codes = {finding["code"] for finding in report["findings"]}
-    assert report["status"] == "warning"
-    assert "missing_gas_source_diagnostic_columns_export" in codes
+    assert "missing_gas_source_diagnostic_columns_export" not in codes
+
+
+def test_validate_cohort_contract_fails_hco3_band_qc_inconsistency() -> None:
+    df = pd.DataFrame(
+        {
+            "hadm_id": [1],
+            "ed_stay_id": [11],
+            "abg_hypercap_threshold": [1],
+            "vbg_hypercap_threshold": [0],
+            "unknown_hypercap_threshold": [0],
+            "pco2_threshold_0_24h": [1],
+            "gas_source_other_rate": [0.1],
+            "bmi_closest_pre_ed": [30.0],
+            "anthro_source": ["HOSPITAL"],
+            "first_hco3_qc_flag": [False],
+            "hco3_band": ["24–29"],
+        }
+    )
+    report = validate_cohort_contract(df)
+    codes = {finding["code"] for finding in report["findings"]}
+    assert report["status"] == "fail"
+    assert "hco3_band_qc_inconsistency" in codes
 
 
 def test_validate_cohort_contract_applies_other_fail_threshold() -> None:
@@ -403,7 +425,7 @@ def test_validate_cohort_contract_fails_when_max_pco2_24h_below_qualifying() -> 
     assert "max_pco2_0_24h_below_qualifying" in codes
 
 
-def test_validate_cohort_contract_fails_when_max_pco2_6h_below_qualifying_for_early_rows() -> None:
+def test_validate_cohort_contract_fails_when_24h_marker_exceeds_anytime_flag() -> None:
     df = pd.DataFrame(
         {
             "hadm_id": [1, 2],
@@ -411,11 +433,8 @@ def test_validate_cohort_contract_fails_when_max_pco2_6h_below_qualifying_for_ea
             "abg_hypercap_threshold": [1, 0],
             "vbg_hypercap_threshold": [0, 1],
             "unknown_hypercap_threshold": [0, 0],
+            "pco2_threshold_any": [1, 0],
             "pco2_threshold_0_24h": [1, 1],
-            "qualifying_pco2_mmhg": [60.0, 55.0],
-            "max_pco2_0_24h": [65.0, 58.0],
-            "dt_qualifying_hypercapnia_hours": [2.0, 8.0],
-            "max_pco2_0_6h": [59.0, 54.0],
             "gas_source_other_rate": [0.1, 0.1],
             "gas_source_inference_primary_tier": ["specimen_text", "specimen_text"],
             "gas_source_hint_conflict_rate": [0.0, 0.0],
@@ -427,7 +446,32 @@ def test_validate_cohort_contract_fails_when_max_pco2_6h_below_qualifying_for_ea
     report = validate_cohort_contract(df)
     codes = {finding["code"] for finding in report["findings"]}
     assert report["status"] == "fail"
-    assert "max_pco2_0_6h_below_qualifying_when_dt_le_6h" in codes
+    assert "pco2_threshold_0_24h_exceeds_any" in codes
+
+
+def test_validate_cohort_contract_fails_when_24h_marker_disagrees_with_dt() -> None:
+    df = pd.DataFrame(
+        {
+            "hadm_id": [1, 2],
+            "ed_stay_id": [11, 22],
+            "abg_hypercap_threshold": [1, 0],
+            "vbg_hypercap_threshold": [0, 1],
+            "unknown_hypercap_threshold": [0, 0],
+            "pco2_threshold_any": [1, 1],
+            "pco2_threshold_0_24h": [0, 1],
+            "dt_qualifying_hypercapnia_hours": [2.0, 30.0],
+            "gas_source_other_rate": [0.1, 0.1],
+            "gas_source_inference_primary_tier": ["specimen_text", "specimen_text"],
+            "gas_source_hint_conflict_rate": [0.0, 0.0],
+            "gas_source_resolved_rate": [1.0, 1.0],
+            "bmi_closest_pre_ed": [30.0, 31.0],
+            "anthro_source": ["HOSPITAL", "ICU"],
+        }
+    )
+    report = validate_cohort_contract(df)
+    codes = {finding["code"] for finding in report["findings"]}
+    assert report["status"] == "fail"
+    assert "pco2_threshold_0_24h_dt_mismatch" in codes
 
 
 def test_build_pipeline_contract_report_reads_canonical_outputs(tmp_path: Path) -> None:
@@ -473,11 +517,69 @@ def test_build_pipeline_contract_report_reads_canonical_outputs(tmp_path: Path) 
     )
     for suffix in COHORT_REQUIRED_AUDIT_SUFFIXES:
         (prior_runs_dir / f"2026-02-16 {suffix}").write_text("col\nvalue\n")
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir(parents=True)
+    pd.DataFrame(
+        {
+            "ed_stay_id": [100],
+            "hadm_id": [1],
+            "gas_source_inference_primary_tier": ["specimen_text"],
+            "gas_source_hint_conflict_rate": [0.0],
+            "gas_source_resolved_rate": [1.0],
+        }
+    ).to_csv(artifacts_dir / GAS_SOURCE_DIAGNOSTICS_ARTIFACT_NAME, index=False)
 
     report = build_pipeline_contract_report(tmp_path)
     assert report["status"] == "pass"
     assert report["contracts"]["cohort"]["status"] == "pass"
     assert report["contracts"]["classifier"]["status"] == "pass"
+
+
+def test_build_pipeline_contract_report_fails_when_gas_source_diag_artifact_absent(
+    tmp_path: Path,
+) -> None:
+    data_dir = tmp_path / DATA_DIRNAME
+    data_dir.mkdir(parents=True)
+
+    cohort = pd.DataFrame(
+        {
+            "hadm_id": [1],
+            "subject_id": [10],
+            "ed_stay_id": [100],
+            "abg_hypercap_threshold": [1],
+            "vbg_hypercap_threshold": [0],
+            "unknown_hypercap_threshold": [0],
+            "pco2_threshold_0_24h": [1],
+            "gas_source_other_rate": [0.1],
+            "bmi_closest_pre_ed": [30.0],
+            "anthro_source": ["ICU"],
+        }
+    )
+    cohort.to_excel(data_dir / CANONICAL_COHORT_FILENAME, index=False)
+
+    classifier = pd.DataFrame(
+        {
+            "hadm_id": [1],
+            "subject_id": [10],
+            "RFV1_name": ["Symptom – Respiratory"],
+            "segment_preds": ["[]"],
+            "cc_missing_reason": ["valid"],
+        }
+    )
+    classifier.to_excel(data_dir / CANONICAL_NLP_FILENAME, index=False)
+
+    prior_runs_dir = data_dir / PRIOR_RUNS_DIRNAME
+    prior_runs_dir.mkdir(parents=True)
+    (prior_runs_dir / "2026-02-16 classifier_cc_missing_audit.csv").write_text(
+        "cc_missing_reason,row_count,examples\nvalid,1,shortness of breath\n"
+    )
+    for suffix in COHORT_REQUIRED_AUDIT_SUFFIXES:
+        (prior_runs_dir / f"2026-02-16 {suffix}").write_text("col\nvalue\n")
+
+    report = build_pipeline_contract_report(tmp_path)
+    codes = {finding["code"] for finding in report["contracts"]["cohort"]["findings"]}
+    assert report["status"] == "fail"
+    assert "missing_gas_source_diagnostics_artifact" in codes
 
 
 def test_write_contract_report_writes_failed_contract_when_failing(tmp_path: Path) -> None:

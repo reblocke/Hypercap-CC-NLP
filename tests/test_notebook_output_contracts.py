@@ -63,6 +63,7 @@ def test_cohort_notebook_contains_ed_vitals_cleaning_helpers() -> None:
     assert "specs/blood_gas_itemids.json" in cohort_text
     assert "blood_gas_itemid_manifest_audit.csv" in cohort_text
     assert "pco2_source_distribution_audit.csv" in cohort_text
+    assert "gas_source_diagnostics_by_ed_stay.csv" in cohort_text
     assert "ALL_CANDIDATE_PCO2_LAB_POC" in cohort_text
     assert "pco2_window_max_contributor_audit.csv" in cohort_text
     assert "blood_gas_triplet_completeness_audit.csv" in cohort_text
@@ -80,10 +81,22 @@ def test_cohort_notebook_contains_ed_vitals_cleaning_helpers() -> None:
     assert "bmi_recorded_vs_computed_abs_diff_quantiles" in cohort_text
     assert "raw_max_mmhg" in cohort_text
     assert "clean_max_mmhg" in cohort_text
+    assert "clean_p05_mmhg" in cohort_text
+    assert "clean_p25_mmhg" in cohort_text
+    assert "distribution_plausible" in cohort_text
+    assert "possible_po2_contamination" in cohort_text
+    assert "insufficient_valid_rows" in cohort_text
     assert "sentinel_extreme_n" in cohort_text
     assert "sentinel_removed_n" in cohort_text
     assert "pco2_itemid_qc_sentinel_itemids_n" in cohort_text
     assert "pco2_itemid_qc_sentinel_removed_total_n" in cohort_text
+    assert "out_of_range_removed_rate" in cohort_text
+    assert "sentinel_removed_rate" in cohort_text
+    assert "qc_blocking_flag" in cohort_text
+    assert "qc_warning_flag" in cohort_text
+    assert "qc_status" in cohort_text
+    assert "qc_blocking_reason" in cohort_text
+    assert "qc_warning_reason" in cohort_text
     assert "bmi_closest_pre_ed_uom" in cohort_text
     assert "height_closest_pre_ed_uom" in cohort_text
     assert "weight_closest_pre_ed_uom" in cohort_text
@@ -97,6 +110,19 @@ def test_cohort_notebook_contains_ed_vitals_cleaning_helpers() -> None:
     assert "first_gas_anchor_has_pco2" in cohort_text
     assert "poc_itemid_qc_passed" in cohort_text
     assert "poc_itemid_qc_reason" in cohort_text
+    assert "poc_itemid_qc_status" in cohort_text
+    assert "poc_itemid_qc_blocking_passed" in cohort_text
+    assert "poc_itemid_qc_failed_itemids_n" in cohort_text
+    assert "poc_itemid_qc_warning_itemids_n" in cohort_text
+    assert "poc_itemid_qc_fail_reasons" in cohort_text
+    assert "poc_itemid_qc_warn_reasons" in cohort_text
+    assert "poc_used_in_qualification_logic" in cohort_text
+    assert "poc_qc_is_telemetry_only" in cohort_text
+    assert "poc_qualifying_earliest_0_24h_hadm_n" in cohort_text
+    assert "poc_qualifying_any_type_0_24h_hadm_n" in cohort_text
+    assert "poc_hypercap_0_24h_alias_of" in cohort_text
+    assert "hco3_band_qc_inconsistency_n" in cohort_text
+    assert "pco2_threshold_any" in cohort_text
     assert "pco2_threshold_0_24h" in cohort_text
     assert "qualifying_pco2_time" in cohort_text
     assert "qualifying_pco2_mmhg" in cohort_text
@@ -124,11 +150,13 @@ def test_cohort_notebook_contains_ed_vitals_cleaning_helpers() -> None:
     assert "qa_status_final" in cohort_text
     assert "hadm_other_rate_0_24h" in cohort_text
     assert "max_pco2_0_24h_lt_qualifying_n" in cohort_text
-    assert "max_pco2_0_6h_lt_qualifying_n" in cohort_text
+    assert "dt_first_qualifying_gas_hours_pct_le_24" in cohort_text
+    assert "dt_first_qualifying_gas_hours_pct_gt_24" in cohort_text
 
 
 def test_analysis_notebook_contains_requested_outputs() -> None:
     analysis_text = (WORK_DIR / "Hypercap CC NLP Analysis.qmd").read_text()
+    assert '"pco2_threshold_any"' in analysis_text
     assert '"unknown_hypercap_threshold"' in analysis_text
     assert '"other_hypercap_threshold"' not in analysis_text
     assert "ICD_vs_Gas_Performance.xlsx" in analysis_text
@@ -138,6 +166,11 @@ def test_analysis_notebook_contains_requested_outputs() -> None:
     assert "def select_preferred_vital_column(" in analysis_text
     assert "qualifying_gas_time_observed_rate" in analysis_text
     assert "poc_itemid_qc_passed" in analysis_text
+    assert "poc_itemid_qc_status" in analysis_text
+    assert "poc_itemid_qc_failed_itemids_n" in analysis_text
+    assert "poc_itemid_qc_warning_itemids_n" in analysis_text
+    assert "poc_qualifying_earliest_0_24h_hadm_n" in analysis_text
+    assert "poc_qualifying_any_type_0_24h_hadm_n" in analysis_text
     assert "UNKNOWN semantics" in analysis_text
     assert "panel_unknown_rate" in analysis_text
     assert "encounter_unknown_rate" in analysis_text
@@ -193,6 +226,8 @@ def test_cohort_notebook_uses_icd_or_gas_enrollment_and_inclusive_thresholds() -
     cohort_text = (WORK_DIR / "MIMICIV_hypercap_EXT_cohort.qmd").read_text()
     assert "pco2_mmhg >= 45.0" in cohort_text
     assert "pco2_mmhg >= 50.0" in cohort_text
+    assert "1 AS pco2_threshold_any" in cohort_text
+    assert "IF(q.dt_qualifying_hypercapnia_hours <= 24.0, 1, 0) AS pco2_threshold_0_24h" in cohort_text
     assert "MAX(IF(site = 'arterial', 1, 0)) AS abg_hypercap_threshold" in cohort_text
     assert "MAX(IF(site = 'venous', 1, 0)) AS vbg_hypercap_threshold" in cohort_text
     assert "MAX(IF(site = 'unknown', 1, 0)) AS unknown_hypercap_threshold" in cohort_text
@@ -209,6 +244,7 @@ def test_cohort_notebook_uses_unknown_fallback_naming_and_drops_legacy_flags() -
     assert "gas_source_tier_fallback_unknown_rate" in cohort_text
     assert "gas_source_tier_fallback_other_rate" not in cohort_text
     assert "poc_hypercap_0_24h_edstay_n" in cohort_text
+    assert "poc_hypercap_0_24h_alias_of" in cohort_text
     assert '"flag_any_gas_hypercapnia_poc"' in cohort_text
     assert '"flag_any_gas_hypercapnia"' in cohort_text
 

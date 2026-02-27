@@ -5,10 +5,10 @@
   "nlp_sheet": 0,
   "row_counts": {
     "annotation_r3_rows": 160,
-    "nlp_rows": 7152,
-    "matched_rows": 33,
-    "unmatched_adjudicated_rows": 127,
-    "unmatched_nlp_rows": 7119
+    "nlp_rows": 11945,
+    "matched_rows": 61,
+    "unmatched_adjudicated_rows": 99,
+    "unmatched_nlp_rows": 11884
   },
   "key_columns": [
     "hadm_id",
@@ -24,17 +24,17 @@
     "target_sample_n": 160,
     "gate_policy": "warn_below_target_fail_on_zero",
     "r3_rows": 160,
-    "nlp_rows": 7152,
-    "matched_rows": 33,
-    "unmatched_adjudicated_rows": 127,
-    "unmatched_nlp_rows": 7119,
-    "matched_rate_vs_adjudicated": 0.20625,
-    "unmatched_rate_vs_adjudicated": 0.79375,
-    "unmatched_rate_vs_nlp": 0.9953859060402684,
+    "nlp_rows": 11945,
+    "matched_rows": 61,
+    "unmatched_adjudicated_rows": 99,
+    "unmatched_nlp_rows": 11884,
+    "matched_rate_vs_adjudicated": 0.38125,
+    "unmatched_rate_vs_adjudicated": 0.61875,
+    "unmatched_rate_vs_nlp": 0.9948932607785684,
     "coverage_status": "warning",
     "join_interpretation": "below_target_overlap_nonzero",
     "severity": "warning"
   },
-  "matched_key_hash_count": 33,
+  "matched_key_hash_count": 61,
   "unmapped_label_count": 0
 }

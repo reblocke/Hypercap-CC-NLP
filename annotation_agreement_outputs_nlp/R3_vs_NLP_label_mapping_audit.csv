@@ -33,53 +33,54 @@ adjudicated_r3,annot3_rvs3_cat,Symptom – Nervous,Symptom – Nervous,RVC-SYM-N
 adjudicated_r3,annot3_rvs3_cat,Symptom – Respiratory,Symptom – Respiratory,RVC-SYM-RESP,Symptom – Respiratory,True,1
 adjudicated_r3,annot3_rvs1_cat,Symptom – Skin/Hair/Nails,Symptom – Skin/Hair/Nails,RVC-SYM-SKIN,Symptom – Skin/Hair/Nails,True,1
 adjudicated_r3,annot3_rvs2_cat,Treatment/Medication,Treatment/Medication,RVC-TREAT,Treatment/Medication,True,1
-nlp_output,RFV1_name,Symptom – Respiratory,Symptom – Respiratory,RVC-SYM-RESP,Symptom – Respiratory,True,2404
-nlp_output,RFV1_name,Injuries & adverse effects,Injuries & adverse effects,RVC-INJ,Injuries & adverse effects,True,1107
-nlp_output,RFV2_name,Administrative,Administrative,RVC-ADMIN,Administrative,True,899
-nlp_output,RFV1_name,Symptom – Nervous,Symptom – Nervous,RVC-SYM-NERV,Symptom – Nervous,True,830
-nlp_output,RFV1_name,Symptom – Digestive,Symptom – Digestive,RVC-SYM-DIG,Symptom – Digestive,True,708
-nlp_output,RFV1_name,Symptom – Circulatory,Symptom – Circulatory,RVC-SYM-CIRC,Symptom – Circulatory,True,547
-nlp_output,RFV1_name,Diseases (patient-stated),Diseases (patient–stated),RVC-DIS,Diseases (patient-stated),True,391
-nlp_output,RFV2_name,Symptom – General,Symptom – General,RVC-SYM-GEN,Symptom – General,True,315
-nlp_output,RFV1_name,Symptom – General,Symptom – General,RVC-SYM-GEN,Symptom – General,True,268
-nlp_output,RFV2_name,Symptom – Circulatory,Symptom – Circulatory,RVC-SYM-CIRC,Symptom – Circulatory,True,205
-nlp_output,RFV2_name,Symptom – Nervous,Symptom – Nervous,RVC-SYM-NERV,Symptom – Nervous,True,202
-nlp_output,RFV3_name,Administrative,Administrative,RVC-ADMIN,Administrative,True,191
-nlp_output,RFV1_name,Uncodable/Unknown,Uncodable/Unknown,RVC-UNCL,Uncodable/Unknown,True,187
-nlp_output,RFV2_name,Symptom – Digestive,Symptom – Digestive,RVC-SYM-DIG,Symptom – Digestive,True,170
-nlp_output,RFV2_name,Diseases (patient-stated),Diseases (patient–stated),RVC-DIS,Diseases (patient-stated),True,168
-nlp_output,RFV1_name,Symptom – Skin/Hair/Nails,Symptom – Skin/Hair/Nails,RVC-SYM-SKIN,Symptom – Skin/Hair/Nails,True,134
-nlp_output,RFV1_name,Administrative,Administrative,RVC-ADMIN,Administrative,True,131
-nlp_output,RFV1_name,Symptom – Musculoskeletal,Symptom – Musculoskeletal,RVC-SYM-MSK,Symptom – Musculoskeletal,True,117
-nlp_output,RFV2_name,Abnormal test result,Abnormal test result,RVC-TEST,Abnormal test result,True,106
-nlp_output,RFV1_name,Abnormal test result,Abnormal test result,RVC-TEST,Abnormal test result,True,97
-nlp_output,RFV2_name,Symptom – Musculoskeletal,Symptom – Musculoskeletal,RVC-SYM-MSK,Symptom – Musculoskeletal,True,75
-nlp_output,RFV1_name,Symptom – Genitourinary,Symptom – Genitourinary,RVC-SYM-GU,Symptom – Genitourinary,True,70
-nlp_output,RFV1_name,Diagnostic/Screening/Preventive,Diagnostic/Screening/Preventive,RVC-DIAG,Diagnostic/Screening/Preventive,True,58
-nlp_output,RFV2_name,Diagnostic/Screening/Preventive,Diagnostic/Screening/Preventive,RVC-DIAG,Diagnostic/Screening/Preventive,True,54
-nlp_output,RFV2_name,Symptom – Skin/Hair/Nails,Symptom – Skin/Hair/Nails,RVC-SYM-SKIN,Symptom – Skin/Hair/Nails,True,52
-nlp_output,RFV2_name,Symptom – Psychological,Symptom – Psychological,RVC-SYM-PSY,Symptom – Psychological,True,50
-nlp_output,RFV2_name,Symptom – Genitourinary,Symptom – Genitourinary,RVC-SYM-GU,Symptom – Genitourinary,True,46
-nlp_output,RFV3_name,Symptom – General,Symptom – General,RVC-SYM-GEN,Symptom – General,True,40
-nlp_output,RFV1_name,Symptom – Psychological,Symptom – Psychological,RVC-SYM-PSY,Symptom – Psychological,True,37
-nlp_output,RFV1_name,Treatment/Medication,Treatment/Medication,RVC-TREAT,Treatment/Medication,True,34
-nlp_output,RFV1_name,Symptom – Eye/Ear,Symptom – Eye/Ear,RVC-SYM-EYE,Symptom – Eye/Ear,True,32
-nlp_output,RFV2_name,Treatment/Medication,Treatment/Medication,RVC-TREAT,Treatment/Medication,True,30
-nlp_output,RFV2_name,Symptom – Respiratory,Symptom – Respiratory,RVC-SYM-RESP,Symptom – Respiratory,True,24
-nlp_output,RFV3_name,Diseases (patient-stated),Diseases (patient–stated),RVC-DIS,Diseases (patient-stated),True,21
-nlp_output,RFV3_name,Abnormal test result,Abnormal test result,RVC-TEST,Abnormal test result,True,15
-nlp_output,RFV4_name,Administrative,Administrative,RVC-ADMIN,Administrative,True,14
-nlp_output,RFV2_name,Symptom – Eye/Ear,Symptom – Eye/Ear,RVC-SYM-EYE,Symptom – Eye/Ear,True,13
-nlp_output,RFV3_name,Symptom – Nervous,Symptom – Nervous,RVC-SYM-NERV,Symptom – Nervous,True,12
-nlp_output,RFV3_name,Symptom – Digestive,Symptom – Digestive,RVC-SYM-DIG,Symptom – Digestive,True,11
-nlp_output,RFV3_name,Diagnostic/Screening/Preventive,Diagnostic/Screening/Preventive,RVC-DIAG,Diagnostic/Screening/Preventive,True,9
-nlp_output,RFV3_name,Symptom – Musculoskeletal,Symptom – Musculoskeletal,RVC-SYM-MSK,Symptom – Musculoskeletal,True,6
-nlp_output,RFV3_name,Symptom – Skin/Hair/Nails,Symptom – Skin/Hair/Nails,RVC-SYM-SKIN,Symptom – Skin/Hair/Nails,True,6
-nlp_output,RFV3_name,Symptom – Psychological,Symptom – Psychological,RVC-SYM-PSY,Symptom – Psychological,True,5
+nlp_output,RFV1_name,Symptom – Respiratory,Symptom – Respiratory,RVC-SYM-RESP,Symptom – Respiratory,True,3599
+nlp_output,RFV1_name,Injuries & adverse effects,Injuries & adverse effects,RVC-INJ,Injuries & adverse effects,True,1669
+nlp_output,RFV2_name,Administrative,Administrative,RVC-ADMIN,Administrative,True,1541
+nlp_output,RFV1_name,Symptom – Digestive,Symptom – Digestive,RVC-SYM-DIG,Symptom – Digestive,True,1402
+nlp_output,RFV1_name,Symptom – Nervous,Symptom – Nervous,RVC-SYM-NERV,Symptom – Nervous,True,1327
+nlp_output,RFV1_name,Symptom – Circulatory,Symptom – Circulatory,RVC-SYM-CIRC,Symptom – Circulatory,True,1132
+nlp_output,RFV1_name,Diseases (patient-stated),Diseases (patient–stated),RVC-DIS,Diseases (patient-stated),True,655
+nlp_output,RFV2_name,Symptom – General,Symptom – General,RVC-SYM-GEN,Symptom – General,True,608
+nlp_output,RFV1_name,Symptom – General,Symptom – General,RVC-SYM-GEN,Symptom – General,True,546
+nlp_output,RFV2_name,Symptom – Circulatory,Symptom – Circulatory,RVC-SYM-CIRC,Symptom – Circulatory,True,369
+nlp_output,RFV3_name,Administrative,Administrative,RVC-ADMIN,Administrative,True,346
+nlp_output,RFV2_name,Symptom – Nervous,Symptom – Nervous,RVC-SYM-NERV,Symptom – Nervous,True,302
+nlp_output,RFV2_name,Diseases (patient-stated),Diseases (patient–stated),RVC-DIS,Diseases (patient-stated),True,299
+nlp_output,RFV2_name,Symptom – Digestive,Symptom – Digestive,RVC-SYM-DIG,Symptom – Digestive,True,285
+nlp_output,RFV1_name,Uncodable/Unknown,Uncodable/Unknown,RVC-UNCL,Uncodable/Unknown,True,273
+nlp_output,RFV1_name,Symptom – Musculoskeletal,Symptom – Musculoskeletal,RVC-SYM-MSK,Symptom – Musculoskeletal,True,272
+nlp_output,RFV1_name,Symptom – Skin/Hair/Nails,Symptom – Skin/Hair/Nails,RVC-SYM-SKIN,Symptom – Skin/Hair/Nails,True,268
+nlp_output,RFV2_name,Abnormal test result,Abnormal test result,RVC-TEST,Abnormal test result,True,244
+nlp_output,RFV1_name,Abnormal test result,Abnormal test result,RVC-TEST,Abnormal test result,True,220
+nlp_output,RFV1_name,Administrative,Administrative,RVC-ADMIN,Administrative,True,186
+nlp_output,RFV2_name,Symptom – Musculoskeletal,Symptom – Musculoskeletal,RVC-SYM-MSK,Symptom – Musculoskeletal,True,166
+nlp_output,RFV1_name,Symptom – Genitourinary,Symptom – Genitourinary,RVC-SYM-GU,Symptom – Genitourinary,True,160
+nlp_output,RFV2_name,Symptom – Skin/Hair/Nails,Symptom – Skin/Hair/Nails,RVC-SYM-SKIN,Symptom – Skin/Hair/Nails,True,99
+nlp_output,RFV1_name,Diagnostic/Screening/Preventive,Diagnostic/Screening/Preventive,RVC-DIAG,Diagnostic/Screening/Preventive,True,79
+nlp_output,RFV2_name,Symptom – Genitourinary,Symptom – Genitourinary,RVC-SYM-GU,Symptom – Genitourinary,True,75
+nlp_output,RFV3_name,Symptom – General,Symptom – General,RVC-SYM-GEN,Symptom – General,True,71
+nlp_output,RFV2_name,Diagnostic/Screening/Preventive,Diagnostic/Screening/Preventive,RVC-DIAG,Diagnostic/Screening/Preventive,True,70
+nlp_output,RFV2_name,Symptom – Psychological,Symptom – Psychological,RVC-SYM-PSY,Symptom – Psychological,True,68
+nlp_output,RFV1_name,Symptom – Psychological,Symptom – Psychological,RVC-SYM-PSY,Symptom – Psychological,True,58
+nlp_output,RFV1_name,Symptom – Eye/Ear,Symptom – Eye/Ear,RVC-SYM-EYE,Symptom – Eye/Ear,True,50
+nlp_output,RFV1_name,Treatment/Medication,Treatment/Medication,RVC-TREAT,Treatment/Medication,True,49
+nlp_output,RFV2_name,Treatment/Medication,Treatment/Medication,RVC-TREAT,Treatment/Medication,True,48
+nlp_output,RFV3_name,Abnormal test result,Abnormal test result,RVC-TEST,Abnormal test result,True,42
+nlp_output,RFV3_name,Diseases (patient-stated),Diseases (patient–stated),RVC-DIS,Diseases (patient-stated),True,38
+nlp_output,RFV2_name,Symptom – Respiratory,Symptom – Respiratory,RVC-SYM-RESP,Symptom – Respiratory,True,33
+nlp_output,RFV4_name,Administrative,Administrative,RVC-ADMIN,Administrative,True,32
+nlp_output,RFV2_name,Symptom – Eye/Ear,Symptom – Eye/Ear,RVC-SYM-EYE,Symptom – Eye/Ear,True,21
+nlp_output,RFV3_name,Symptom – Digestive,Symptom – Digestive,RVC-SYM-DIG,Symptom – Digestive,True,17
+nlp_output,RFV3_name,Symptom – Nervous,Symptom – Nervous,RVC-SYM-NERV,Symptom – Nervous,True,13
+nlp_output,RFV3_name,Symptom – Musculoskeletal,Symptom – Musculoskeletal,RVC-SYM-MSK,Symptom – Musculoskeletal,True,12
+nlp_output,RFV3_name,Diagnostic/Screening/Preventive,Diagnostic/Screening/Preventive,RVC-DIAG,Diagnostic/Screening/Preventive,True,11
+nlp_output,RFV3_name,Symptom – Psychological,Symptom – Psychological,RVC-SYM-PSY,Symptom – Psychological,True,7
+nlp_output,RFV3_name,Symptom – Skin/Hair/Nails,Symptom – Skin/Hair/Nails,RVC-SYM-SKIN,Symptom – Skin/Hair/Nails,True,7
+nlp_output,RFV3_name,Symptom – Genitourinary,Symptom – Genitourinary,RVC-SYM-GU,Symptom – Genitourinary,True,6
+nlp_output,RFV4_name,Symptom – General,Symptom – General,RVC-SYM-GEN,Symptom – General,True,5
 nlp_output,RFV3_name,Treatment/Medication,Treatment/Medication,RVC-TREAT,Treatment/Medication,True,5
 nlp_output,RFV4_name,Diseases (patient-stated),Diseases (patient–stated),RVC-DIS,Diseases (patient-stated),True,4
-nlp_output,RFV3_name,Symptom – Genitourinary,Symptom – Genitourinary,RVC-SYM-GU,Symptom – Genitourinary,True,4
-nlp_output,RFV4_name,Symptom – General,Symptom – General,RVC-SYM-GEN,Symptom – General,True,3
+nlp_output,RFV3_name,Symptom – Eye/Ear,Symptom – Eye/Ear,RVC-SYM-EYE,Symptom – Eye/Ear,True,3
 nlp_output,RFV4_name,Abnormal test result,Abnormal test result,RVC-TEST,Abnormal test result,True,1
 nlp_output,RFV5_name,Administrative,Administrative,RVC-ADMIN,Administrative,True,1
 nlp_output,RFV3_name,Symptom – Circulatory,Symptom – Circulatory,RVC-SYM-CIRC,Symptom – Circulatory,True,1

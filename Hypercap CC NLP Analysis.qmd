@@ -260,6 +260,7 @@ HYPERCAP_CRITERIA = [
     "abg_hypercap_threshold",
     "vbg_hypercap_threshold",
     "unknown_hypercap_threshold",
+    "pco2_threshold_any",
     "pco2_threshold_0_24h",
 ]
 
@@ -318,7 +319,8 @@ prevalence_label_map = {
     "abg_hypercap_threshold": "ABG hypercapnia threshold",
     "vbg_hypercap_threshold": "VBG hypercapnia threshold",
     "unknown_hypercap_threshold": "PCO2 UNKNOWN threshold",
-    "pco2_threshold_0_24h": "PCO2 threshold within 24h",
+    "pco2_threshold_any": "PCO2 threshold any-time",
+    "pco2_threshold_0_24h": "PCO2 threshold within 24h marker",
 }
 cohort_n = int(len(df))
 hypercap_prevalence = (
@@ -493,12 +495,36 @@ if qa_summary_path.exists():
             "value": vent_row.get("niv_time_outside_window_n"),
         },
         {
-            "metric": "poc_itemid_qc_passed",
+            "metric": "poc_itemid_qc_status",
+            "value": qa_summary_payload.get("poc_itemid_qc_status"),
+        },
+        {
+            "metric": "poc_itemid_qc_failed_itemids_n",
+            "value": qa_summary_payload.get("poc_itemid_qc_failed_itemids_n"),
+        },
+        {
+            "metric": "poc_itemid_qc_warning_itemids_n",
+            "value": qa_summary_payload.get("poc_itemid_qc_warning_itemids_n"),
+        },
+        {
+            "metric": "poc_qualifying_earliest_0_24h_hadm_n",
+            "value": qa_summary_payload.get("poc_qualifying_earliest_0_24h_hadm_n"),
+        },
+        {
+            "metric": "poc_qualifying_any_type_0_24h_hadm_n",
+            "value": qa_summary_payload.get("poc_qualifying_any_type_0_24h_hadm_n"),
+        },
+        {
+            "metric": "poc_itemid_qc_passed_deprecated_alias",
             "value": qa_summary_payload.get("poc_itemid_qc_passed"),
         },
         {
-            "metric": "poc_itemid_qc_reason",
+            "metric": "poc_itemid_qc_reason_deprecated_alias",
             "value": qa_summary_payload.get("poc_itemid_qc_reason"),
+        },
+        {
+            "metric": "poc_hypercap_0_24h_deprecated_alias_of",
+            "value": qa_summary_payload.get("poc_hypercap_0_24h_alias_of"),
         },
         {
             "metric": "pco2_source_distribution_audit_path",
@@ -523,7 +549,7 @@ Use vectorized helper functions to avoid row-wise `apply(axis=1)`.
 df["icd_category"] = classify_icd_category_vectorized(df)
 df["inclusion_type"] = classify_inclusion_type_vectorized(
     df["any_hypercap_icd"],
-    df["pco2_threshold_0_24h"],
+    df["pco2_threshold_any"],
 )
 
 icd_category_summary = (
@@ -558,7 +584,7 @@ icd_positive_breakdown = pd.DataFrame(
             int(icd_positive_df["abg_hypercap_threshold"].sum()),
             int(icd_positive_df["vbg_hypercap_threshold"].sum()),
             int(icd_positive_df["unknown_hypercap_threshold"].sum()),
-            int(icd_positive_df["pco2_threshold_0_24h"].sum()),
+            int(icd_positive_df["pco2_threshold_any"].sum()),
         ],
     }
 )
@@ -607,7 +633,7 @@ for definition in HYPERCAP_CRITERIA:
     definition_table = binary_crosstab_yes_no(symptom_work_df, "symptom_group", definition)
     crosstab_tables[definition] = definition_table.sort_values("Percent_yes", ascending=False)
 
-display(crosstab_tables["pco2_threshold_0_24h"].head(10))
+display(crosstab_tables["pco2_threshold_any"].head(10))
 
 symptom_non_null = symptom_work_df.loc[~symptom_work_df["symptom_missing_flag"]].copy()
 ```
@@ -743,6 +769,7 @@ overlap_required = [
     "vbg_hypercap_threshold",
     "unknown_hypercap_threshold",
     "any_hypercap_icd",
+    "pco2_threshold_any",
     "pco2_threshold_0_24h",
 ]
 ensure_required_columns(df, overlap_required)
@@ -751,7 +778,7 @@ abg_flag = to_binary_flag(df["abg_hypercap_threshold"])
 vbg_flag = to_binary_flag(df["vbg_hypercap_threshold"])
 other_flag = to_binary_flag(df["unknown_hypercap_threshold"])
 icd_flag = to_binary_flag(df["any_hypercap_icd"])
-gas_flag = to_binary_flag(df["pco2_threshold_0_24h"])
+gas_flag = to_binary_flag(df["pco2_threshold_any"])
 
 gas_source_labels = classify_gas_source_overlap(abg_flag, vbg_flag, other_flag)
 abg_vbg_labels = np.select(
@@ -823,7 +850,8 @@ print(f"Exported: {icd_gas_output_path}")
 ```{python}
 #| label: hypercap-cc-nlp-analysis-cell-009b
 performance_targets = [
-    ("pco2_threshold_0_24h", "Gas 0-24h"),
+    ("pco2_threshold_any", "Gas any-time"),
+    ("pco2_threshold_0_24h", "Gas within 24h marker"),
     ("abg_hypercap_threshold", "ABG threshold"),
     ("vbg_hypercap_threshold", "VBG threshold"),
     ("unknown_hypercap_threshold", "PCO2 UNKNOWN threshold"),

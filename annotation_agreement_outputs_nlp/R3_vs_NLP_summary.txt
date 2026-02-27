@@ -5,34 +5,34 @@ key_strategy                                 hadm_id_subject_id
 target_sample_n                                             160
 gate_policy                      warn_below_target_fail_on_zero
 r3_rows                                                     160
-nlp_rows                                                   7152
-matched_rows                                                 33
-unmatched_adjudicated_rows                                  127
-unmatched_nlp_rows                                         7119
-matched_rate_vs_adjudicated                             0.20625
-unmatched_rate_vs_adjudicated                           0.79375
-unmatched_rate_vs_nlp                                  0.995386
+nlp_rows                                                  11945
+matched_rows                                                 61
+unmatched_adjudicated_rows                                   99
+unmatched_nlp_rows                                        11884
+matched_rate_vs_adjudicated                             0.38125
+unmatched_rate_vs_adjudicated                           0.61875
+unmatched_rate_vs_nlp                                  0.994893
 coverage_status                                         warning
 join_interpretation                below_target_overlap_nonzero
 severity                                                warning
 
 === R3 (adjudicator) vs NLP: set-level (order-invariant) ===
 
-N_items         33.000000
-exact_rate       0.818182
-partial_rate     0.060606
-none_rate        0.121212
-mean_jaccard     0.848485
-mean_overlap     0.863636
-mean_f1_set      0.857576
-micro_f1_set     0.876404
-mean_len_a       1.333333
-mean_len_b       1.363636
+N_items         61.000000
+exact_rate       0.770492
+partial_rate     0.098361
+none_rate        0.131148
+mean_jaccard     0.821038
+mean_overlap     0.844262
+mean_f1_set      0.835363
+micro_f1_set     0.853801
+mean_len_a       1.393443
+mean_len_b       1.409836
 
 
 === R3 vs NLP: chance-corrected (binary per category) ===
 
-macro_cohen_kappa          0.678707
-macro_gwet_ac1             0.975872
-macro_percent_agreement    0.980392
-micro_percent_agreement    0.980392
+macro_cohen_kappa          0.611255
+macro_gwet_ac1             0.970693
+macro_percent_agreement    0.975892
+micro_percent_agreement    0.975892

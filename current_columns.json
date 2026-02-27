@@ -110,6 +110,7 @@
   "nih_race_std",
   "niv_flag",
   "pco2_threshold_0_24h",
+  "pco2_threshold_any",
   "poc_abg_paco2",
   "poc_abg_paco2_uom",
   "poc_abg_ph",

@@ -145,19 +145,36 @@ RUN_MANIFEST_STAGE_SCOPE=all  # per-stage run manifests are written for cohort/c
 RUN_MANIFEST_REQUIRE_CLEAN_GIT=0  # set 1 to fail if repo is dirty; default 0 captures git diff artifact + hash in manifest
 ```
 
-Hard-coded QA-only POC sanity contract (not a runtime notebook env setting):
+Hard-coded QA-only POC UNKNOWN-route sanity contract (not a runtime notebook env setting):
 - `COHORT_POC_PCO2_MEDIAN_MIN = 45`
 - `COHORT_POC_PCO2_MEDIAN_MAX = 80`
 - `COHORT_POC_PCO2_FAIL_ENABLED = 1`
-- Enforced by `make contracts-check` / pipeline audit checks against exported cohort artifacts.
+- Enforced on UNKNOWN/POC `first_other_pco2` rows by `make contracts-check` / pipeline audit checks.
 
 Blood-gas item selection is versioned in `specs/blood_gas_itemids.json`:
 - LAB + POC definitive pCO2 extraction uses manifest allowlists and explicit exclusions.
 - Source classes are ABG/VBG/UNKNOWN; UNKNOWN means definitive pCO2 with unresolved sample type.
 - UNKNOWN remains cohort-eligible for pCO2-threshold inclusion.
+- Gas qualification for enrollment is any-time during stay (`pco2_threshold_any`).
+- `pco2_threshold_0_24h` is retained as a timing marker (`first qualifying gas <= 24h from ED presentation anchor`).
 - UNKNOWN telemetry uses hadm-level ED 0–24h rate (`hadm_other_rate_0_24h`) for QA gating; panel-level unknown rate remains informational.
 - POC can qualify encounters through physiologic threshold logic (including as earliest qualifying source in `qualifying_source_branch`).
-- POC itemid QC status is QA-only (`poc_itemid_qc_passed`, `poc_itemid_qc_reason` in `qa_summary.json`), not a final-workbook gating column.
+- POC itemid QC status is QA-only telemetry and does not gate cohort enrollment logic.
+- Gas-source row diagnostics are exported separately to `artifacts/gas_source_diagnostics_by_ed_stay.csv` (1 row per `ed_stay_id`) and validated by contracts.
+- Canonical POC itemid QC fields in `qa_summary.json`:
+  - `poc_itemid_qc_status` (`pass|warning|fail`)
+  - `poc_itemid_qc_blocking_passed`
+  - `poc_itemid_qc_failed_itemids_n`, `poc_itemid_qc_warning_itemids_n`
+  - `poc_itemid_qc_fail_reasons`, `poc_itemid_qc_warn_reasons`
+- Backward-compatible aliases remain for this cycle:
+  - `poc_itemid_qc_passed` (alias of `poc_itemid_qc_blocking_passed`)
+  - `poc_itemid_qc_reason` (alias reason text)
+- Canonical POC contribution metrics in `qa_summary.json`:
+  - `poc_qualifying_earliest_0_24h_hadm_n` / `_rate`
+  - `poc_qualifying_any_type_0_24h_hadm_n` / `_rate`
+- Deprecated alias metrics:
+  - `poc_hypercap_0_24h_edstay_n` / `_rate` now alias hadm-level any-type POC counts.
+  - `poc_hypercap_0_24h_alias_of` documents the canonical replacement field.
 - ICU HCO3 fallback is explicit-itemid only (no regex fallback).
 - Blood-gas triplet capture now pairs `pCO2 + pH + pO2` from the same draw context:
   - LAB uses specimen/panel context.
@@ -176,6 +193,7 @@ Blood-gas item selection is versioned in `specs/blood_gas_itemids.json`:
   - `MIMIC tabular data/prior runs/<date> blood_gas_triplet_completeness_audit.csv`.
 - POC pCO2 itemid QC explicitly reports raw vs cleaned quantiles/max values and sentinel removal counts in:
   - `MIMIC tabular data/prior runs/<date> pco2_itemid_qc_audit.csv`.
+- POC pCO2 itemid QC uses broad plausibility gates (p05/p50/p95), explicit PO2-contamination heuristic checks, and out-of-range-rate thresholds so plausible pCO2 itemids do not fail on narrow median assumptions.
 
 Anthropometric model cleaning uses adult-strict plausibility bounds:
 - BMI `(10, 100]`, height `[100, 230]` cm, weight `(25, 400]` kg.
@@ -349,7 +367,8 @@ Anthropometric timing policy:
 - Conservative model-cleaned anthropometric fields are exported as `bmi_closest_pre_ed_model`, `height_closest_pre_ed_model`, `weight_closest_pre_ed_model` with paired outlier flags.
 
 Hypercapnia timing + integrity policy:
-- Timing is anchored on `dt_qualifying_hypercapnia_hours`; derived compatibility flags remain `presenting_hypercapnia`, `late_hypercapnia`, with categorical `hypercap_timing_class`.
+- Timing is anchored on `dt_qualifying_hypercapnia_hours` from ED presentation (fallback to admittime when ED anchor is missing).
+- Early/late split flags (`presenting_hypercapnia`, `late_hypercapnia`) are not exported; use `pco2_threshold_0_24h` and `hypercap_timing_class` (`within_24h`, `after_24h`, `icd_only_or_no_qualifying_gas`).
 - Timestamp integrity and ventilation-window sanitation are additive (`hospital_los_negative_flag`, `admittime_before_ed_intime_flag`, `dt_first_imv_hours_model`, `dt_first_niv_hours_model`, `imv_time_outside_window_flag`, `niv_time_outside_window_flag`).
 - Blood-gas provenance fields are exported for first-gas anchor auditability (`first_gas_specimen_type`, `first_gas_specimen_present`, `first_gas_pco2_itemid`, `first_gas_pco2_fluid`, `co2_other_is_blood_asserted`).
 
@@ -362,7 +381,7 @@ Annotation workbook curation remains an independent manual workflow.
 
 ## Methods summary (BigQuery pipeline)
 - Query MIMIC‑IV HOSP/ICU/ED in BigQuery and assemble an **ED‑stay** cohort anchored to the first ED visit per hospitalization.
-- Define hypercapnia via ICD codes and blood‑gas thresholds (ABG/VBG), then take the union.
+- Define hypercapnia via ICD codes and blood‑gas thresholds (ABG/VBG/UNKNOWN), where gas qualification is any-time during stay; retain a separate within-24h timing marker.
 - Source assignment for enrollment thresholds is specimen-driven with deterministic classes `arterial`, `venous`, `unknown`.
 - Definitive pCO2 values with `unknown` sample class remain cohort-eligible and are explicitly reported as the UNKNOWN stratum.
 - POC pCO2 extraction is manifest-driven with itemid-level QC/audit and ABG/VBG inference by validated itemids or specimen text.
@@ -394,6 +413,7 @@ ED vitals cleaning policy (cohort stage):
 | Anthropometric coverage audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD anthropometrics_coverage_audit.json` |
 | Gas source audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD gas_source_audit.json` |
 | Gas source overlap summary | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD gas_source_overlap_summary.csv` |
+| Gas source diagnostics by ED stay | `MIMICIV_hypercap_EXT_cohort.qmd` | `artifacts/gas_source_diagnostics_by_ed_stay.csv` |
 | Blood-gas manifest itemid audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD blood_gas_itemid_manifest_audit.csv` |
 | pCO2 itemid QC audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD pco2_itemid_qc_audit.csv` |
 | pCO2 source distribution audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD pco2_source_distribution_audit.csv` |

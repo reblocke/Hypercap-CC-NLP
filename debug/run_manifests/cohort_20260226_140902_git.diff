@@ -1,0 +1,701 @@
+diff --git a/CONTINUITY.md b/CONTINUITY.md
+index 6308141..3aeb122 100644
+--- a/CONTINUITY.md
++++ b/CONTINUITY.md
+@@ -1,10 +1,10 @@
+ Goal (incl. success criteria):
+-- Implement residual QA/integrity remediation across rater agreement, anthropometric cleaning, POC pCO2 QC audit clarity, and `first_pco2` naming/export cleanup.
++- Remediate POC QA consistency so QA summary semantics align with actual POC qualification behavior.
+ - Success criteria:
+-  - R3-vs-NLP binary category metrics are consistent with set-level outputs and fail fast on degenerate expansion,
+-  - anthropometric model columns enforce adult-strict plausibility bounds (BMI 10–100, height 100–230, weight 25–400),
+-  - pCO2 itemid QC audit explicitly distinguishes raw sentinel extremes from cleaned physiologic values,
+-  - `first_pco2` removed from final export and `qualifying_pco2_mmhg` is canonical.
++  - severity-tiered POC itemid QC no longer hard-fails on tiny cleanup removals,
++  - canonical POC qualification metrics in `qa_summary.json` reflect observed `qualifying_source_branch` counts,
++  - deprecated alias metrics remain available with explicit alias metadata,
++  - analysis/report/tests/docs updated and validation sequence passes.
+ 
+ Constraints/Assumptions:
+ - Core phase logic must remain in the 4 `.qmd` notebooks.
+@@ -21,8 +21,9 @@ Key decisions:
+ State:
+ - Done: prior full rerun + packaging complete (`outputs20260225_180924.zip`).
+ - Done: residual QA remediation implemented and validated end-to-end.
+-- Now: handoff/results summary for user.
+-- Next: optional output bundling for this new run if requested.
++- Done: created fresh output bundle for latest 2026-02-26 artifacts (`outputs20260226_103426.zip`).
++- Now: implement POC QA consistency remediation plan across cohort/analysis/tests/docs.
++- Next: rerun checks and summarize resulting QA behavior.
+ 
+ Done:
+ - Confirmed active issues in latest outputs:
+@@ -47,12 +48,15 @@ Done:
+   - anthropometric model extremes removed (`weight<25 n=0`, `BMI<10 n=0`, `height>230 n=0`),
+   - sentinel-aware pCO2 QC audit present (`raw_max_mmhg=999998`, `clean_max_mmhg=189`, sentinel removed counts populated),
+   - `first_pco2` absent from final cohort export; `qualifying_pco2_mmhg` retained.
++- Packaging:
++  - created `outputs20260226_103426.zip` (81 entries; includes PDFs, workbook outputs, `MIMIC tabular data/prior runs/2026-02-26*`, rater outputs, contract + run manifests),
++  - archive integrity verified (`unzip -t` passed).
+ 
+ Now:
+-- Prepare concise handoff with changed files, checks, and residual warnings.
++- Apply severity-tiered POC QC logic and canonical POC qualification QA metrics.
+ 
+ Next:
+-- Optional: create a new outputs zip for the 2026-02-26 run artifacts.
++- Validate with `make lint`, `make test`, `make quarto-cohort`, `make quarto-analysis`, and `make contracts-check STAGE=all`.
+ 
+ Open questions (UNCONFIRMED if needed):
+ - None.
+@@ -61,6 +65,7 @@ Working set (files/ids/commands):
+ - Files:
+   - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Rater Agreement Analysis.qmd`
+   - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMICIV_hypercap_EXT_cohort.qmd`
++  - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/Hypercap CC NLP Analysis.qmd`
+   - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/src/hypercap_cc_nlp/pipeline_contracts.py`
+   - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/tests/test_pipeline_contracts.py`
+   - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/tests/test_notebook_output_contracts.py`
+@@ -72,3 +77,4 @@ Working set (files/ids/commands):
+   - `make quarto-cohort`
+   - `make contracts-check STAGE=all`
+   - `make quarto-pipeline`
++  - `zip -r outputs<timestamp>.zip <latest-run-artifacts>`
+diff --git a/Hypercap CC NLP Analysis.qmd b/Hypercap CC NLP Analysis.qmd
+index d0dbcd7..e93a53f 100644
+--- a/Hypercap CC NLP Analysis.qmd	
++++ b/Hypercap CC NLP Analysis.qmd	
+@@ -493,13 +493,37 @@ if qa_summary_path.exists():
+             "value": vent_row.get("niv_time_outside_window_n"),
+         },
+         {
+-            "metric": "poc_itemid_qc_passed",
++            "metric": "poc_itemid_qc_status",
++            "value": qa_summary_payload.get("poc_itemid_qc_status"),
++        },
++        {
++            "metric": "poc_itemid_qc_failed_itemids_n",
++            "value": qa_summary_payload.get("poc_itemid_qc_failed_itemids_n"),
++        },
++        {
++            "metric": "poc_itemid_qc_warning_itemids_n",
++            "value": qa_summary_payload.get("poc_itemid_qc_warning_itemids_n"),
++        },
++        {
++            "metric": "poc_qualifying_earliest_0_24h_hadm_n",
++            "value": qa_summary_payload.get("poc_qualifying_earliest_0_24h_hadm_n"),
++        },
++        {
++            "metric": "poc_qualifying_any_type_0_24h_hadm_n",
++            "value": qa_summary_payload.get("poc_qualifying_any_type_0_24h_hadm_n"),
++        },
++        {
++            "metric": "poc_itemid_qc_passed_deprecated_alias",
+             "value": qa_summary_payload.get("poc_itemid_qc_passed"),
+         },
+         {
+-            "metric": "poc_itemid_qc_reason",
++            "metric": "poc_itemid_qc_reason_deprecated_alias",
+             "value": qa_summary_payload.get("poc_itemid_qc_reason"),
+         },
++        {
++            "metric": "poc_hypercap_0_24h_deprecated_alias_of",
++            "value": qa_summary_payload.get("poc_hypercap_0_24h_alias_of"),
++        },
+         {
+             "metric": "pco2_source_distribution_audit_path",
+             "value": blood_gas_audit_paths.get("pco2_source_distribution"),
+diff --git a/MIMICIV_hypercap_EXT_cohort.qmd b/MIMICIV_hypercap_EXT_cohort.qmd
+index 718ff1a..2a3080e 100644
+--- a/MIMICIV_hypercap_EXT_cohort.qmd
++++ b/MIMICIV_hypercap_EXT_cohort.qmd
+@@ -505,6 +505,10 @@ ICU_PCO2_QC_EXCLUDE_TOKENS = [
+     str(value).strip().lower()
+     for value in ICU_PCO2_QC["label_must_exclude_tokens"]
+ ]
++POC_QC_OUT_OF_RANGE_REMOVED_RATE_FAIL = 0.01
++POC_QC_OUT_OF_RANGE_REMOVED_N_FAIL = 25
++POC_QC_SENTINEL_REMOVED_RATE_FAIL = 0.001
++POC_QC_SENTINEL_REMOVED_N_FAIL = 5
+ 
+ LAB_PCO2_SQL_ARRAY = _sql_int_array(LAB_PCO2_ITEMIDS)
+ LAB_PO2_SQL_ARRAY = _sql_int_array(LAB_PO2_ITEMIDS)
+@@ -7165,8 +7169,17 @@ for col in [
+     if col not in panel_poc.columns:
+         panel_poc[col] = pd.NA
+ 
+-poc_inclusion_enabled = False
+-poc_inclusion_reason = "disabled_manifest_or_qc_fail"
++poc_inclusion_enabled = False  # deprecated compatibility alias (maps to blocking pass)
++poc_inclusion_reason = "not_evaluated"  # deprecated compatibility alias
++poc_itemid_qc_status = "fail"
++poc_itemid_qc_blocking_passed = False
++poc_itemid_qc_reason = "not_evaluated"
++poc_itemid_qc_failed_itemids_n = 0
++poc_itemid_qc_warning_itemids_n = 0
++poc_itemid_qc_fail_reasons: list[str] = []
++poc_itemid_qc_warn_reasons: list[str] = []
++poc_used_in_qualification_logic = bool(ICU_PCO2_ITEMIDS)
++poc_qc_is_telemetry_only = True
+ pco2_itemid_qc_rows: list[dict[str, Any]] = []
+ 
+ if len(icu_poc_long) > 0 and pco2_ids:
+@@ -7206,18 +7219,51 @@ if len(icu_poc_long) > 0 and pco2_ids:
+             out_of_range_removed_n = int((~raw_numeric.between(5.0, 200.0)).sum())
+             sentinel_extreme_n = int(sentinel_mask.sum())
+             sentinel_removed_n = int((sentinel_mask & ~raw_numeric.between(5.0, 200.0)).sum())
++            out_of_range_removed_rate = float(
++                out_of_range_removed_n / max(int(len(raw_numeric)), 1)
++            )
++            sentinel_removed_rate = float(
++                sentinel_removed_n / max(int(len(raw_numeric)), 1)
++            )
+             median_value = float(clean_numeric.median()) if len(clean_numeric) else np.nan
+             median_ok = bool(
+                 len(clean_numeric)
+                 and ICU_PCO2_QC_MEDIAN_MIN <= median_value <= ICU_PCO2_QC_MEDIAN_MAX
+             )
+-            contamination_flag = bool(
+-                (not include_ok)
+-                or exclude_hit
+-                or (not unit_ok)
+-                or sentinel_extreme_n > 0
+-                or out_of_range_removed_n > 0
++            qc_blocking_reasons: list[str] = []
++            if not include_ok:
++                qc_blocking_reasons.append("label_missing_include_token")
++            if exclude_hit:
++                qc_blocking_reasons.append("label_excluded_token_hit")
++            if not unit_ok:
++                qc_blocking_reasons.append("unit_not_allowed")
++            if not median_ok:
++                qc_blocking_reasons.append("median_out_of_expected_range")
++            if (
++                out_of_range_removed_rate > POC_QC_OUT_OF_RANGE_REMOVED_RATE_FAIL
++                or out_of_range_removed_n >= POC_QC_OUT_OF_RANGE_REMOVED_N_FAIL
++            ):
++                qc_blocking_reasons.append("out_of_range_removal_high")
++            if (
++                sentinel_removed_rate > POC_QC_SENTINEL_REMOVED_RATE_FAIL
++                or sentinel_removed_n >= POC_QC_SENTINEL_REMOVED_N_FAIL
++            ):
++                qc_blocking_reasons.append("sentinel_removal_high")
++
++            qc_warning_reasons: list[str] = []
++            if out_of_range_removed_n > 0 and "out_of_range_removal_high" not in qc_blocking_reasons:
++                qc_warning_reasons.append("out_of_range_rows_removed")
++            if sentinel_removed_n > 0 and "sentinel_removal_high" not in qc_blocking_reasons:
++                qc_warning_reasons.append("sentinel_rows_removed")
++
++            qc_blocking_flag = bool(qc_blocking_reasons)
++            qc_warning_flag = bool(qc_warning_reasons)
++            qc_status = (
++                "fail"
++                if qc_blocking_flag
++                else ("warning" if qc_warning_flag else "pass")
+             )
++            contamination_flag = qc_blocking_flag
+ 
+             pco2_itemid_qc_rows.append(
+                 {
+@@ -7247,13 +7293,20 @@ if len(icu_poc_long) > 0 and pco2_ids:
+                     else np.nan,
+                     "clean_max_mmhg": float(clean_numeric.max()) if len(clean_numeric) else np.nan,
+                     "out_of_range_removed_n": out_of_range_removed_n,
++                    "out_of_range_removed_rate": out_of_range_removed_rate,
+                     "sentinel_extreme_n": sentinel_extreme_n,
+                     "sentinel_removed_n": sentinel_removed_n,
++                    "sentinel_removed_rate": sentinel_removed_rate,
+                     "label_include_ok": bool(include_ok),
+                     "label_exclude_hit": bool(exclude_hit),
+                     "unit_ok": bool(unit_ok),
+                     "median_in_expected_range": bool(median_ok),
+                     "contamination_flag": contamination_flag,
++                    "qc_blocking_flag": qc_blocking_flag,
++                    "qc_warning_flag": qc_warning_flag,
++                    "qc_status": qc_status,
++                    "qc_blocking_reason": ";".join(qc_blocking_reasons),
++                    "qc_warning_reason": ";".join(qc_warning_reasons),
+                     "manifest_whitelisted": int(itemid_value in set(ICU_PCO2_ITEMIDS)),
+                 }
+             )
+@@ -7279,13 +7332,20 @@ pco2_itemid_qc_columns = [
+     "clean_p95_mmhg",
+     "clean_max_mmhg",
+     "out_of_range_removed_n",
++    "out_of_range_removed_rate",
+     "sentinel_extreme_n",
+     "sentinel_removed_n",
++    "sentinel_removed_rate",
+     "label_include_ok",
+     "label_exclude_hit",
+     "unit_ok",
+     "median_in_expected_range",
+     "contamination_flag",
++    "qc_blocking_flag",
++    "qc_warning_flag",
++    "qc_status",
++    "qc_blocking_reason",
++    "qc_warning_reason",
+     "manifest_whitelisted",
+ ]
+ pco2_itemid_qc_audit = pd.DataFrame(pco2_itemid_qc_rows)
+@@ -7370,52 +7430,101 @@ if ICU_INCLUSION_MODE == "validated_only":
+     if ICU_PCO2_ITEMIDS and not pco2_itemid_qc_audit.empty:
+         whitelist_mask = pco2_itemid_qc_audit["itemid"].isin(set(ICU_PCO2_ITEMIDS))
+         whitelist_rows = pco2_itemid_qc_audit.loc[whitelist_mask].copy()
+-        if (
+-            len(whitelist_rows) == len(set(ICU_PCO2_ITEMIDS))
+-            and whitelist_rows["contamination_flag"].eq(False).all()
+-            and whitelist_rows["median_in_expected_range"].eq(True).all()
+-        ):
+-            poc_inclusion_enabled = True
+-            poc_inclusion_reason = "validated_itemids_passed_qc"
++        observed_ids = set(pd.to_numeric(whitelist_rows["itemid"], errors="coerce").dropna().astype(int))
++        expected_ids = set(ICU_PCO2_ITEMIDS)
++        missing_ids = sorted(expected_ids.difference(observed_ids))
++        if missing_ids:
++            poc_itemid_qc_status = "fail"
++            poc_itemid_qc_reason = "missing_itemid_qc_rows"
++            poc_itemid_qc_fail_reasons = [f"missing_itemid_qc_rows:{','.join(map(str, missing_ids))}"]
++            poc_itemid_qc_failed_itemids_n = int(len(missing_ids))
++            poc_itemid_qc_warning_itemids_n = int(
++                pd.to_numeric(whitelist_rows.get("qc_warning_flag"), errors="coerce")
++                .fillna(0)
++                .astype(int)
++                .sum()
++            )
+         else:
+-            poc_inclusion_reason = "validated_itemids_failed_qc"
++            blocking_flags = whitelist_rows.get("qc_blocking_flag", pd.Series(False, index=whitelist_rows.index))
++            warning_flags = whitelist_rows.get("qc_warning_flag", pd.Series(False, index=whitelist_rows.index))
++            blocking_flags = blocking_flags.fillna(False).astype(bool)
++            warning_flags = warning_flags.fillna(False).astype(bool)
++            poc_itemid_qc_failed_itemids_n = int(blocking_flags.sum())
++            poc_itemid_qc_warning_itemids_n = int(warning_flags.sum())
++            blocking_reason_values = (
++                whitelist_rows.get("qc_blocking_reason", pd.Series("", index=whitelist_rows.index))
++                .astype("string")
++                .fillna("")
++                .tolist()
++            )
++            warning_reason_values = (
++                whitelist_rows.get("qc_warning_reason", pd.Series("", index=whitelist_rows.index))
++                .astype("string")
++                .fillna("")
++                .tolist()
++            )
++            poc_itemid_qc_fail_reasons = sorted(
++                {
++                    token
++                    for value in blocking_reason_values
++                    for token in str(value).split(";")
++                    if token
++                }
++            )
++            poc_itemid_qc_warn_reasons = sorted(
++                {
++                    token
++                    for value in warning_reason_values
++                    for token in str(value).split(";")
++                    if token
++                }
++            )
++            if poc_itemid_qc_failed_itemids_n > 0:
++                poc_itemid_qc_status = "fail"
++                poc_itemid_qc_reason = "validated_itemids_failed_qc"
++            elif poc_itemid_qc_warning_itemids_n > 0:
++                poc_itemid_qc_status = "warning"
++                poc_itemid_qc_reason = "validated_itemids_warning_only_qc"
++            else:
++                poc_itemid_qc_status = "pass"
++                poc_itemid_qc_reason = "validated_itemids_passed_qc"
+     elif not ICU_PCO2_ITEMIDS:
+-        poc_inclusion_reason = "manifest_has_no_icu_pco2_itemids"
++        poc_itemid_qc_status = "fail"
++        poc_itemid_qc_reason = "manifest_has_no_icu_pco2_itemids"
++        poc_itemid_qc_fail_reasons = ["manifest_has_no_icu_pco2_itemids"]
++        poc_itemid_qc_failed_itemids_n = 1
+     else:
+-        poc_inclusion_reason = "missing_itemid_qc_rows"
++        poc_itemid_qc_status = "fail"
++        poc_itemid_qc_reason = "missing_itemid_qc_rows"
++        poc_itemid_qc_fail_reasons = ["missing_itemid_qc_rows"]
++        poc_itemid_qc_failed_itemids_n = 1
+ else:
+-    poc_inclusion_reason = "icu_inclusion_mode_disabled"
++    poc_itemid_qc_status = "fail"
++    poc_itemid_qc_reason = "icu_inclusion_mode_disabled"
++    poc_itemid_qc_fail_reasons = ["icu_inclusion_mode_disabled"]
++    poc_itemid_qc_failed_itemids_n = 1
++
++poc_itemid_qc_blocking_passed = bool(poc_itemid_qc_status in {"pass", "warning"})
++poc_inclusion_enabled = bool(poc_itemid_qc_blocking_passed)
++poc_inclusion_reason = str(poc_itemid_qc_reason)
+ 
+ print(
+     "POC itemid QC status:",
+-    {"enabled": int(poc_inclusion_enabled), "reason": poc_inclusion_reason},
+-)
+-
+-poc_flags = pd.DataFrame(columns=["ed_stay_id", "poc_hypercap_0_24h_flag"])
+-if len(panel_poc) > 0 and poc_inclusion_enabled:
+-    p24_poc = panel_poc.loc[panel_poc["dt_hours"].between(0,24, inclusive="both")].copy()
+-    p24_poc.loc[:, "poc_hypercap_0_24h_flag"] = (p24_poc["pco2"] >= 50).astype("Int64")
+-
+-    poc_flags = p24_poc.groupby("ed_stay_id", as_index=False).agg(
+-        poc_hypercap_0_24h_flag=("poc_hypercap_0_24h_flag","max")
+-    )
+-
+-poc_hypercap_0_24h_edstay_n = (
+-    int(
+-        pd.to_numeric(
+-            poc_flags.get("poc_hypercap_0_24h_flag", pd.Series(dtype="float64")),
+-            errors="coerce",
+-        )
+-        .fillna(0)
+-        .astype(int)
+-        .sum()
+-    )
+-    if len(poc_flags) > 0
+-    else 0
+-)
+-poc_hypercap_0_24h_edstay_rate = float(
+-    poc_hypercap_0_24h_edstay_n / max(int(ed_df["ed_stay_id"].nunique()), 1)
++    {
++        "status": poc_itemid_qc_status,
++        "blocking_passed": int(poc_itemid_qc_blocking_passed),
++        "reason": poc_itemid_qc_reason,
++        "failed_itemids_n": int(poc_itemid_qc_failed_itemids_n),
++        "warning_itemids_n": int(poc_itemid_qc_warning_itemids_n),
++    },
+ )
++poc_qualifying_earliest_0_24h_hadm_n = 0
++poc_qualifying_earliest_0_24h_hadm_rate = 0.0
++poc_qualifying_any_type_0_24h_hadm_n = 0
++poc_qualifying_any_type_0_24h_hadm_rate = 0.0
++poc_hypercap_0_24h_edstay_n = 0  # deprecated alias (maps to poc_qualifying_any_type_0_24h_hadm_n)
++poc_hypercap_0_24h_edstay_rate = 0.0  # deprecated alias
++poc_hypercap_0_24h_alias_of = "poc_qualifying_any_type_0_24h_hadm_*"
+ 
+ # Optional fallback for first_hco3 from ICU POC only when explicit manifest itemids are provided.
+ if ICU_HCO3_ITEMIDS and len(panel_poc) > 0:
+@@ -9516,6 +9625,45 @@ qualifying_pco2_distribution_audit.to_csv(
+ )
+ print("Wrote:", qualifying_pco2_distribution_audit_path)
+ 
++qualifying_threshold_mask = (
++    pd.to_numeric(ed_df.get("pco2_threshold_0_24h"), errors="coerce")
++    .fillna(0)
++    .astype(int)
++    .eq(1)
++)
++qualifying_source_branch_series = (
++    ed_df.get("qualifying_source_branch", pd.Series("UNKNOWN", index=ed_df.index))
++    .astype("string")
++    .str.upper()
++    .fillna("UNKNOWN")
++)
++poc_qualifying_earliest_0_24h_hadm_n = int(
++    (qualifying_threshold_mask & qualifying_source_branch_series.eq("POC")).sum()
++)
++poc_qualifying_earliest_0_24h_hadm_rate = float(
++    poc_qualifying_earliest_0_24h_hadm_n / max(int(len(ed_df)), 1)
++)
++
++poc_any_type_mask = pd.Series(False, index=ed_df.index)
++for source_column in [
++    "first_abg_hypercap_source_branch",
++    "first_vbg_hypercap_source_branch",
++    "first_other_hypercap_source_branch",
++]:
++    if source_column in ed_df.columns:
++        poc_any_type_mask = poc_any_type_mask | (
++            ed_df[source_column].astype("string").str.upper().fillna("").eq("POC")
++        )
++poc_qualifying_any_type_0_24h_hadm_n = int(poc_any_type_mask.sum())
++poc_qualifying_any_type_0_24h_hadm_rate = float(
++    poc_qualifying_any_type_0_24h_hadm_n / max(int(len(ed_df)), 1)
++)
++
++# Deprecated aliases retained for compatibility; values now map to hadm-level any-type POC qualifying counts.
++poc_hypercap_0_24h_edstay_n = int(poc_qualifying_any_type_0_24h_hadm_n)
++poc_hypercap_0_24h_edstay_rate = float(poc_qualifying_any_type_0_24h_hadm_rate)
++poc_hypercap_0_24h_alias_of = "poc_qualifying_any_type_0_24h_hadm_*"
++
+ poc_other_values_all = (
+     pd.to_numeric(ed_df["poc_other_paco2"], errors="coerce")
+     if "poc_other_paco2" in ed_df.columns
+@@ -9550,8 +9698,23 @@ other_route_quarantine_audit = pd.DataFrame(
+             "poc_unknown_hadm_n": int(globals().get("poc_unknown_hadm_n_for_audit", unknown_from_poc_detail_n)),
+             "unknown_hypercap_threshold_hadm_n": int(unknown_threshold_series.fillna(0).astype(int).sum()),
+             "unknown_from_poc_detail_hadm_n": unknown_from_poc_detail_n,
++            "poc_qualifying_earliest_0_24h_hadm_n": int(
++                globals().get("poc_qualifying_earliest_0_24h_hadm_n", 0)
++            ),
++            "poc_qualifying_earliest_0_24h_hadm_rate": float(
++                globals().get("poc_qualifying_earliest_0_24h_hadm_rate", 0.0)
++            ),
++            "poc_qualifying_any_type_0_24h_hadm_n": int(
++                globals().get("poc_qualifying_any_type_0_24h_hadm_n", 0)
++            ),
++            "poc_qualifying_any_type_0_24h_hadm_rate": float(
++                globals().get("poc_qualifying_any_type_0_24h_hadm_rate", 0.0)
++            ),
+             "poc_hypercap_0_24h_edstay_n": int(globals().get("poc_hypercap_0_24h_edstay_n", 0)),
+             "poc_hypercap_0_24h_edstay_rate": float(globals().get("poc_hypercap_0_24h_edstay_rate", 0.0)),
++            "poc_hypercap_0_24h_alias_of": str(
++                globals().get("poc_hypercap_0_24h_alias_of", "poc_qualifying_any_type_0_24h_hadm_*")
++            ),
+         }
+     ]
+ )
+@@ -9768,10 +9931,51 @@ qa_summary = {
+     "pco2_itemid_qc_sentinel_removed_total_n": pco2_itemid_qc_sentinel_removed_total_n,
+     "pco2_itemid_qc_out_of_range_removed_total_n": pco2_itemid_qc_out_of_range_removed_total_n,
+     "hco3_itemid_qc_audit": hco3_itemid_qc_audit_records,
+-    "poc_itemid_qc_passed": bool(poc_inclusion_enabled),
+-    "poc_itemid_qc_reason": str(poc_inclusion_reason),
++    "poc_itemid_qc_status": str(globals().get("poc_itemid_qc_status", "fail")),
++    "poc_itemid_qc_blocking_passed": bool(
++        globals().get("poc_itemid_qc_blocking_passed", False)
++    ),
++    "poc_itemid_qc_failed_itemids_n": int(
++        globals().get("poc_itemid_qc_failed_itemids_n", 0)
++    ),
++    "poc_itemid_qc_warning_itemids_n": int(
++        globals().get("poc_itemid_qc_warning_itemids_n", 0)
++    ),
++    "poc_itemid_qc_fail_reasons": list(
++        globals().get("poc_itemid_qc_fail_reasons", [])
++    ),
++    "poc_itemid_qc_warn_reasons": list(
++        globals().get("poc_itemid_qc_warn_reasons", [])
++    ),
++    "poc_itemid_qc_passed": bool(
++        globals().get("poc_itemid_qc_blocking_passed", False)
++    ),
++    "poc_itemid_qc_reason": str(globals().get("poc_itemid_qc_reason", "not_evaluated")),
++    "poc_qualifying_earliest_0_24h_hadm_n": int(
++        globals().get("poc_qualifying_earliest_0_24h_hadm_n", 0)
++    ),
++    "poc_qualifying_earliest_0_24h_hadm_rate": float(
++        globals().get("poc_qualifying_earliest_0_24h_hadm_rate", 0.0)
++    ),
++    "poc_qualifying_any_type_0_24h_hadm_n": int(
++        globals().get("poc_qualifying_any_type_0_24h_hadm_n", 0)
++    ),
++    "poc_qualifying_any_type_0_24h_hadm_rate": float(
++        globals().get("poc_qualifying_any_type_0_24h_hadm_rate", 0.0)
++    ),
+     "poc_hypercap_0_24h_edstay_n": int(globals().get("poc_hypercap_0_24h_edstay_n", 0)),
+     "poc_hypercap_0_24h_edstay_rate": float(globals().get("poc_hypercap_0_24h_edstay_rate", 0.0)),
++    "poc_hypercap_0_24h_alias_of": str(
++        globals().get("poc_hypercap_0_24h_alias_of", "poc_qualifying_any_type_0_24h_hadm_*")
++    ),
++    "poc_used_in_qualification_logic": bool(
++        globals().get(
++            "poc_used_in_qualification_logic",
++            bool(ICU_PCO2_ITEMIDS)
++            and "SELECT * FROM icu_pco2_clean" in str(SQL.get("co2_thresholds_sql", "")),
++        )
++    ),
++    "poc_qc_is_telemetry_only": bool(globals().get("poc_qc_is_telemetry_only", True)),
+     "qualifying_source_branch_counts": (
+         ed_df.loc[
+             pd.to_numeric(ed_df.get("pco2_threshold_0_24h"), errors="coerce").fillna(0).astype(int).eq(1),
+diff --git a/README.md b/README.md
+index 35236eb..b4b3f67 100644
+--- a/README.md
++++ b/README.md
+@@ -157,7 +157,21 @@ Blood-gas item selection is versioned in `specs/blood_gas_itemids.json`:
+ - UNKNOWN remains cohort-eligible for pCO2-threshold inclusion.
+ - UNKNOWN telemetry uses hadm-level ED 0–24h rate (`hadm_other_rate_0_24h`) for QA gating; panel-level unknown rate remains informational.
+ - POC can qualify encounters through physiologic threshold logic (including as earliest qualifying source in `qualifying_source_branch`).
+-- POC itemid QC status is QA-only (`poc_itemid_qc_passed`, `poc_itemid_qc_reason` in `qa_summary.json`), not a final-workbook gating column.
++- POC itemid QC status is QA-only telemetry and does not gate cohort enrollment logic.
++- Canonical POC itemid QC fields in `qa_summary.json`:
++  - `poc_itemid_qc_status` (`pass|warning|fail`)
++  - `poc_itemid_qc_blocking_passed`
++  - `poc_itemid_qc_failed_itemids_n`, `poc_itemid_qc_warning_itemids_n`
++  - `poc_itemid_qc_fail_reasons`, `poc_itemid_qc_warn_reasons`
++- Backward-compatible aliases remain for this cycle:
++  - `poc_itemid_qc_passed` (alias of `poc_itemid_qc_blocking_passed`)
++  - `poc_itemid_qc_reason` (alias reason text)
++- Canonical POC contribution metrics in `qa_summary.json`:
++  - `poc_qualifying_earliest_0_24h_hadm_n` / `_rate`
++  - `poc_qualifying_any_type_0_24h_hadm_n` / `_rate`
++- Deprecated alias metrics:
++  - `poc_hypercap_0_24h_edstay_n` / `_rate` now alias hadm-level any-type POC counts.
++  - `poc_hypercap_0_24h_alias_of` documents the canonical replacement field.
+ - ICU HCO3 fallback is explicit-itemid only (no regex fallback).
+ - Blood-gas triplet capture now pairs `pCO2 + pH + pO2` from the same draw context:
+   - LAB uses specimen/panel context.
+diff --git a/qa_summary.json b/qa_summary.json
+index aca1cdf..6175934 100644
+--- a/qa_summary.json
++++ b/qa_summary.json
+@@ -540,8 +540,13 @@
+       "poc_unknown_hadm_n": 0,
+       "unknown_hypercap_threshold_hadm_n": 398,
+       "unknown_from_poc_detail_hadm_n": 0,
+-      "poc_hypercap_0_24h_edstay_n": 0,
+-      "poc_hypercap_0_24h_edstay_rate": 0.0
++      "poc_qualifying_earliest_0_24h_hadm_n": 864,
++      "poc_qualifying_earliest_0_24h_hadm_rate": 0.1205693553,
++      "poc_qualifying_any_type_0_24h_hadm_n": 881,
++      "poc_qualifying_any_type_0_24h_hadm_rate": 0.122941669,
++      "poc_hypercap_0_24h_edstay_n": 881,
++      "poc_hypercap_0_24h_edstay_rate": 0.122941669,
++      "poc_hypercap_0_24h_alias_of": "poc_qualifying_any_type_0_24h_hadm_*"
+     }
+   ],
+   "first_gas_anchor_audit": [
+@@ -575,13 +580,20 @@
+       "clean_p95_mmhg": 75.0,
+       "clean_max_mmhg": 181.0,
+       "out_of_range_removed_n": 2,
++      "out_of_range_removed_rate": 0.0001661544,
+       "sentinel_extreme_n": 0,
+       "sentinel_removed_n": 0,
++      "sentinel_removed_rate": 0.0,
+       "label_include_ok": true,
+       "label_exclude_hit": false,
+       "unit_ok": true,
+       "median_in_expected_range": true,
+-      "contamination_flag": true,
++      "contamination_flag": false,
++      "qc_blocking_flag": false,
++      "qc_warning_flag": true,
++      "qc_status": "warning",
++      "qc_blocking_reason": "",
++      "qc_warning_reason": "out_of_range_rows_removed",
+       "manifest_whitelisted": 1
+     },
+     {
+@@ -605,13 +617,20 @@
+       "clean_p95_mmhg": 88.0,
+       "clean_max_mmhg": 189.0,
+       "out_of_range_removed_n": 2,
++      "out_of_range_removed_rate": 0.0003667033,
+       "sentinel_extreme_n": 1,
+       "sentinel_removed_n": 1,
++      "sentinel_removed_rate": 0.0001833517,
+       "label_include_ok": true,
+       "label_exclude_hit": false,
+       "unit_ok": true,
+       "median_in_expected_range": true,
+-      "contamination_flag": true,
++      "contamination_flag": false,
++      "qc_blocking_flag": false,
++      "qc_warning_flag": true,
++      "qc_status": "warning",
++      "qc_blocking_reason": "",
++      "qc_warning_reason": "out_of_range_rows_removed;sentinel_rows_removed",
+       "manifest_whitelisted": 1
+     }
+   ],
+@@ -619,10 +638,26 @@
+   "pco2_itemid_qc_sentinel_removed_total_n": 1,
+   "pco2_itemid_qc_out_of_range_removed_total_n": 4,
+   "hco3_itemid_qc_audit": [],
+-  "poc_itemid_qc_passed": false,
+-  "poc_itemid_qc_reason": "validated_itemids_failed_qc",
+-  "poc_hypercap_0_24h_edstay_n": 0,
+-  "poc_hypercap_0_24h_edstay_rate": 0.0,
++  "poc_itemid_qc_status": "warning",
++  "poc_itemid_qc_blocking_passed": true,
++  "poc_itemid_qc_failed_itemids_n": 0,
++  "poc_itemid_qc_warning_itemids_n": 2,
++  "poc_itemid_qc_fail_reasons": [],
++  "poc_itemid_qc_warn_reasons": [
++    "out_of_range_rows_removed",
++    "sentinel_rows_removed"
++  ],
++  "poc_itemid_qc_passed": true,
++  "poc_itemid_qc_reason": "validated_itemids_warning_only_qc",
++  "poc_qualifying_earliest_0_24h_hadm_n": 864,
++  "poc_qualifying_earliest_0_24h_hadm_rate": 0.12056935528886407,
++  "poc_qualifying_any_type_0_24h_hadm_n": 881,
++  "poc_qualifying_any_type_0_24h_hadm_rate": 0.12294166899246442,
++  "poc_hypercap_0_24h_edstay_n": 881,
++  "poc_hypercap_0_24h_edstay_rate": 0.12294166899246442,
++  "poc_hypercap_0_24h_alias_of": "poc_qualifying_any_type_0_24h_hadm_*",
++  "poc_used_in_qualification_logic": true,
++  "poc_qc_is_telemetry_only": true,
+   "qualifying_source_branch_counts": {
+     "LAB": 5392,
+     "POC": 864
+@@ -2337,7 +2372,7 @@
+   "qa_warnings": [],
+   "qa_infos": [],
+   "run_metadata": {
+-    "run_utc": "2026-02-26T15:22:44.858378+00:00",
++    "run_utc": "2026-02-26T21:06:13.860488+00:00",
+     "work_project": "mimic-hypercapnia",
+     "physionet_project": "physionet-data",
+     "datasets": {
+@@ -2360,5 +2395,5 @@
+   ],
+   "contract_error_codes": [],
+   "qa_status_final": "warning",
+-  "cohort_contract_report_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/debug/contracts/20260226_152455/contract_report.json"
++  "cohort_contract_report_path": "/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/debug/contracts/20260226_210830/contract_report.json"
+ }
+\ No newline at end of file
+diff --git a/tests/test_notebook_output_contracts.py b/tests/test_notebook_output_contracts.py
+index 0321c61..9678e69 100644
+--- a/tests/test_notebook_output_contracts.py
++++ b/tests/test_notebook_output_contracts.py
+@@ -84,6 +84,13 @@ def test_cohort_notebook_contains_ed_vitals_cleaning_helpers() -> None:
+     assert "sentinel_removed_n" in cohort_text
+     assert "pco2_itemid_qc_sentinel_itemids_n" in cohort_text
+     assert "pco2_itemid_qc_sentinel_removed_total_n" in cohort_text
++    assert "out_of_range_removed_rate" in cohort_text
++    assert "sentinel_removed_rate" in cohort_text
++    assert "qc_blocking_flag" in cohort_text
++    assert "qc_warning_flag" in cohort_text
++    assert "qc_status" in cohort_text
++    assert "qc_blocking_reason" in cohort_text
++    assert "qc_warning_reason" in cohort_text
+     assert "bmi_closest_pre_ed_uom" in cohort_text
+     assert "height_closest_pre_ed_uom" in cohort_text
+     assert "weight_closest_pre_ed_uom" in cohort_text
+@@ -97,6 +104,17 @@ def test_cohort_notebook_contains_ed_vitals_cleaning_helpers() -> None:
+     assert "first_gas_anchor_has_pco2" in cohort_text
+     assert "poc_itemid_qc_passed" in cohort_text
+     assert "poc_itemid_qc_reason" in cohort_text
++    assert "poc_itemid_qc_status" in cohort_text
++    assert "poc_itemid_qc_blocking_passed" in cohort_text
++    assert "poc_itemid_qc_failed_itemids_n" in cohort_text
++    assert "poc_itemid_qc_warning_itemids_n" in cohort_text
++    assert "poc_itemid_qc_fail_reasons" in cohort_text
++    assert "poc_itemid_qc_warn_reasons" in cohort_text
++    assert "poc_used_in_qualification_logic" in cohort_text
++    assert "poc_qc_is_telemetry_only" in cohort_text
++    assert "poc_qualifying_earliest_0_24h_hadm_n" in cohort_text
++    assert "poc_qualifying_any_type_0_24h_hadm_n" in cohort_text
++    assert "poc_hypercap_0_24h_alias_of" in cohort_text
+     assert "pco2_threshold_0_24h" in cohort_text
+     assert "qualifying_pco2_time" in cohort_text
+     assert "qualifying_pco2_mmhg" in cohort_text
+@@ -138,6 +156,11 @@ def test_analysis_notebook_contains_requested_outputs() -> None:
+     assert "def select_preferred_vital_column(" in analysis_text
+     assert "qualifying_gas_time_observed_rate" in analysis_text
+     assert "poc_itemid_qc_passed" in analysis_text
++    assert "poc_itemid_qc_status" in analysis_text
++    assert "poc_itemid_qc_failed_itemids_n" in analysis_text
++    assert "poc_itemid_qc_warning_itemids_n" in analysis_text
++    assert "poc_qualifying_earliest_0_24h_hadm_n" in analysis_text
++    assert "poc_qualifying_any_type_0_24h_hadm_n" in analysis_text
+     assert "UNKNOWN semantics" in analysis_text
+     assert "panel_unknown_rate" in analysis_text
+     assert "encounter_unknown_rate" in analysis_text
+@@ -209,6 +232,7 @@ def test_cohort_notebook_uses_unknown_fallback_naming_and_drops_legacy_flags() -
+     assert "gas_source_tier_fallback_unknown_rate" in cohort_text
+     assert "gas_source_tier_fallback_other_rate" not in cohort_text
+     assert "poc_hypercap_0_24h_edstay_n" in cohort_text
++    assert "poc_hypercap_0_24h_alias_of" in cohort_text
+     assert '"flag_any_gas_hypercapnia_poc"' in cohort_text
+     assert '"flag_any_gas_hypercapnia"' in cohort_text
+ 

@@ -6,7 +6,7 @@
         "itemid": 50818,
         "label": "pCO2",
         "category": "Blood Gas",
-        "n": 100692
+        "n": 494202
       }
     ]
   },
@@ -17,7 +17,7 @@
         "itemid": 50821,
         "label": "pO2",
         "category": "Blood Gas",
-        "n": 100741
+        "n": 494394
       }
     ]
   },
@@ -28,7 +28,7 @@
         "itemid": 50820,
         "label": "pH",
         "category": "Blood Gas",
-        "n": 104132
+        "n": 523118
       }
     ]
   },
@@ -39,7 +39,7 @@
         "itemid": 50803,
         "label": "Calculated Bicarbonate, Whole Blood",
         "category": "Blood Gas",
-        "n": 851
+        "n": 5375
       }
     ]
   },
@@ -50,7 +50,7 @@
         "itemid": 50813,
         "label": "Lactate",
         "category": "Blood Gas",
-        "n": 59983
+        "n": 290031
       },
       {
         "itemid": 52442,
@@ -67,7 +67,7 @@
         "itemid": 52033,
         "label": "Specimen Type",
         "category": "Blood Gas",
-        "n": 109616
+        "n": 560966
       }
     ]
   },
@@ -78,41 +78,41 @@
         "itemid": 50882,
         "label": "Bicarbonate",
         "category": "Chemistry",
-        "n": 146683
+        "n": 681843
       },
       {
         "itemid": 51076,
         "label": "Bicarbonate, Urine",
         "category": "Chemistry",
-        "n": 301
-      },
-      {
-        "itemid": 51027,
-        "label": "Bicarbonate, Other Fluid",
-        "category": "Chemistry",
-        "n": 2
+        "n": 1297
       },
       {
         "itemid": 51061,
         "label": "Bicarbonate, Stool",
         "category": "Chemistry",
-        "n": 1
-      },
-      {
-        "itemid": 51739,
-        "label": "Total CO2",
-        "category": "Chemistry",
-        "n": 0
+        "n": 18
       },
       {
         "itemid": 50837,
         "label": "Bicarbonate, Ascites",
         "category": "Chemistry",
-        "n": 0
+        "n": 18
+      },
+      {
+        "itemid": 51027,
+        "label": "Bicarbonate, Other Fluid",
+        "category": "Chemistry",
+        "n": 16
       },
       {
         "itemid": 51048,
         "label": "Bicarbonate, Pleural",
+        "category": "Chemistry",
+        "n": 2
+      },
+      {
+        "itemid": 51739,
+        "label": "Total CO2",
         "category": "Chemistry",
         "n": 0
       },
@@ -137,79 +137,79 @@
         "itemid": 50912,
         "label": "Creatinine",
         "category": "Chemistry",
-        "n": 146315
+        "n": 687134
       },
       {
         "itemid": 51082,
         "label": "Creatinine, Urine",
         "category": "Chemistry",
-        "n": 3524
+        "n": 17122
       },
       {
         "itemid": 52024,
         "label": "Creatinine, Whole Blood",
         "category": "Blood Gas",
-        "n": 713
+        "n": 3059
       },
       {
         "itemid": 51099,
         "label": "Protein/Creatinine Ratio",
         "category": "Chemistry",
-        "n": 469
-      },
-      {
-        "itemid": 51052,
-        "label": "Creatinine, Pleural",
-        "category": "Chemistry",
-        "n": 112
-      },
-      {
-        "itemid": 51070,
-        "label": "Albumin/Creatinine, Urine",
-        "category": "Chemistry",
-        "n": 92
+        "n": 2538
       },
       {
         "itemid": 50841,
         "label": "Creatinine, Ascites",
         "category": "Chemistry",
-        "n": 82
+        "n": 649
+      },
+      {
+        "itemid": 51052,
+        "label": "Creatinine, Pleural",
+        "category": "Chemistry",
+        "n": 525
       },
       {
         "itemid": 51067,
         "label": "24 hr Creatinine",
         "category": "Chemistry",
-        "n": 63
+        "n": 456
+      },
+      {
+        "itemid": 51070,
+        "label": "Albumin/Creatinine, Urine",
+        "category": "Chemistry",
+        "n": 412
       },
       {
         "itemid": 51032,
         "label": "Creatinine, Body Fluid",
         "category": "Chemistry",
-        "n": 17
+        "n": 132
       },
       {
         "itemid": 51080,
         "label": "Creatinine Clearance",
         "category": "Chemistry",
-        "n": 8
+        "n": 49
       },
       {
         "itemid": 51081,
         "label": "Creatinine, Serum",
         "category": "Chemistry",
-        "n": 8
+        "n": 49
       },
       {
         "itemid": 51106,
         "label": "Urine Creatinine",
         "category": "Chemistry",
-        "n": 8
+        "n": 49
       },
       {
         "itemid": 51073,
         "label": "Amylase/Creatinine Ratio, Urine",
         "category": "Chemistry",
-        "n": 2
+        "n": 19
       },
       {
         "itemid": 51937,
@@ -262,31 +262,43 @@
         "itemid": 50983,
         "label": "Sodium",
         "category": "Chemistry",
-        "n": 150977
+        "n": 706919
       },
       {
         "itemid": 50824,
         "label": "Sodium, Whole Blood",
         "category": "Blood Gas",
-        "n": 8328
+        "n": 74150
       },
       {
         "itemid": 51100,
         "label": "Sodium, Urine",
         "category": "Chemistry",
-        "n": 3886
+        "n": 17910
       },
       {
         "itemid": 51065,
         "label": "Sodium, Stool",
         "category": "Chemistry",
-        "n": 5
+        "n": 32
+      },
+      {
+        "itemid": 50848,
+        "label": "Sodium, Ascites",
+        "category": "Chemistry",
+        "n": 27
       },
       {
         "itemid": 51042,
         "label": "Sodium, Body Fluid",
         "category": "Chemistry",
-        "n": 2
+        "n": 19
+      },
+      {
+        "itemid": 51058,
+        "label": "Sodium, Pleural",
+        "category": "Chemistry",
+        "n": 4
       },
       {
         "itemid": 52455,
@@ -313,18 +325,6 @@
         "n": 0
       },
       {
-        "itemid": 50848,
-        "label": "Sodium, Ascites",
-        "category": "Chemistry",
-        "n": 0
-      },
-      {
-        "itemid": 51058,
-        "label": "Sodium, Pleural",
-        "category": "Chemistry",
-        "n": 0
-      },
-      {
         "itemid": 51823,
         "label": "Sodium, Joint Fluid",
         "category": "Chemistry",
@@ -345,31 +345,43 @@
         "itemid": 50902,
         "label": "Chloride",
         "category": "Chemistry",
-        "n": 149396
+        "n": 701179
       },
       {
         "itemid": 50806,
         "label": "Chloride, Whole Blood",
         "category": "Blood Gas",
-        "n": 4964
+        "n": 51058
       },
       {
         "itemid": 51078,
         "label": "Chloride, Urine",
         "category": "Chemistry",
-        "n": 2004
+        "n": 8993
+      },
+      {
+        "itemid": 50839,
+        "label": "Chloride, Ascites",
+        "category": "Chemistry",
+        "n": 22
       },
       {
         "itemid": 51062,
         "label": "Chloride, Stool",
         "category": "Chemistry",
-        "n": 3
+        "n": 19
       },
       {
         "itemid": 51030,
         "label": "Chloride, Body Fluid",
         "category": "Chemistry",
-        "n": 2
+        "n": 15
+      },
+      {
+        "itemid": 51050,
+        "label": "Chloride, Pleural",
+        "category": "Chemistry",
+        "n": 1
       },
       {
         "itemid": 52434,
@@ -380,18 +392,6 @@
       {
         "itemid": 52535,
         "label": "Chloride",
-        "category": "Chemistry",
-        "n": 0
-      },
-      {
-        "itemid": 50839,
-        "label": "Chloride, Ascites",
-        "category": "Chemistry",
-        "n": 0
-      },
-      {
-        "itemid": 51050,
-        "label": "Chloride, Pleural",
         "category": "Chemistry",
         "n": 0
       },
@@ -416,7 +416,7 @@
         "itemid": 50804,
         "label": "Calculated Total CO2",
         "category": "Blood Gas",
-        "n": 100699
+        "n": 494243
       },
       {
         "itemid": 51739,
@@ -433,29 +433,35 @@
         "itemid": 51222,
         "label": "Hemoglobin",
         "category": "Hematology",
-        "n": 125403
+        "n": 621256
       },
       {
         "itemid": 51224,
         "label": "Hemoglobin C",
         "category": "Hematology",
-        "n": 17
+        "n": 54
       },
       {
         "itemid": 51223,
         "label": "Hemoglobin A2",
         "category": "Hematology",
-        "n": 16
+        "n": 47
       },
       {
         "itemid": 51225,
         "label": "Hemoglobin F",
         "category": "Hematology",
-        "n": 16
+        "n": 45
       },
       {
         "itemid": 51212,
         "label": "Fetal Hemoglobin",
+        "category": "Hematology",
+        "n": 16
+      },
+      {
+        "itemid": 52129,
+        "label": "Hemoglobin Other",
         "category": "Hematology",
         "n": 1
       },
@@ -468,12 +474,6 @@
       {
         "itemid": 52128,
         "label": "Hemoglobin H Inclusion",
-        "category": "Hematology",
-        "n": 0
-      },
-      {
-        "itemid": 52129,
-        "label": "Hemoglobin Other",
         "category": "Hematology",
         "n": 0
       },

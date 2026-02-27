@@ -42,6 +42,12 @@ COHORT_REQUIRED_AUDIT_SUFFIXES = (
     "ventilation_timing_audit.csv",
     "anthropometric_cleaning_audit.csv",
 )
+GAS_SOURCE_DIAGNOSTICS_ARTIFACT_NAME = "gas_source_diagnostics_by_ed_stay.csv"
+GAS_SOURCE_DIAGNOSTICS_REQUIRED_COLUMNS = (
+    "gas_source_inference_primary_tier",
+    "gas_source_hint_conflict_rate",
+    "gas_source_resolved_rate",
+)
 
 COHORT_REQUIRED_ED_VITALS_CLEAN_COLUMNS: dict[str, tuple[str, ...]] = {
     "ed_triage_temp": (
@@ -128,6 +134,160 @@ def _status_from_findings(findings: list[dict[str, str]]) -> str:
     return "pass"
 
 
+def _validate_gas_source_diagnostics_artifact(
+    cohort_df: pd.DataFrame,
+    artifact_path: Path,
+) -> tuple[dict[str, Any], list[dict[str, str]]]:
+    """Validate external gas-source diagnostics artifact keyed by ed_stay_id."""
+    findings: list[dict[str, str]] = []
+    details: dict[str, Any] = {
+        "path": str(artifact_path),
+        "exists": artifact_path.exists(),
+    }
+    if not artifact_path.exists():
+        findings.append(
+            {
+                "severity": "error",
+                "code": "missing_gas_source_diagnostics_artifact",
+                "message": (
+                    "Missing gas-source diagnostics artifact: "
+                    f"{artifact_path}"
+                ),
+            }
+        )
+        return details, findings
+
+    try:
+        diag_df = pd.read_csv(artifact_path)
+    except Exception as exc:
+        findings.append(
+            {
+                "severity": "error",
+                "code": "invalid_gas_source_diagnostics_artifact",
+                "message": (
+                    "Failed to parse gas-source diagnostics artifact "
+                    f"{artifact_path}: {exc}"
+                ),
+            }
+        )
+        return details, findings
+
+    details["row_count"] = int(len(diag_df))
+    required_columns = {"ed_stay_id", "hadm_id", *GAS_SOURCE_DIAGNOSTICS_REQUIRED_COLUMNS}
+    missing_columns = sorted(required_columns.difference(diag_df.columns))
+    if missing_columns:
+        findings.append(
+            {
+                "severity": "error",
+                "code": "gas_source_diagnostics_missing_columns",
+                "message": (
+                    "Gas-source diagnostics artifact missing required columns: "
+                    f"{missing_columns}"
+                ),
+            }
+        )
+        return details, findings
+
+    diag_ed_stay_id = pd.to_numeric(diag_df["ed_stay_id"], errors="coerce")
+    duplicate_ed_stay_n = int(diag_ed_stay_id.duplicated().sum())
+    if duplicate_ed_stay_n > 0:
+        findings.append(
+            {
+                "severity": "error",
+                "code": "gas_source_diagnostics_duplicate_ed_stay_id",
+                "message": (
+                    "Gas-source diagnostics artifact contains duplicate ed_stay_id values: "
+                    f"{duplicate_ed_stay_n} rows."
+                ),
+            }
+        )
+
+    cohort_ed_stay_id = pd.to_numeric(cohort_df["ed_stay_id"], errors="coerce")
+    row_count_mismatch = int(len(diag_df) != len(cohort_df))
+    if row_count_mismatch:
+        findings.append(
+            {
+                "severity": "error",
+                "code": "gas_source_diagnostics_row_count_mismatch",
+                "message": (
+                    "Gas-source diagnostics row count must match cohort export row count. "
+                    f"artifact={len(diag_df)}, cohort={len(cohort_df)}."
+                ),
+            }
+        )
+
+    missing_key_n = int(
+        cohort_ed_stay_id.dropna()
+        .astype(int)
+        .isin(set(diag_ed_stay_id.dropna().astype(int)))
+        .eq(False)
+        .sum()
+    )
+    if missing_key_n > 0:
+        findings.append(
+            {
+                "severity": "error",
+                "code": "gas_source_diagnostics_missing_cohort_keys",
+                "message": (
+                    "Gas-source diagnostics artifact is missing cohort ed_stay_id keys: "
+                    f"{missing_key_n} rows."
+                ),
+            }
+        )
+
+    for rate_column in (
+        "gas_source_hint_conflict_rate",
+        "gas_source_resolved_rate",
+    ):
+        rate_values = pd.to_numeric(diag_df[rate_column], errors="coerce")
+        non_numeric_n = int(rate_values.isna().sum())
+        if non_numeric_n > 0:
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": "gas_source_diagnostics_invalid_rate_values",
+                    "message": (
+                        f"{rate_column} contains {non_numeric_n} non-numeric/null rows "
+                        "in gas-source diagnostics artifact."
+                    ),
+                }
+            )
+            continue
+        out_of_bounds_n = int((~rate_values.between(0.0, 1.0)).sum())
+        if out_of_bounds_n > 0:
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": "gas_source_diagnostics_rate_out_of_bounds",
+                    "message": (
+                        f"{rate_column} has {out_of_bounds_n} rows outside [0, 1] "
+                        "in gas-source diagnostics artifact."
+                    ),
+                }
+            )
+
+    tier_values = (
+        diag_df["gas_source_inference_primary_tier"]
+        .astype("string")
+        .fillna("")
+        .str.strip()
+    )
+    empty_tier_n = int(tier_values.eq("").sum())
+    if empty_tier_n > 0:
+        findings.append(
+            {
+                "severity": "error",
+                "code": "gas_source_diagnostics_missing_primary_tier",
+                "message": (
+                    "gas_source_inference_primary_tier has blank values in "
+                    f"{empty_tier_n} rows."
+                ),
+            }
+        )
+
+    return details, findings
+
+
 def validate_cohort_contract(
     df: pd.DataFrame,
     *,
@@ -173,20 +333,10 @@ def validate_cohort_contract(
         "unknown_hypercap_threshold",
     }
     threshold_union_col: str | None = None
-    if "pco2_threshold_0_24h" in df.columns:
-        threshold_union_col = "pco2_threshold_0_24h"
-    elif "pco2_threshold_any" in df.columns:
+    if "pco2_threshold_any" in df.columns:
         threshold_union_col = "pco2_threshold_any"
-        findings.append(
-            {
-                "severity": "warning",
-                "code": "pco2_threshold_any_deprecated_alias",
-                "message": (
-                    "Using deprecated alias column pco2_threshold_any; "
-                    "prefer pco2_threshold_0_24h."
-                ),
-            }
-        )
+    elif "pco2_threshold_0_24h" in df.columns:
+        threshold_union_col = "pco2_threshold_0_24h"
 
     if required.issubset(df.columns) and threshold_union_col is not None:
         abg = pd.to_numeric(df["abg_hypercap_threshold"], errors="coerce").fillna(0).astype(int)
@@ -207,10 +357,70 @@ def validate_cohort_contract(
         findings.append(
             {
                 "severity": "error",
-                "code": "pco2_threshold_0_24h_missing",
-                "message": "Missing pco2 threshold union column (expected pco2_threshold_0_24h).",
+                "code": "pco2_threshold_any_missing",
+                "message": "Missing pco2 threshold union column (expected pco2_threshold_any).",
             }
         )
+
+    if {"pco2_threshold_any", "pco2_threshold_0_24h"}.issubset(df.columns):
+        any_flag = (
+            pd.to_numeric(df["pco2_threshold_any"], errors="coerce")
+            .fillna(0)
+            .astype(int)
+        )
+        within_24_flag = (
+            pd.to_numeric(df["pco2_threshold_0_24h"], errors="coerce")
+            .fillna(0)
+            .astype(int)
+        )
+        marker_exceeds_any_n = int(((within_24_flag == 1) & (any_flag == 0)).sum())
+        if marker_exceeds_any_n > 0:
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": "pco2_threshold_0_24h_exceeds_any",
+                    "message": (
+                        "pco2_threshold_0_24h cannot be 1 when pco2_threshold_any is 0. "
+                        f"Violations: {marker_exceeds_any_n}."
+                    ),
+                }
+            )
+
+    if {
+        "pco2_threshold_any",
+        "pco2_threshold_0_24h",
+        "dt_qualifying_hypercapnia_hours",
+    }.issubset(df.columns):
+        any_flag = (
+            pd.to_numeric(df["pco2_threshold_any"], errors="coerce")
+            .fillna(0)
+            .astype(int)
+        )
+        within_24_flag = (
+            pd.to_numeric(df["pco2_threshold_0_24h"], errors="coerce")
+            .fillna(0)
+            .astype(int)
+        )
+        dt_hours = pd.to_numeric(df["dt_qualifying_hypercapnia_hours"], errors="coerce")
+        comparable_mask = any_flag.eq(1) & dt_hours.notna()
+        timing_marker_mismatch_n = int(
+            (
+                within_24_flag.loc[comparable_mask]
+                != dt_hours.loc[comparable_mask].le(24.0).astype(int)
+            ).sum()
+        )
+        if timing_marker_mismatch_n > 0:
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": "pco2_threshold_0_24h_dt_mismatch",
+                    "message": (
+                        "pco2_threshold_0_24h must equal int(dt_qualifying_hypercapnia_hours <= 24) "
+                        "for gas-positive rows with non-missing dt. "
+                        f"Violations: {timing_marker_mismatch_n}."
+                    ),
+                }
+            )
 
     if {"pco2_threshold_0_24h", "qualifying_pco2_mmhg", "max_pco2_0_24h"}.issubset(df.columns):
         gas_positive = (
@@ -242,65 +452,6 @@ def validate_cohort_contract(
                     ),
                 }
             )
-
-    if {
-        "pco2_threshold_0_24h",
-        "dt_qualifying_hypercapnia_hours",
-        "qualifying_pco2_mmhg",
-        "max_pco2_0_6h",
-    }.issubset(df.columns):
-        gas_positive = (
-            pd.to_numeric(df["pco2_threshold_0_24h"], errors="coerce")
-            .fillna(0)
-            .astype(int)
-            .eq(1)
-        )
-        dt_hours = pd.to_numeric(df["dt_qualifying_hypercapnia_hours"], errors="coerce")
-        qualifying_values = pd.to_numeric(df["qualifying_pco2_mmhg"], errors="coerce")
-        max_values_6h = pd.to_numeric(df["max_pco2_0_6h"], errors="coerce")
-        qualifies_6h_mask = gas_positive & dt_hours.notna() & dt_hours.le(6.0)
-        max_pco2_0_6h_lt_qualifying_n = int(
-            (
-                qualifies_6h_mask
-                & (
-                    qualifying_values.isna()
-                    | max_values_6h.isna()
-                    | max_values_6h.lt(qualifying_values)
-                )
-            ).sum()
-        )
-        if max_pco2_0_6h_lt_qualifying_n > 0:
-            findings.append(
-                {
-                    "severity": "error",
-                    "code": "max_pco2_0_6h_below_qualifying_when_dt_le_6h",
-                    "message": (
-                        "For gas-positive rows with dt_qualifying_hypercapnia_hours <= 6, "
-                        "max_pco2_0_6h must be present and >= qualifying_pco2_mmhg. "
-                        f"Violations: {max_pco2_0_6h_lt_qualifying_n}."
-                    ),
-                }
-            )
-
-    required_source_diag_columns = {
-        "gas_source_inference_primary_tier",
-        "gas_source_hint_conflict_rate",
-        "gas_source_resolved_rate",
-    }
-    missing_source_diag_columns = sorted(
-        required_source_diag_columns.difference(df.columns)
-    )
-    if missing_source_diag_columns:
-        findings.append(
-            {
-                "severity": "warning",
-                "code": "missing_gas_source_diagnostic_columns_export",
-                "message": (
-                    "Missing gas-source diagnostic columns in export workbook (expected in QA artifacts): "
-                    f"{missing_source_diag_columns}"
-                ),
-            }
-        )
 
     if "first_gas_time" in df.columns:
         missing_anchor_columns = sorted(
@@ -368,9 +519,8 @@ def validate_cohort_contract(
             .str.strip()
         )
         allowed_timing_classes = {
-            "presenting_0_6h",
-            "late_6_24h",
-            "none_within_24h",
+            "within_24h",
+            "after_24h",
             "icd_only_or_no_qualifying_gas",
         }
         invalid_class_n = int(
@@ -822,14 +972,21 @@ def validate_cohort_contract(
     hco3_gas_positive_coverage_rate = None
     hco3_icd_only_coverage_rate = None
     hco3_source_value_mismatch_n = 0
+    hco3_band_qc_inconsistency_n = 0
     if "first_hco3" in df.columns:
         hco3_coverage_rate = float(
             pd.to_numeric(df["first_hco3"], errors="coerce").notna().mean()
         )
-    if {"first_hco3", "pco2_threshold_0_24h"}.issubset(df.columns):
+    gas_positive_column = None
+    if "pco2_threshold_any" in df.columns:
+        gas_positive_column = "pco2_threshold_any"
+    elif "pco2_threshold_0_24h" in df.columns:
+        gas_positive_column = "pco2_threshold_0_24h"
+
+    if "first_hco3" in df.columns and gas_positive_column is not None:
         hco3_values = pd.to_numeric(df["first_hco3"], errors="coerce")
         gas_positive_mask = (
-            pd.to_numeric(df["pco2_threshold_0_24h"], errors="coerce")
+            pd.to_numeric(df[gas_positive_column], errors="coerce")
             .fillna(0)
             .astype(int)
             .eq(1)
@@ -919,6 +1076,21 @@ def validate_cohort_contract(
                     ),
                 }
             )
+    if {"hco3_band", "first_hco3_qc_flag"}.issubset(df.columns):
+        hco3_band_present = df["hco3_band"].notna()
+        hco3_qc_flag = df["first_hco3_qc_flag"].fillna(False).astype(bool)
+        hco3_band_qc_inconsistency_n = int((hco3_band_present & ~hco3_qc_flag).sum())
+        if hco3_band_qc_inconsistency_n > 0:
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": "hco3_band_qc_inconsistency",
+                    "message": (
+                        "hco3_band contains non-null values where first_hco3_qc_flag is false: "
+                        f"{hco3_band_qc_inconsistency_n} rows."
+                    ),
+                }
+            )
 
     ph_uom_pairs = (
         ("lab_abg_ph", "lab_abg_ph_uom"),
@@ -1002,6 +1174,7 @@ def validate_cohort_contract(
         "first_hco3_gas_positive_coverage_rate": hco3_gas_positive_coverage_rate,
         "first_hco3_icd_only_coverage_rate": hco3_icd_only_coverage_rate,
         "first_hco3_source_value_mismatch_n": hco3_source_value_mismatch_n,
+        "hco3_band_qc_inconsistency_n": hco3_band_qc_inconsistency_n,
         "po2_triplet_coverage_by_site": po2_triplet_coverage_by_site,
         "anthro_source_counts": anthro_source_counts,
         "findings": findings,
@@ -1050,6 +1223,14 @@ def build_pipeline_contract_report_for_stages(
                 gas_source_other_fail_threshold=fail_threshold,
                 min_bmi_coverage=min_bmi_coverage,
             )
+            gas_source_diag_path = (
+                work_dir / "artifacts" / GAS_SOURCE_DIAGNOSTICS_ARTIFACT_NAME
+            )
+            gas_source_diag_details, gas_source_diag_findings = (
+                _validate_gas_source_diagnostics_artifact(cohort_df, gas_source_diag_path)
+            )
+            cohort_report["gas_source_diagnostics_artifact"] = gas_source_diag_details
+            cohort_report.setdefault("findings", []).extend(gas_source_diag_findings)
             audit_artifacts: dict[str, str | None] = {}
             for suffix in COHORT_REQUIRED_AUDIT_SUFFIXES:
                 candidates = (
@@ -1092,6 +1273,9 @@ def build_pipeline_contract_report_for_stages(
                             }
                         )
             cohort_report["audit_artifacts"] = audit_artifacts
+            cohort_report["status"] = _status_from_findings(
+                cohort_report.get("findings", [])
+            )
             contracts["cohort"] = cohort_report
             findings.extend(cohort_report["findings"])
         else:

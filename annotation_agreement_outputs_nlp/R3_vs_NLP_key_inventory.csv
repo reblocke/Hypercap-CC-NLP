@@ -1,4 +1,4 @@
 source,join_key_strategy,join_key_columns,rows,unique_keys
 adjudicated_r3,hadm_id_subject_id,hadm_id|subject_id,160,160
-nlp_output,hadm_id_subject_id,hadm_id|subject_id,7152,7152
-key_overlap,hadm_id_subject_id,hadm_id|subject_id,33,33
+nlp_output,hadm_id_subject_id,hadm_id|subject_id,11945,11945
+key_overlap,hadm_id_subject_id,hadm_id|subject_id,61,61

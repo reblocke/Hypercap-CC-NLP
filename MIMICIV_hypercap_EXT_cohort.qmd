@@ -21,7 +21,7 @@ TODO:
 [ ] want to add ED-rendered diagnoses - a flag to split off whether the hypercapnic respiratory failure ICD was rendered in the ED or during the hospital stay. 
 [ ] are the installation instructions at the beginning of this notebook consistent with the way we intend the notebook to be used? is it also consistent with the README.md instructions?
 
-**Goal:** Build an admissions‑level tabular dataset that **enrolls** any hospital admission (`hadm_id`) with a **first qualifying hypercapnic blood gas** (LAB or POC) within **24 hours** of first ED arrival:
+**Goal:** Build an admissions‑level tabular dataset that **enrolls** any hospital admission (`hadm_id`) with a qualifying hypercapnic blood gas (LAB or POC) at **any time during the stay**, while retaining a marker for whether the **first qualifying** event occurred within **24 hours** of first ED arrival:
 
 1. **Arterial blood gas (ABG):** PaCO₂ **> 45.0 mmHg**
 2. **Venous blood gas (VBG):** PaCO₂ **> 50.0 mmHg**
@@ -495,8 +495,6 @@ ICU_LABEL_DENY_TOKENS = BLOOD_GAS_MANIFEST["denylist"]["label_tokens"]
 ICU_PCO2_QC_ALLOWED_UOMS = {
     str(value).strip().lower() for value in ICU_PCO2_QC["allowed_uoms"]
 }
-ICU_PCO2_QC_MEDIAN_MIN = float(ICU_PCO2_QC["median_min"])
-ICU_PCO2_QC_MEDIAN_MAX = float(ICU_PCO2_QC["median_max"])
 ICU_PCO2_QC_INCLUDE_TOKENS = [
     str(value).strip().lower()
     for value in ICU_PCO2_QC["label_must_include_tokens"]
@@ -505,6 +503,17 @@ ICU_PCO2_QC_EXCLUDE_TOKENS = [
     str(value).strip().lower()
     for value in ICU_PCO2_QC["label_must_exclude_tokens"]
 ]
+POC_QC_MIN_VALID_N_WARN = 100
+POC_QC_MIN_VALID_N_CHECK = 50
+POC_QC_P05_MIN = 10.0
+POC_QC_P50_MIN = 20.0
+POC_QC_P50_MAX = 80.0
+POC_QC_P95_MAX = 120.0
+POC_QC_PO2_CONTAM_P50_MIN = 75.0
+POC_QC_PO2_CONTAM_P25_MIN = 60.0
+POC_QC_OUT_OF_RANGE_REMOVED_RATE_WARN = 0.001
+POC_QC_OUT_OF_RANGE_REMOVED_RATE_FAIL = 0.005
+POC_QC_OUT_OF_RANGE_REMOVED_N_FAIL = 25
 
 LAB_PCO2_SQL_ARRAY = _sql_int_array(LAB_PCO2_ITEMIDS)
 LAB_PO2_SQL_ARRAY = _sql_int_array(LAB_PO2_ITEMIDS)
@@ -3108,9 +3117,9 @@ print("ICD cohort admissions:", len(cohort_icd))
 cohort_icd.head(3)
 ```
 
-### 2) Blood gas inclusion thresholds — qualifying hypercapnic gases in 0–24h (LAB + POC)
+### 2) Blood gas inclusion thresholds — qualifying hypercapnic gases any-time in stay (LAB + POC)
 
-**Rationale:** Identify physiologic hypercapnia using inclusive ABG/VBG/unknown thresholds tied to first ED arrival timing, retaining both per-type qualifying flags and earliest qualifying event metadata.
+**Rationale:** Identify physiologic hypercapnia using inclusive ABG/VBG/unknown thresholds across the full admission stay, while retaining a separate within-24h-from-ED marker.
 
 ```{python}
 #| label: mimiciv-hypercap-ext-cohort-cell-006
@@ -3124,6 +3133,28 @@ WITH ed_anchor AS (
   FROM `{PHYS}.{ED}.edstays`
   WHERE hadm_id IS NOT NULL
   GROUP BY hadm_id
+),
+admission_times AS (
+  SELECT
+    hadm_id,
+    admittime,
+    dischtime
+  FROM `{PHYS}.{HOSP}.admissions`
+),
+anchor_times AS (
+  SELECT
+    a.hadm_id,
+    e.ed_intime_first,
+    a.admittime,
+    a.dischtime,
+    COALESCE(e.ed_intime_first, a.admittime) AS presentation_anchor_time,
+    CASE
+      WHEN e.ed_intime_first IS NULL AND a.admittime IS NOT NULL THEN 1
+      ELSE 0
+    END AS used_admittime_anchor
+  FROM admission_times a
+  LEFT JOIN ed_anchor e
+    ON e.hadm_id = a.hadm_id
 ),
 hosp_raw AS (
   SELECT
@@ -3250,7 +3281,7 @@ all_pco2 AS (
   UNION ALL
   SELECT * FROM icu_pco2_clean
 ),
-windowed_pco2 AS (
+stay_pco2 AS (
   SELECT
     p.hadm_id,
     p.charttime,
@@ -3261,12 +3292,17 @@ windowed_pco2 AS (
     p.pco2_mmhg,
     p.source_branch,
     a.ed_intime_first,
-    TIMESTAMP_DIFF(p.charttime, a.ed_intime_first, SECOND) / 3600.0 AS dt_hours
+    a.admittime,
+    a.dischtime,
+    a.presentation_anchor_time,
+    a.used_admittime_anchor,
+    TIMESTAMP_DIFF(p.charttime, a.presentation_anchor_time, SECOND) / 3600.0 AS dt_hours
   FROM all_pco2 p
-  JOIN ed_anchor a
+  JOIN anchor_times a
     ON a.hadm_id = p.hadm_id
-  WHERE a.ed_intime_first IS NOT NULL
-    AND p.charttime BETWEEN a.ed_intime_first AND TIMESTAMP_ADD(a.ed_intime_first, INTERVAL 24 HOUR)
+  WHERE a.presentation_anchor_time IS NOT NULL
+    AND p.charttime >= a.presentation_anchor_time
+    AND (a.dischtime IS NULL OR p.charttime <= a.dischtime)
 ),
 qualifying_candidates AS (
   SELECT
@@ -3281,6 +3317,7 @@ qualifying_candidates AS (
     source_branch,
     itemid,
     dt_hours,
+    IF(used_admittime_anchor = 1, 'ADMITTIME_FALLBACK', 'ED_INTIME') AS anchor_source,
     CASE WHEN site = 'arterial' THEN 45.0 ELSE 50.0 END AS threshold_mmhg,
     CONCAT(
       source_branch,
@@ -3293,7 +3330,7 @@ qualifying_candidates AS (
       ':',
       FORMAT_TIMESTAMP('%F %T.%6E', charttime)
     ) AS stable_key
-  FROM windowed_pco2
+  FROM stay_pco2
   WHERE (
     (site = 'arterial' AND pco2_mmhg >= 45.0)
     OR (site IN ('venous', 'unknown') AND pco2_mmhg >= 50.0)
@@ -3304,7 +3341,7 @@ windowed_extrema AS (
     hadm_id,
     MAX(IF(dt_hours BETWEEN 0 AND 6, pco2_mmhg, NULL)) AS max_pco2_0_6h,
     MAX(IF(dt_hours BETWEEN 0 AND 24, pco2_mmhg, NULL)) AS max_pco2_0_24h
-  FROM windowed_pco2
+  FROM stay_pco2
   GROUP BY hadm_id
 ),
 ranked_window_6h AS (
@@ -3319,7 +3356,7 @@ ranked_window_6h AS (
         CASE source_branch WHEN 'LAB' THEN 0 WHEN 'POC' THEN 1 ELSE 2 END,
         CAST(COALESCE(itemid, -1) AS INT64)
     ) AS rn
-  FROM windowed_pco2
+  FROM stay_pco2
   WHERE dt_hours BETWEEN 0 AND 6
 ),
 max_source_6h AS (
@@ -3341,7 +3378,7 @@ ranked_window_24h AS (
         CASE source_branch WHEN 'LAB' THEN 0 WHEN 'POC' THEN 1 ELSE 2 END,
         CAST(COALESCE(itemid, -1) AS INT64)
     ) AS rn
-  FROM windowed_pco2
+  FROM stay_pco2
   WHERE dt_hours BETWEEN 0 AND 24
 ),
 max_source_24h AS (
@@ -3383,7 +3420,8 @@ qualifying_first AS (
     source_branch AS qualifying_source_branch,
     threshold_mmhg AS qualifying_threshold_mmhg,
     dt_hours AS dt_qualifying_hypercapnia_hours,
-    itemid AS qualifying_pco2_itemid
+    itemid AS qualifying_pco2_itemid,
+    anchor_source AS qualifying_anchor_source
   FROM ranked_qualifying_overall
   WHERE qualifying_rank = 1
 ),
@@ -3461,7 +3499,8 @@ first_other AS (
 )
 SELECT
   q.hadm_id,
-  1 AS pco2_threshold_0_24h,
+  1 AS pco2_threshold_any,
+  IF(q.dt_qualifying_hypercapnia_hours <= 24.0, 1, 0) AS pco2_threshold_0_24h,
   f.abg_hypercap_threshold,
   f.vbg_hypercap_threshold,
   f.unknown_hypercap_threshold,
@@ -3472,6 +3511,7 @@ SELECT
   q.qualifying_threshold_mmhg,
   q.dt_qualifying_hypercapnia_hours,
   q.qualifying_pco2_itemid,
+  q.qualifying_anchor_source,
   e.max_pco2_0_6h,
   e.max_pco2_0_24h,
   s6.max_pco2_0_6h_source_branch,
@@ -3507,16 +3547,35 @@ LEFT JOIN first_other o
 
 co2_thresh = run_sql_bq(sql("co2_thresholds_sql"))
 print("Admissions meeting thresholds:", len(co2_thresh))
+qualifying_anchor_fallback_n = 0
+qualifying_anchor_ed_n = 0
+if "qualifying_anchor_source" in co2_thresh.columns:
+    qualifying_anchor_source = (
+        co2_thresh["qualifying_anchor_source"]
+        .astype("string")
+        .fillna("UNKNOWN")
+        .str.upper()
+    )
+    qualifying_anchor_fallback_n = int(
+        qualifying_anchor_source.eq("ADMITTIME_FALLBACK").sum()
+    )
+    qualifying_anchor_ed_n = int(qualifying_anchor_source.eq("ED_INTIME").sum())
+    print(
+        "Qualifying anchor source counts:",
+        f"ED_INTIME={qualifying_anchor_ed_n}",
+        f"ADMITTIME_FALLBACK={qualifying_anchor_fallback_n}",
+    )
+    co2_thresh = co2_thresh.drop(columns=["qualifying_anchor_source"])
 co2_thresh.head(3)
 ```
 
 ### 3) Cohort enrollment and `hadm_list` for downstream queries
 
-**Rationale:** Use ICD OR gas-qualified 0–24h encounters as the primary cohort, with explicit route decomposition.
+**Rationale:** Use ICD OR gas-qualified any-time encounters as the primary cohort, with explicit route decomposition and a separate within-24h marker.
 
 ```{python}
 #| label: mimiciv-hypercap-ext-cohort-cell-007
-# Purpose: Build gas-qualified 0–24h cohort flags and hadm inclusion list.
+# Purpose: Build gas-qualified any-time cohort flags and hadm inclusion list.
 
 # Outer-join to retain ICD metadata and gas qualification metadata.
 cohort_any = cohort_icd.merge(co2_thresh, how="outer", on="hadm_id")
@@ -3530,6 +3589,7 @@ for c in icd_cols:
 for c in [
     "abg_hypercap_threshold",
     "vbg_hypercap_threshold",
+    "pco2_threshold_any",
     "pco2_threshold_0_24h",
     "unknown_hypercap_threshold",
 ]:
@@ -3571,12 +3631,41 @@ for c in [
     if c in cohort_any.columns:
         cohort_any[c] = cohort_any[c].astype("string")
 
-# Final enrollment flags (primary definition: ICD OR first qualifying hypercapnic gas in 0–24h)
-if "pco2_threshold_0_24h" not in cohort_any.columns:
-    cohort_any["pco2_threshold_0_24h"] = (
+# Final enrollment flags (primary definition: ICD OR first qualifying hypercapnic gas any-time in stay)
+if "pco2_threshold_any" not in cohort_any.columns:
+    cohort_any["pco2_threshold_any"] = (
         (cohort_any["abg_hypercap_threshold"] == 1)
         | (cohort_any["vbg_hypercap_threshold"] == 1)
         | (cohort_any["unknown_hypercap_threshold"] == 1)
+    ).astype(int)
+else:
+    cohort_any["pco2_threshold_any"] = (
+        pd.to_numeric(cohort_any["pco2_threshold_any"], errors="coerce")
+        .fillna(0)
+        .astype(int)
+    )
+if "pco2_threshold_0_24h" not in cohort_any.columns:
+    qualifying_dt = pd.to_numeric(
+        cohort_any.get(
+            "dt_qualifying_hypercapnia_hours",
+            pd.Series(np.nan, index=cohort_any.index),
+        ),
+        errors="coerce",
+    )
+    cohort_any["pco2_threshold_0_24h"] = (
+        (cohort_any["pco2_threshold_any"] == 1)
+        & qualifying_dt.le(24.0)
+    ).astype(int)
+else:
+    dt_hours = pd.to_numeric(
+        cohort_any.get(
+            "dt_qualifying_hypercapnia_hours",
+            pd.Series(np.nan, index=cohort_any.index),
+        ),
+        errors="coerce",
+    )
+    cohort_any["pco2_threshold_0_24h"] = (
+        (cohort_any["pco2_threshold_any"] == 1) & dt_hours.le(24.0)
     ).astype(int)
 if "any_hypercap_icd" not in cohort_any.columns:
     cohort_any["any_hypercap_icd"] = 0
@@ -3585,43 +3674,44 @@ cohort_any["any_hypercap_icd"] = (
 )
 cohort_any["enrolled_any"] = (
     (cohort_any["any_hypercap_icd"] == 1)
-    | (cohort_any["pco2_threshold_0_24h"] == 1)
+    | (cohort_any["pco2_threshold_any"] == 1)
 ).astype(int)
 cohort_any["enrolled_any_icd_union_secondary"] = (
     (cohort_any["any_hypercap_icd"] == 1)
-    | (cohort_any["pco2_threshold_0_24h"] == 1)
+    | (cohort_any["pco2_threshold_any"] == 1)
 ).astype(int)
 cohort_any["enrollment_route"] = np.select(
     [
-        (cohort_any["any_hypercap_icd"] == 0) & (cohort_any["pco2_threshold_0_24h"] == 1),
-        (cohort_any["any_hypercap_icd"] == 1) & (cohort_any["pco2_threshold_0_24h"] == 0),
-        (cohort_any["any_hypercap_icd"] == 1) & (cohort_any["pco2_threshold_0_24h"] == 1),
+        (cohort_any["any_hypercap_icd"] == 0) & (cohort_any["pco2_threshold_any"] == 1),
+        (cohort_any["any_hypercap_icd"] == 1) & (cohort_any["pco2_threshold_any"] == 0),
+        (cohort_any["any_hypercap_icd"] == 1) & (cohort_any["pco2_threshold_any"] == 1),
     ],
     ["GAS_ONLY", "ICD_ONLY", "ICD+GAS"],
     default="NONE",
 )
 
 print("ICD-positive admissions                    :", int((cohort_any["any_hypercap_icd"] == 1).sum()))
+print("Gas-qualified any-time admissions          :", int((cohort_any["pco2_threshold_any"] == 1).sum()))
 print("Gas-qualified within 24h admissions        :", int((cohort_any["pco2_threshold_0_24h"] == 1).sum()))
 print(
     "ICD∪gas union admissions                   :",
     int((cohort_any["enrolled_any_icd_union_secondary"] == 1).sum()),
 )
-print("Final enrolled admissions (ICD OR gas 0–24h):", int((cohort_any["enrolled_any"] == 1).sum()))
+print("Final enrolled admissions (ICD OR gas any-time):", int((cohort_any["enrolled_any"] == 1).sum()))
 print("Enrollment routes:")
 print(cohort_any["enrollment_route"].value_counts(dropna=False).to_string())
-if {"qualifying_source_branch", "pco2_threshold_0_24h"}.issubset(cohort_any.columns):
+if {"qualifying_source_branch", "pco2_threshold_any"}.issubset(cohort_any.columns):
     qualifying_branch = (
-        cohort_any.loc[cohort_any["pco2_threshold_0_24h"] == 1, "qualifying_source_branch"]
+        cohort_any.loc[cohort_any["pco2_threshold_any"] == 1, "qualifying_source_branch"]
         .fillna("UNKNOWN")
         .astype("string")
     )
     qualifying_branch_counts = qualifying_branch.value_counts(dropna=False)
     qualifying_branch_rates = (
         qualifying_branch_counts
-        / max(int(cohort_any["pco2_threshold_0_24h"].sum()), 1)
+        / max(int(cohort_any["pco2_threshold_any"].sum()), 1)
     ).rename("rate")
-    print("Qualifying source branch distribution (0–24h):")
+    print("Qualifying source branch distribution (any-time):")
     print(
         pd.concat(
             [qualifying_branch_counts.rename("count"), qualifying_branch_rates],
@@ -4648,7 +4738,7 @@ if {"first_vbg_time", "first_imv_time"}.issubset(df.columns):
     ).astype("Int64")
 
 # Canonical hadm-level threshold normalization.
-# Primary cohort contract: earliest hypercapnic blood gas (LAB/POC) within 24h of ED arrival.
+# Primary cohort contract: earliest hypercapnic blood gas (LAB/POC) any-time during stay.
 def _num_series(frame: pd.DataFrame, col: str) -> pd.Series:
     if col in frame.columns:
         return pd.to_numeric(frame[col], errors="coerce")
@@ -4663,9 +4753,9 @@ def _any_ge(frame: pd.DataFrame, cols: list[str], threshold: float) -> pd.Series
     return mat.ge(threshold).any(axis=1).astype("Int64")
 
 
-if "pco2_threshold_0_24h" in df.columns:
-    df["pco2_threshold_0_24h"] = (
-        pd.to_numeric(df["pco2_threshold_0_24h"], errors="coerce")
+if "pco2_threshold_any" in df.columns:
+    df["pco2_threshold_any"] = (
+        pd.to_numeric(df["pco2_threshold_any"], errors="coerce")
         .fillna(0)
         .astype("Int64")
     )
@@ -4694,11 +4784,20 @@ else:
     df["unknown_hypercap_threshold"] = (
         (existing_unknown == 1) | (unknown_from_values == 1)
     ).astype("Int64")
-    df["pco2_threshold_0_24h"] = (
+    df["pco2_threshold_any"] = (
         (df["abg_hypercap_threshold"] == 1)
         | (df["vbg_hypercap_threshold"] == 1)
         | (df["unknown_hypercap_threshold"] == 1)
     ).astype("Int64")
+
+qualifying_dt_hours = pd.to_numeric(
+    df.get("dt_qualifying_hypercapnia_hours", pd.Series(np.nan, index=df.index)),
+    errors="coerce",
+)
+df["pco2_threshold_0_24h"] = (
+    (pd.to_numeric(df["pco2_threshold_any"], errors="coerce").fillna(0).astype(int) == 1)
+    & qualifying_dt_hours.le(24.0)
+).astype("Int64")
 
 for time_col in [
     "first_abg_hypercap_time_0_24h",
@@ -4733,17 +4832,17 @@ df["any_hypercap_icd"] = (
 )
 df["enrolled_any"] = (
     (df["any_hypercap_icd"] == 1)
-    | (df["pco2_threshold_0_24h"] == 1)
+    | (df["pco2_threshold_any"] == 1)
 ).astype("Int64")
 df["enrolled_any_icd_union_secondary"] = (
     (df["any_hypercap_icd"] == 1)
-    | (df["pco2_threshold_0_24h"] == 1)
+    | (df["pco2_threshold_any"] == 1)
 ).astype("Int64")
 df["enrollment_route"] = np.select(
     [
-        (df["any_hypercap_icd"] == 0) & (df["pco2_threshold_0_24h"] == 1),
-        (df["any_hypercap_icd"] == 1) & (df["pco2_threshold_0_24h"] == 0),
-        (df["any_hypercap_icd"] == 1) & (df["pco2_threshold_0_24h"] == 1),
+        (df["any_hypercap_icd"] == 0) & (df["pco2_threshold_any"] == 1),
+        (df["any_hypercap_icd"] == 1) & (df["pco2_threshold_any"] == 0),
+        (df["any_hypercap_icd"] == 1) & (df["pco2_threshold_any"] == 1),
     ],
     ["GAS_ONLY", "ICD_ONLY", "ICD+GAS"],
     default="NONE",
@@ -4754,6 +4853,7 @@ print(
     "ABG=", int(df["abg_hypercap_threshold"].fillna(0).sum()),
     "VBG=", int(df["vbg_hypercap_threshold"].fillna(0).sum()),
     "UNKNOWN=", int(df["unknown_hypercap_threshold"].fillna(0).sum()),
+    "ANY=", int(df["pco2_threshold_any"].fillna(0).sum()),
     "0_24H=", int(df["pco2_threshold_0_24h"].fillna(0).sum()),
     "ICD=", int(df["any_hypercap_icd"].fillna(0).sum()),
     "ENROLLED=", int(df["enrolled_any"].fillna(0).sum()),
@@ -4909,13 +5009,13 @@ icd_count = int((df["any_hypercap_icd"] == 1).sum()) if "any_hypercap_icd" in df
 threshold_count = (
     int(
         (
-            pd.to_numeric(df["pco2_threshold_0_24h"], errors="coerce")
+            pd.to_numeric(df["pco2_threshold_any"], errors="coerce")
             .fillna(0)
             .astype(int)
             == 1
         ).sum()
     )
-    if "pco2_threshold_0_24h" in df.columns
+    if "pco2_threshold_any" in df.columns
     else None
 )
 
@@ -4977,8 +5077,8 @@ vbg = pd.to_numeric(df["vbg_hypercap_threshold"], errors="coerce").fillna(0).ast
 unknown = pd.to_numeric(df["unknown_hypercap_threshold"], errors="coerce").fillna(0).astype(int)
 
 gas_any = (
-    pd.to_numeric(df.get("pco2_threshold_0_24h", None), errors="coerce")
-    if "pco2_threshold_0_24h" in df.columns
+    pd.to_numeric(df.get("pco2_threshold_any", None), errors="coerce")
+    if "pco2_threshold_any" in df.columns
     else (abg | vbg | unknown)
 )
 if hasattr(gas_any, "fillna"):
@@ -5383,6 +5483,7 @@ TARGET_RAW_FIELDS = {
         "first_abg_hypercap_time_0_24h","first_abg_hypercap_pco2_mmhg","first_abg_hypercap_source_branch","first_abg_hypercap_itemid",
         "first_vbg_hypercap_time_0_24h","first_vbg_hypercap_pco2_mmhg","first_vbg_hypercap_source_branch","first_vbg_hypercap_itemid",
         "first_other_hypercap_time_0_24h","first_other_hypercap_pco2_mmhg","first_other_hypercap_source_branch","first_other_hypercap_itemid",
+        "pco2_threshold_any",
         "pco2_threshold_0_24h",
         "max_pco2_0_6h","min_ph_0_6h","max_pco2_0_24h","min_ph_0_24h",
         "gas_source_unknown_rate","gas_source_other_rate",
@@ -5404,7 +5505,7 @@ TARGET_RAW_FIELDS = {
         "flag_opioid_substance","flag_pneumonia",
     ],
     "timing": [
-        "dt_qualifying_hypercapnia_hours","dt_first_qualifying_gas_hours","presenting_hypercapnia","late_hypercapnia",
+        "dt_qualifying_hypercapnia_hours","dt_first_qualifying_gas_hours",
         "hypercap_timing_class",
         "enrollment_route",
         "dt_first_imv_hours","dt_first_niv_hours","abg_before_imv","vbg_before_imv",
@@ -7165,8 +7266,17 @@ for col in [
     if col not in panel_poc.columns:
         panel_poc[col] = pd.NA
 
-poc_inclusion_enabled = False
-poc_inclusion_reason = "disabled_manifest_or_qc_fail"
+poc_inclusion_enabled = False  # deprecated compatibility alias (maps to blocking pass)
+poc_inclusion_reason = "not_evaluated"  # deprecated compatibility alias
+poc_itemid_qc_status = "fail"
+poc_itemid_qc_blocking_passed = False
+poc_itemid_qc_reason = "not_evaluated"
+poc_itemid_qc_failed_itemids_n = 0
+poc_itemid_qc_warning_itemids_n = 0
+poc_itemid_qc_fail_reasons: list[str] = []
+poc_itemid_qc_warn_reasons: list[str] = []
+poc_used_in_qualification_logic = bool(ICU_PCO2_ITEMIDS)
+poc_qc_is_telemetry_only = True
 pco2_itemid_qc_rows: list[dict[str, Any]] = []
 
 if len(icu_poc_long) > 0 and pco2_ids:
@@ -7202,22 +7312,78 @@ if len(icu_poc_long) > 0 and pco2_ids:
             exclude_hit = any(token in label_text_l for token in ICU_PCO2_QC_EXCLUDE_TOKENS)
             raw_numeric = pd.to_numeric(group["pco2_mmhg"], errors="coerce").dropna()
             clean_numeric = raw_numeric.loc[raw_numeric.between(5.0, 200.0)]
+            clean_n = int(len(clean_numeric))
+            raw_n = int(len(raw_numeric))
             sentinel_mask = raw_numeric.ge(100000.0)
             out_of_range_removed_n = int((~raw_numeric.between(5.0, 200.0)).sum())
             sentinel_extreme_n = int(sentinel_mask.sum())
             sentinel_removed_n = int((sentinel_mask & ~raw_numeric.between(5.0, 200.0)).sum())
-            median_value = float(clean_numeric.median()) if len(clean_numeric) else np.nan
+            out_of_range_removed_rate = float(
+                out_of_range_removed_n / max(raw_n, 1)
+            )
+            sentinel_removed_rate = float(
+                sentinel_removed_n / max(raw_n, 1)
+            )
+            p05_value = float(clean_numeric.quantile(0.05)) if clean_n else np.nan
+            p25_value = float(clean_numeric.quantile(0.25)) if clean_n else np.nan
+            p50_value = float(clean_numeric.median()) if clean_n else np.nan
+            p95_value = float(clean_numeric.quantile(0.95)) if clean_n else np.nan
+            max_clean_value = float(clean_numeric.max()) if clean_n else np.nan
+            minimum_data_warning = bool(clean_n < POC_QC_MIN_VALID_N_WARN)
+            distribution_check_applicable = bool(clean_n >= POC_QC_MIN_VALID_N_CHECK)
             median_ok = bool(
-                len(clean_numeric)
-                and ICU_PCO2_QC_MEDIAN_MIN <= median_value <= ICU_PCO2_QC_MEDIAN_MAX
+                clean_n > 0
+                and POC_QC_P50_MIN <= p50_value <= POC_QC_P50_MAX
             )
-            contamination_flag = bool(
-                (not include_ok)
-                or exclude_hit
-                or (not unit_ok)
-                or sentinel_extreme_n > 0
-                or out_of_range_removed_n > 0
+            distribution_plausible = bool(
+                distribution_check_applicable
+                and p05_value >= POC_QC_P05_MIN
+                and POC_QC_P50_MIN <= p50_value <= POC_QC_P50_MAX
+                and p95_value <= POC_QC_P95_MAX
             )
+            possible_po2_contamination = bool(
+                distribution_check_applicable
+                and p50_value >= POC_QC_PO2_CONTAM_P50_MIN
+                and p25_value >= POC_QC_PO2_CONTAM_P25_MIN
+            )
+            qc_blocking_reasons: list[str] = []
+            if not include_ok:
+                qc_blocking_reasons.append("label_missing_include_token")
+            if exclude_hit:
+                qc_blocking_reasons.append("label_excluded_token_hit")
+            if not unit_ok:
+                qc_blocking_reasons.append("unit_not_allowed")
+            if possible_po2_contamination:
+                qc_blocking_reasons.append("possible_po2_contamination")
+            if distribution_check_applicable and not distribution_plausible:
+                qc_blocking_reasons.append("distribution_implausible")
+            if (
+                out_of_range_removed_rate > POC_QC_OUT_OF_RANGE_REMOVED_RATE_FAIL
+                or out_of_range_removed_n >= POC_QC_OUT_OF_RANGE_REMOVED_N_FAIL
+            ):
+                qc_blocking_reasons.append("out_of_range_removal_high")
+
+            qc_warning_reasons: list[str] = []
+            if minimum_data_warning:
+                qc_warning_reasons.append("insufficient_valid_rows")
+            if (
+                out_of_range_removed_rate > POC_QC_OUT_OF_RANGE_REMOVED_RATE_WARN
+                and "out_of_range_removal_high" not in qc_blocking_reasons
+            ):
+                qc_warning_reasons.append("out_of_range_rate_elevated")
+            elif out_of_range_removed_n > 0 and "out_of_range_removal_high" not in qc_blocking_reasons:
+                qc_warning_reasons.append("out_of_range_rows_removed")
+            if sentinel_removed_n > 0:
+                qc_warning_reasons.append("sentinel_rows_removed")
+
+            qc_blocking_flag = bool(qc_blocking_reasons)
+            qc_warning_flag = bool(qc_warning_reasons)
+            qc_status = (
+                "fail"
+                if qc_blocking_flag
+                else ("warning" if qc_warning_flag else "pass")
+            )
+            contamination_flag = qc_blocking_flag
 
             pco2_itemid_qc_rows.append(
                 {
@@ -7227,33 +7393,41 @@ if len(icu_poc_long) > 0 and pco2_ids:
                     "source_branch": "POC",
                     "sample_type_hint": sample_type_hint,
                     "row_count": int(len(group)),
-                    "non_null_count": int(len(clean_numeric)),
-                    "raw_non_null_count": int(len(raw_numeric)),
-                    "clean_non_null_count": int(len(clean_numeric)),
+                    "non_null_count": clean_n,
+                    "raw_non_null_count": raw_n,
+                    "clean_non_null_count": clean_n,
                     "units_observed": ";".join(value_units),
-                    "p50_mmhg": median_value if len(clean_numeric) else np.nan,
-                    "p95_mmhg": float(clean_numeric.quantile(0.95))
-                    if len(clean_numeric)
-                    else np.nan,
-                    "max_mmhg": float(clean_numeric.max()) if len(clean_numeric) else np.nan,
-                    "raw_p50_mmhg": float(raw_numeric.median()) if len(raw_numeric) else np.nan,
+                    "p50_mmhg": p50_value if clean_n else np.nan,
+                    "p95_mmhg": p95_value if clean_n else np.nan,
+                    "max_mmhg": max_clean_value if clean_n else np.nan,
+                    "raw_p50_mmhg": float(raw_numeric.median()) if raw_n else np.nan,
                     "raw_p95_mmhg": float(raw_numeric.quantile(0.95))
-                    if len(raw_numeric)
+                    if raw_n
                     else np.nan,
-                    "raw_max_mmhg": float(raw_numeric.max()) if len(raw_numeric) else np.nan,
-                    "clean_p50_mmhg": median_value if len(clean_numeric) else np.nan,
-                    "clean_p95_mmhg": float(clean_numeric.quantile(0.95))
-                    if len(clean_numeric)
-                    else np.nan,
-                    "clean_max_mmhg": float(clean_numeric.max()) if len(clean_numeric) else np.nan,
+                    "raw_max_mmhg": float(raw_numeric.max()) if raw_n else np.nan,
+                    "clean_p05_mmhg": p05_value if clean_n else np.nan,
+                    "clean_p25_mmhg": p25_value if clean_n else np.nan,
+                    "clean_p50_mmhg": p50_value if clean_n else np.nan,
+                    "clean_p95_mmhg": p95_value if clean_n else np.nan,
+                    "clean_max_mmhg": max_clean_value if clean_n else np.nan,
                     "out_of_range_removed_n": out_of_range_removed_n,
+                    "out_of_range_removed_rate": out_of_range_removed_rate,
                     "sentinel_extreme_n": sentinel_extreme_n,
                     "sentinel_removed_n": sentinel_removed_n,
+                    "sentinel_removed_rate": sentinel_removed_rate,
                     "label_include_ok": bool(include_ok),
                     "label_exclude_hit": bool(exclude_hit),
                     "unit_ok": bool(unit_ok),
                     "median_in_expected_range": bool(median_ok),
+                    "distribution_plausible": bool(distribution_plausible),
+                    "possible_po2_contamination": bool(possible_po2_contamination),
+                    "insufficient_data_flag": bool(minimum_data_warning),
                     "contamination_flag": contamination_flag,
+                    "qc_blocking_flag": qc_blocking_flag,
+                    "qc_warning_flag": qc_warning_flag,
+                    "qc_status": qc_status,
+                    "qc_blocking_reason": ";".join(qc_blocking_reasons),
+                    "qc_warning_reason": ";".join(qc_warning_reasons),
                     "manifest_whitelisted": int(itemid_value in set(ICU_PCO2_ITEMIDS)),
                 }
             )
@@ -7275,17 +7449,29 @@ pco2_itemid_qc_columns = [
     "raw_p50_mmhg",
     "raw_p95_mmhg",
     "raw_max_mmhg",
+    "clean_p05_mmhg",
+    "clean_p25_mmhg",
     "clean_p50_mmhg",
     "clean_p95_mmhg",
     "clean_max_mmhg",
     "out_of_range_removed_n",
+    "out_of_range_removed_rate",
     "sentinel_extreme_n",
     "sentinel_removed_n",
+    "sentinel_removed_rate",
     "label_include_ok",
     "label_exclude_hit",
     "unit_ok",
     "median_in_expected_range",
+    "distribution_plausible",
+    "possible_po2_contamination",
+    "insufficient_data_flag",
     "contamination_flag",
+    "qc_blocking_flag",
+    "qc_warning_flag",
+    "qc_status",
+    "qc_blocking_reason",
+    "qc_warning_reason",
     "manifest_whitelisted",
 ]
 pco2_itemid_qc_audit = pd.DataFrame(pco2_itemid_qc_rows)
@@ -7370,52 +7556,101 @@ if ICU_INCLUSION_MODE == "validated_only":
     if ICU_PCO2_ITEMIDS and not pco2_itemid_qc_audit.empty:
         whitelist_mask = pco2_itemid_qc_audit["itemid"].isin(set(ICU_PCO2_ITEMIDS))
         whitelist_rows = pco2_itemid_qc_audit.loc[whitelist_mask].copy()
-        if (
-            len(whitelist_rows) == len(set(ICU_PCO2_ITEMIDS))
-            and whitelist_rows["contamination_flag"].eq(False).all()
-            and whitelist_rows["median_in_expected_range"].eq(True).all()
-        ):
-            poc_inclusion_enabled = True
-            poc_inclusion_reason = "validated_itemids_passed_qc"
+        observed_ids = set(pd.to_numeric(whitelist_rows["itemid"], errors="coerce").dropna().astype(int))
+        expected_ids = set(ICU_PCO2_ITEMIDS)
+        missing_ids = sorted(expected_ids.difference(observed_ids))
+        if missing_ids:
+            poc_itemid_qc_status = "fail"
+            poc_itemid_qc_reason = "missing_itemid_qc_rows"
+            poc_itemid_qc_fail_reasons = [f"missing_itemid_qc_rows:{','.join(map(str, missing_ids))}"]
+            poc_itemid_qc_failed_itemids_n = int(len(missing_ids))
+            poc_itemid_qc_warning_itemids_n = int(
+                pd.to_numeric(whitelist_rows.get("qc_warning_flag"), errors="coerce")
+                .fillna(0)
+                .astype(int)
+                .sum()
+            )
         else:
-            poc_inclusion_reason = "validated_itemids_failed_qc"
+            blocking_flags = whitelist_rows.get("qc_blocking_flag", pd.Series(False, index=whitelist_rows.index))
+            warning_flags = whitelist_rows.get("qc_warning_flag", pd.Series(False, index=whitelist_rows.index))
+            blocking_flags = blocking_flags.fillna(False).astype(bool)
+            warning_flags = warning_flags.fillna(False).astype(bool)
+            poc_itemid_qc_failed_itemids_n = int(blocking_flags.sum())
+            poc_itemid_qc_warning_itemids_n = int(warning_flags.sum())
+            blocking_reason_values = (
+                whitelist_rows.get("qc_blocking_reason", pd.Series("", index=whitelist_rows.index))
+                .astype("string")
+                .fillna("")
+                .tolist()
+            )
+            warning_reason_values = (
+                whitelist_rows.get("qc_warning_reason", pd.Series("", index=whitelist_rows.index))
+                .astype("string")
+                .fillna("")
+                .tolist()
+            )
+            poc_itemid_qc_fail_reasons = sorted(
+                {
+                    token
+                    for value in blocking_reason_values
+                    for token in str(value).split(";")
+                    if token
+                }
+            )
+            poc_itemid_qc_warn_reasons = sorted(
+                {
+                    token
+                    for value in warning_reason_values
+                    for token in str(value).split(";")
+                    if token
+                }
+            )
+            if poc_itemid_qc_failed_itemids_n > 0:
+                poc_itemid_qc_status = "fail"
+                poc_itemid_qc_reason = "validated_itemids_failed_qc"
+            elif poc_itemid_qc_warning_itemids_n > 0:
+                poc_itemid_qc_status = "warning"
+                poc_itemid_qc_reason = "validated_itemids_warning_only_qc"
+            else:
+                poc_itemid_qc_status = "pass"
+                poc_itemid_qc_reason = "validated_itemids_passed_qc"
     elif not ICU_PCO2_ITEMIDS:
-        poc_inclusion_reason = "manifest_has_no_icu_pco2_itemids"
+        poc_itemid_qc_status = "fail"
+        poc_itemid_qc_reason = "manifest_has_no_icu_pco2_itemids"
+        poc_itemid_qc_fail_reasons = ["manifest_has_no_icu_pco2_itemids"]
+        poc_itemid_qc_failed_itemids_n = 1
     else:
-        poc_inclusion_reason = "missing_itemid_qc_rows"
+        poc_itemid_qc_status = "fail"
+        poc_itemid_qc_reason = "missing_itemid_qc_rows"
+        poc_itemid_qc_fail_reasons = ["missing_itemid_qc_rows"]
+        poc_itemid_qc_failed_itemids_n = 1
 else:
-    poc_inclusion_reason = "icu_inclusion_mode_disabled"
+    poc_itemid_qc_status = "fail"
+    poc_itemid_qc_reason = "icu_inclusion_mode_disabled"
+    poc_itemid_qc_fail_reasons = ["icu_inclusion_mode_disabled"]
+    poc_itemid_qc_failed_itemids_n = 1
+
+poc_itemid_qc_blocking_passed = bool(poc_itemid_qc_status in {"pass", "warning"})
+poc_inclusion_enabled = bool(poc_itemid_qc_blocking_passed)
+poc_inclusion_reason = str(poc_itemid_qc_reason)
 
 print(
     "POC itemid QC status:",
-    {"enabled": int(poc_inclusion_enabled), "reason": poc_inclusion_reason},
+    {
+        "status": poc_itemid_qc_status,
+        "blocking_passed": int(poc_itemid_qc_blocking_passed),
+        "reason": poc_itemid_qc_reason,
+        "failed_itemids_n": int(poc_itemid_qc_failed_itemids_n),
+        "warning_itemids_n": int(poc_itemid_qc_warning_itemids_n),
+    },
 )
-
-poc_flags = pd.DataFrame(columns=["ed_stay_id", "poc_hypercap_0_24h_flag"])
-if len(panel_poc) > 0 and poc_inclusion_enabled:
-    p24_poc = panel_poc.loc[panel_poc["dt_hours"].between(0,24, inclusive="both")].copy()
-    p24_poc.loc[:, "poc_hypercap_0_24h_flag"] = (p24_poc["pco2"] >= 50).astype("Int64")
-
-    poc_flags = p24_poc.groupby("ed_stay_id", as_index=False).agg(
-        poc_hypercap_0_24h_flag=("poc_hypercap_0_24h_flag","max")
-    )
-
-poc_hypercap_0_24h_edstay_n = (
-    int(
-        pd.to_numeric(
-            poc_flags.get("poc_hypercap_0_24h_flag", pd.Series(dtype="float64")),
-            errors="coerce",
-        )
-        .fillna(0)
-        .astype(int)
-        .sum()
-    )
-    if len(poc_flags) > 0
-    else 0
-)
-poc_hypercap_0_24h_edstay_rate = float(
-    poc_hypercap_0_24h_edstay_n / max(int(ed_df["ed_stay_id"].nunique()), 1)
-)
+poc_qualifying_earliest_0_24h_hadm_n = 0
+poc_qualifying_earliest_0_24h_hadm_rate = 0.0
+poc_qualifying_any_type_0_24h_hadm_n = 0
+poc_qualifying_any_type_0_24h_hadm_rate = 0.0
+poc_hypercap_0_24h_edstay_n = 0  # deprecated alias (maps to poc_qualifying_any_type_0_24h_hadm_n)
+poc_hypercap_0_24h_edstay_rate = 0.0  # deprecated alias
+poc_hypercap_0_24h_alias_of = "poc_qualifying_any_type_0_24h_hadm_*"
 
 # Optional fallback for first_hco3 from ICU POC only when explicit manifest itemids are provided.
 if ICU_HCO3_ITEMIDS and len(panel_poc) > 0:
@@ -8261,6 +8496,7 @@ anchor = "ed_intime_first" if "ed_intime_first" in ed_df.columns else "ed_intime
 qualifying_hadm_cols = [
     "hadm_id",
     "any_hypercap_icd",
+    "pco2_threshold_any",
     "pco2_threshold_0_24h",
     "enrolled_any",
     "enrollment_route",
@@ -8345,11 +8581,11 @@ for source_col in [
     if source_col in ed_df.columns:
         ed_df[source_col] = ed_df[source_col].astype("string").str.upper()
 
-if "pco2_threshold_0_24h" not in ed_df.columns:
-    ed_df["pco2_threshold_0_24h"] = ed_df["qualifying_pco2_time"].notna().astype("Int64")
+if "pco2_threshold_any" not in ed_df.columns:
+    ed_df["pco2_threshold_any"] = ed_df["qualifying_pco2_time"].notna().astype("Int64")
 else:
-    ed_df["pco2_threshold_0_24h"] = (
-        pd.to_numeric(ed_df["pco2_threshold_0_24h"], errors="coerce")
+    ed_df["pco2_threshold_any"] = (
+        pd.to_numeric(ed_df["pco2_threshold_any"], errors="coerce")
         .fillna(ed_df["qualifying_pco2_time"].notna().astype(int))
         .astype("Int64")
     )
@@ -8357,6 +8593,14 @@ else:
 ed_df["dt_qualifying_hypercapnia_hours"] = (
     ed_df["qualifying_pco2_time"] - pd.to_datetime(ed_df[anchor], errors="coerce")
 ).dt.total_seconds() / 3600.0
+ed_df.loc[
+    pd.to_numeric(ed_df["dt_qualifying_hypercapnia_hours"], errors="coerce").lt(0),
+    "dt_qualifying_hypercapnia_hours",
+] = np.nan
+ed_df["pco2_threshold_0_24h"] = (
+    (pd.to_numeric(ed_df["pco2_threshold_any"], errors="coerce").fillna(0).astype(int) == 1)
+    & pd.to_numeric(ed_df["dt_qualifying_hypercapnia_hours"], errors="coerce").le(24.0)
+).astype("Int64")
 ed_df["dt_first_qualifying_gas_hours"] = ed_df["dt_qualifying_hypercapnia_hours"]
 ed_df["first_gas_time"] = ed_df["qualifying_pco2_time"]
 ed_df["first_pco2"] = ed_df["qualifying_pco2_mmhg"]
@@ -8664,19 +8908,11 @@ ed_df["first_hco3_qc_flag"] = (
     .fillna(False)
 )
 
-ed_df["presenting_hypercapnia"] = (
-    pd.to_numeric(ed_df["dt_qualifying_hypercapnia_hours"], errors="coerce").le(6)
-).astype("Int64")
-ed_df["late_hypercapnia"] = (
-    pd.to_numeric(ed_df["dt_qualifying_hypercapnia_hours"], errors="coerce").gt(6)
-    & pd.to_numeric(ed_df["dt_qualifying_hypercapnia_hours"], errors="coerce").le(24)
-).astype("Int64")
-
 qualifying_hours = pd.to_numeric(ed_df["dt_qualifying_hypercapnia_hours"], errors="coerce")
 qualifying_observed = qualifying_hours.notna()
 
 threshold_any = (
-    pd.to_numeric(ed_df.get("pco2_threshold_0_24h", pd.Series(0, index=ed_df.index)), errors="coerce")
+    pd.to_numeric(ed_df.get("pco2_threshold_any", pd.Series(0, index=ed_df.index)), errors="coerce")
     .fillna(0)
     .astype(int)
 )
@@ -8687,15 +8923,14 @@ any_icd = (
 )
 ed_df["hypercap_timing_class"] = np.select(
     [
-        qualifying_observed & qualifying_hours.le(6),
-        qualifying_observed & qualifying_hours.gt(6) & qualifying_hours.le(24),
-        (qualifying_observed & qualifying_hours.gt(24))
-        | (~qualifying_observed & threshold_any.eq(1)),
+        qualifying_observed & qualifying_hours.le(24),
+        qualifying_observed & qualifying_hours.gt(24),
+        (~qualifying_observed & threshold_any.eq(1)),
     ],
     [
-        "presenting_0_6h",
-        "late_6_24h",
-        "none_within_24h",
+        "within_24h",
+        "after_24h",
+        "after_24h",
     ],
     default="icd_only_or_no_qualifying_gas",
 )
@@ -8757,7 +8992,23 @@ ed_df["ph_band"] = pd.cut(ed_df["first_ph"], bins=bins_ph, labels=labels_ph)
 
 bins_hco3 = [-1, 24, 30, 999]
 labels_hco3 = ["<24","24–29","≥30"]
-ed_df["hco3_band"] = pd.cut(ed_df["first_hco3"], bins=bins_hco3, labels=labels_hco3)
+hco3_values_for_band = pd.to_numeric(ed_df.get("first_hco3"), errors="coerce")
+hco3_qc_pass = (
+    ed_df.get("first_hco3_qc_flag", pd.Series(False, index=ed_df.index))
+    .fillna(False)
+    .astype(bool)
+)
+ed_df["hco3_band"] = pd.cut(
+    hco3_values_for_band.where(hco3_qc_pass),
+    bins=bins_hco3,
+    labels=labels_hco3,
+)
+hco3_band_qc_inconsistency_n = int((ed_df["hco3_band"].notna() & ~hco3_qc_pass).sum())
+if hco3_band_qc_inconsistency_n > 0:
+    raise ValueError(
+        "hco3_band assigned for rows with first_hco3_qc_flag=False. "
+        f"Rows={hco3_band_qc_inconsistency_n}"
+    )
 
 bins_lac = [-1, 2, 4, 999]
 labels_lac = ["<2","2–4",">4"]
@@ -8793,14 +9044,14 @@ ed_df["any_hypercap_icd"] = (
 )
 ed_df["enrolled_any"] = (
     (ed_df["any_hypercap_icd"] == 1)
-    | (ed_df["pco2_threshold_0_24h"] == 1)
+    | (ed_df["pco2_threshold_any"] == 1)
 ).astype("Int64")
 ed_df["enrolled_any_icd_union_secondary"] = ed_df["enrolled_any"].astype("Int64")
 ed_df["enrollment_route"] = np.select(
     [
-        (ed_df["any_hypercap_icd"] == 0) & (ed_df["pco2_threshold_0_24h"] == 1),
-        (ed_df["any_hypercap_icd"] == 1) & (ed_df["pco2_threshold_0_24h"] == 0),
-        (ed_df["any_hypercap_icd"] == 1) & (ed_df["pco2_threshold_0_24h"] == 1),
+        (ed_df["any_hypercap_icd"] == 0) & (ed_df["pco2_threshold_any"] == 1),
+        (ed_df["any_hypercap_icd"] == 1) & (ed_df["pco2_threshold_any"] == 0),
+        (ed_df["any_hypercap_icd"] == 1) & (ed_df["pco2_threshold_any"] == 1),
     ],
     ["GAS_ONLY", "ICD_ONLY", "ICD+GAS"],
     default="NONE",
@@ -8808,8 +9059,7 @@ ed_df["enrollment_route"] = np.select(
 
 # QC invariants for enrolled rows.
 max_pco2_0_24h_lt_qualifying_n = 0
-max_pco2_0_6h_lt_qualifying_n = 0
-enrolled_mask = pd.to_numeric(ed_df["pco2_threshold_0_24h"], errors="coerce").fillna(0).astype(int).eq(1)
+enrolled_mask = pd.to_numeric(ed_df["pco2_threshold_any"], errors="coerce").fillna(0).astype(int).eq(1)
 if enrolled_mask.any():
     qualifying_time_missing_n = int(
         pd.to_datetime(ed_df.loc[enrolled_mask, "qualifying_pco2_time"], errors="coerce").isna().sum()
@@ -8824,19 +9074,22 @@ if enrolled_mask.any():
         errors="coerce",
     )
     out_of_window_n = int(
-        (~qualifying_hours_enrolled.between(0, 24, inclusive="both")).fillna(True).sum()
+        (~qualifying_hours_enrolled.ge(0)).fillna(True).sum()
     )
     if out_of_window_n:
         raise ValueError(
-            f"Found {out_of_window_n} enrolled rows with dt_qualifying_hypercapnia_hours outside [0, 24]."
+            f"Found {out_of_window_n} enrolled rows with negative/missing dt_qualifying_hypercapnia_hours."
         )
 
+    within_24_mask = enrolled_mask & pd.to_numeric(
+        ed_df["pco2_threshold_0_24h"], errors="coerce"
+    ).fillna(0).astype(int).eq(1)
     if {"max_pco2_0_24h", "qualifying_pco2_mmhg"}.issubset(ed_df.columns):
         qualifying_values_24h = pd.to_numeric(
-            ed_df.loc[enrolled_mask, "qualifying_pco2_mmhg"], errors="coerce"
+            ed_df.loc[within_24_mask, "qualifying_pco2_mmhg"], errors="coerce"
         )
         max_values_24h = pd.to_numeric(
-            ed_df.loc[enrolled_mask, "max_pco2_0_24h"], errors="coerce"
+            ed_df.loc[within_24_mask, "max_pco2_0_24h"], errors="coerce"
         )
         max_pco2_0_24h_lt_qualifying_n = int(
             (max_values_24h.lt(qualifying_values_24h) | max_values_24h.isna()).sum()
@@ -8850,31 +9103,6 @@ if enrolled_mask.any():
                 "max_pco2_0_24h invariant failed: enrolled rows must satisfy "
                 "max_pco2_0_24h >= qualifying_pco2_mmhg."
             )
-
-    if {"max_pco2_0_6h", "qualifying_pco2_mmhg", "dt_qualifying_hypercapnia_hours"}.issubset(ed_df.columns):
-        qualifying_in_6h_mask = enrolled_mask & pd.to_numeric(
-            ed_df["dt_qualifying_hypercapnia_hours"], errors="coerce"
-        ).le(6.0)
-        if qualifying_in_6h_mask.any():
-            qualifying_values_6h = pd.to_numeric(
-                ed_df.loc[qualifying_in_6h_mask, "qualifying_pco2_mmhg"],
-                errors="coerce",
-            )
-            max_values_6h = pd.to_numeric(
-                ed_df.loc[qualifying_in_6h_mask, "max_pco2_0_6h"], errors="coerce"
-            )
-            max_pco2_0_6h_lt_qualifying_n = int(
-                (max_values_6h.lt(qualifying_values_6h) | max_values_6h.isna()).sum()
-            )
-            print(
-                "QA: enrolled dt<=6h rows with max_pco2_0_6h < qualifying_pco2_mmhg (or missing max):",
-                max_pco2_0_6h_lt_qualifying_n,
-            )
-            if max_pco2_0_6h_lt_qualifying_n > 0:
-                raise ValueError(
-                    "max_pco2_0_6h invariant failed: enrolled rows with dt_qualifying_hypercapnia_hours<=6 "
-                    "must satisfy max_pco2_0_6h >= qualifying_pco2_mmhg."
-                )
 
     route_sum = (
         pd.to_numeric(ed_df.loc[enrolled_mask, "abg_hypercap_threshold"], errors="coerce").fillna(0).astype(int)
@@ -8966,16 +9194,16 @@ if 'ed_df' in globals() and 'ed_stay_id' in ed_df.columns:
         if STRICT_QA:
             raise
 
-# 2) Inclusion sanity: enrolled rows must match ICD OR gas-qualified in 0–24h.
+# 2) Inclusion sanity: enrolled rows must match ICD OR gas-qualified any-time.
 if 'ed_df' in globals():
     enrolled = pd.to_numeric(ed_df.get('enrolled_any'), errors='coerce').fillna(0).astype(int)
-    threshold = pd.to_numeric(ed_df.get('pco2_threshold_0_24h'), errors='coerce').fillna(0).astype(int)
+    threshold = pd.to_numeric(ed_df.get('pco2_threshold_any'), errors='coerce').fillna(0).astype(int)
     icd_any = pd.to_numeric(ed_df.get('any_hypercap_icd'), errors='coerce').fillna(0).astype(int)
     enrolled_expected = ((threshold == 1) | (icd_any == 1)).astype(int)
     mismatch_n = int((enrolled != enrolled_expected).sum())
-    print('QA: enrolled_any != (any_hypercap_icd OR pco2_threshold_0_24h) count:', mismatch_n)
+    print('QA: enrolled_any != (any_hypercap_icd OR pco2_threshold_any) count:', mismatch_n)
     if STRICT_QA and mismatch_n > 0:
-        raise AssertionError('Found rows where enrolled_any disagrees with ICD OR 0–24h gas rule.')
+        raise AssertionError('Found rows where enrolled_any disagrees with ICD OR any-time gas rule.')
 
 # 3) Temporal sanity: first_gas_time >= ed_intime (allow small negative drift)
 if 'ed_df' in globals() and 'first_gas_time' in ed_df.columns and 'ed_intime' in ed_df.columns:
@@ -9516,6 +9744,45 @@ qualifying_pco2_distribution_audit.to_csv(
 )
 print("Wrote:", qualifying_pco2_distribution_audit_path)
 
+qualifying_threshold_mask = (
+    pd.to_numeric(ed_df.get("pco2_threshold_0_24h"), errors="coerce")
+    .fillna(0)
+    .astype(int)
+    .eq(1)
+)
+qualifying_source_branch_series = (
+    ed_df.get("qualifying_source_branch", pd.Series("UNKNOWN", index=ed_df.index))
+    .astype("string")
+    .str.upper()
+    .fillna("UNKNOWN")
+)
+poc_qualifying_earliest_0_24h_hadm_n = int(
+    (qualifying_threshold_mask & qualifying_source_branch_series.eq("POC")).sum()
+)
+poc_qualifying_earliest_0_24h_hadm_rate = float(
+    poc_qualifying_earliest_0_24h_hadm_n / max(int(len(ed_df)), 1)
+)
+
+poc_any_type_mask = pd.Series(False, index=ed_df.index)
+for source_column in [
+    "first_abg_hypercap_source_branch",
+    "first_vbg_hypercap_source_branch",
+    "first_other_hypercap_source_branch",
+]:
+    if source_column in ed_df.columns:
+        poc_any_type_mask = poc_any_type_mask | (
+            ed_df[source_column].astype("string").str.upper().fillna("").eq("POC")
+        )
+poc_qualifying_any_type_0_24h_hadm_n = int(poc_any_type_mask.sum())
+poc_qualifying_any_type_0_24h_hadm_rate = float(
+    poc_qualifying_any_type_0_24h_hadm_n / max(int(len(ed_df)), 1)
+)
+
+# Deprecated aliases retained for compatibility; values now map to hadm-level any-type POC qualifying counts.
+poc_hypercap_0_24h_edstay_n = int(poc_qualifying_any_type_0_24h_hadm_n)
+poc_hypercap_0_24h_edstay_rate = float(poc_qualifying_any_type_0_24h_hadm_rate)
+poc_hypercap_0_24h_alias_of = "poc_qualifying_any_type_0_24h_hadm_*"
+
 poc_other_values_all = (
     pd.to_numeric(ed_df["poc_other_paco2"], errors="coerce")
     if "poc_other_paco2" in ed_df.columns
@@ -9550,8 +9817,23 @@ other_route_quarantine_audit = pd.DataFrame(
             "poc_unknown_hadm_n": int(globals().get("poc_unknown_hadm_n_for_audit", unknown_from_poc_detail_n)),
             "unknown_hypercap_threshold_hadm_n": int(unknown_threshold_series.fillna(0).astype(int).sum()),
             "unknown_from_poc_detail_hadm_n": unknown_from_poc_detail_n,
+            "poc_qualifying_earliest_0_24h_hadm_n": int(
+                globals().get("poc_qualifying_earliest_0_24h_hadm_n", 0)
+            ),
+            "poc_qualifying_earliest_0_24h_hadm_rate": float(
+                globals().get("poc_qualifying_earliest_0_24h_hadm_rate", 0.0)
+            ),
+            "poc_qualifying_any_type_0_24h_hadm_n": int(
+                globals().get("poc_qualifying_any_type_0_24h_hadm_n", 0)
+            ),
+            "poc_qualifying_any_type_0_24h_hadm_rate": float(
+                globals().get("poc_qualifying_any_type_0_24h_hadm_rate", 0.0)
+            ),
             "poc_hypercap_0_24h_edstay_n": int(globals().get("poc_hypercap_0_24h_edstay_n", 0)),
             "poc_hypercap_0_24h_edstay_rate": float(globals().get("poc_hypercap_0_24h_edstay_rate", 0.0)),
+            "poc_hypercap_0_24h_alias_of": str(
+                globals().get("poc_hypercap_0_24h_alias_of", "poc_qualifying_any_type_0_24h_hadm_*")
+            ),
         }
     ]
 )
@@ -9720,6 +10002,30 @@ if "pco2_itemid_qc_audit" in globals() and not pco2_itemid_qc_audit.empty:
 
 qa_status = "warning" if qa_warnings else "pass"
 
+dt_qualifying_hours_series = pd.to_numeric(
+    ed_df.get("dt_qualifying_hypercapnia_hours"), errors="coerce"
+)
+pco2_any_flag = pd.to_numeric(
+    ed_df.get("pco2_threshold_any", pd.Series(0, index=ed_df.index)),
+    errors="coerce",
+).fillna(0).astype(int)
+pco2_24h_flag = pd.to_numeric(
+    ed_df.get("pco2_threshold_0_24h", pd.Series(0, index=ed_df.index)),
+    errors="coerce",
+).fillna(0).astype(int)
+dt_gas_positive = dt_qualifying_hours_series.loc[pco2_any_flag.eq(1)]
+dt_non_missing = dt_gas_positive.dropna()
+dt_iqr = [
+    float(dt_non_missing.quantile(0.25)) if not dt_non_missing.empty else None,
+    float(dt_non_missing.quantile(0.75)) if not dt_non_missing.empty else None,
+]
+dt_within_24h_rate = float(
+    (pco2_any_flag.eq(1) & pco2_24h_flag.eq(1)).sum() / max(int(pco2_any_flag.eq(1).sum()), 1)
+)
+dt_after_24h_rate = float(
+    (pco2_any_flag.eq(1) & pco2_24h_flag.eq(0)).sum() / max(int(pco2_any_flag.eq(1).sum()), 1)
+)
+
 # T4 — QA summary artifact.
 qa_summary = {
     "ed_spine_rows": int(len(ed_df)),
@@ -9730,10 +10036,17 @@ qa_summary = {
     "icu_link_rate": float(ed_df["icu_intime_first"].notna().mean()) if "icu_intime_first" in ed_df.columns else None,
     "pct_any_gas_0_6h": pct_any_6h,
     "pct_any_gas_0_24h": pct_any_24h,
+    "pco2_threshold_any_n": int(pco2_any_flag.sum()),
+    "pco2_threshold_any_rate": float(pco2_any_flag.mean()),
     "pco2_threshold_0_24h_n": int(pd.to_numeric(ed_df.get("pco2_threshold_0_24h"), errors="coerce").fillna(0).astype(int).sum()),
     "pco2_threshold_0_24h_rate": float(pd.to_numeric(ed_df.get("pco2_threshold_0_24h"), errors="coerce").fillna(0).astype(int).mean()),
+    "dt_first_qualifying_gas_hours_non_missing_n": int(dt_non_missing.shape[0]),
+    "dt_first_qualifying_gas_hours_median": float(dt_non_missing.median()) if not dt_non_missing.empty else None,
+    "dt_first_qualifying_gas_hours_iqr": dt_iqr,
+    "dt_first_qualifying_gas_hours_max": float(dt_non_missing.max()) if not dt_non_missing.empty else None,
+    "dt_first_qualifying_gas_hours_pct_le_24": dt_within_24h_rate,
+    "dt_first_qualifying_gas_hours_pct_gt_24": dt_after_24h_rate,
     "max_pco2_0_24h_lt_qualifying_n": int(max_pco2_0_24h_lt_qualifying_n),
-    "max_pco2_0_6h_lt_qualifying_n": int(max_pco2_0_6h_lt_qualifying_n),
     "enrolled_any_n": int(pd.to_numeric(ed_df.get("enrolled_any"), errors="coerce").fillna(0).astype(int).sum()),
     "enrolled_any_rate": float(pd.to_numeric(ed_df.get("enrolled_any"), errors="coerce").fillna(0).astype(int).mean()),
     "enrollment_route_counts": (
@@ -9751,6 +10064,11 @@ qa_summary = {
     "source_unknown_rate": gas_source_unknown_rate,
     "gas_source_audit": gas_source_audit,
     "gas_source_overlap_summary": gas_overlap_summary_records,
+    "gas_source_diagnostics_artifact_path": str(
+        globals().get("gas_source_diagnostics_artifact_path")
+    )
+    if "gas_source_diagnostics_artifact_path" in globals()
+    else None,
     "blood_gas_manifest": {
         "version": BLOOD_GAS_MANIFEST.get("version"),
         "path": BLOOD_GAS_MANIFEST.get("path"),
@@ -9768,13 +10086,54 @@ qa_summary = {
     "pco2_itemid_qc_sentinel_removed_total_n": pco2_itemid_qc_sentinel_removed_total_n,
     "pco2_itemid_qc_out_of_range_removed_total_n": pco2_itemid_qc_out_of_range_removed_total_n,
     "hco3_itemid_qc_audit": hco3_itemid_qc_audit_records,
-    "poc_itemid_qc_passed": bool(poc_inclusion_enabled),
-    "poc_itemid_qc_reason": str(poc_inclusion_reason),
+    "poc_itemid_qc_status": str(globals().get("poc_itemid_qc_status", "fail")),
+    "poc_itemid_qc_blocking_passed": bool(
+        globals().get("poc_itemid_qc_blocking_passed", False)
+    ),
+    "poc_itemid_qc_failed_itemids_n": int(
+        globals().get("poc_itemid_qc_failed_itemids_n", 0)
+    ),
+    "poc_itemid_qc_warning_itemids_n": int(
+        globals().get("poc_itemid_qc_warning_itemids_n", 0)
+    ),
+    "poc_itemid_qc_fail_reasons": list(
+        globals().get("poc_itemid_qc_fail_reasons", [])
+    ),
+    "poc_itemid_qc_warn_reasons": list(
+        globals().get("poc_itemid_qc_warn_reasons", [])
+    ),
+    "poc_itemid_qc_passed": bool(
+        globals().get("poc_itemid_qc_blocking_passed", False)
+    ),
+    "poc_itemid_qc_reason": str(globals().get("poc_itemid_qc_reason", "not_evaluated")),
+    "poc_qualifying_earliest_0_24h_hadm_n": int(
+        globals().get("poc_qualifying_earliest_0_24h_hadm_n", 0)
+    ),
+    "poc_qualifying_earliest_0_24h_hadm_rate": float(
+        globals().get("poc_qualifying_earliest_0_24h_hadm_rate", 0.0)
+    ),
+    "poc_qualifying_any_type_0_24h_hadm_n": int(
+        globals().get("poc_qualifying_any_type_0_24h_hadm_n", 0)
+    ),
+    "poc_qualifying_any_type_0_24h_hadm_rate": float(
+        globals().get("poc_qualifying_any_type_0_24h_hadm_rate", 0.0)
+    ),
     "poc_hypercap_0_24h_edstay_n": int(globals().get("poc_hypercap_0_24h_edstay_n", 0)),
     "poc_hypercap_0_24h_edstay_rate": float(globals().get("poc_hypercap_0_24h_edstay_rate", 0.0)),
+    "poc_hypercap_0_24h_alias_of": str(
+        globals().get("poc_hypercap_0_24h_alias_of", "poc_qualifying_any_type_0_24h_hadm_*")
+    ),
+    "poc_used_in_qualification_logic": bool(
+        globals().get(
+            "poc_used_in_qualification_logic",
+            bool(ICU_PCO2_ITEMIDS)
+            and "SELECT * FROM icu_pco2_clean" in str(SQL.get("co2_thresholds_sql", "")),
+        )
+    ),
+    "poc_qc_is_telemetry_only": bool(globals().get("poc_qc_is_telemetry_only", True)),
     "qualifying_source_branch_counts": (
         ed_df.loc[
-            pd.to_numeric(ed_df.get("pco2_threshold_0_24h"), errors="coerce").fillna(0).astype(int).eq(1),
+            pd.to_numeric(ed_df.get("pco2_threshold_any"), errors="coerce").fillna(0).astype(int).eq(1),
             "qualifying_source_branch",
         ]
         .fillna("UNKNOWN")
@@ -9784,6 +10143,8 @@ qa_summary = {
         if "qualifying_source_branch" in ed_df.columns
         else {}
     ),
+    "qualifying_anchor_ed_n": int(globals().get("qualifying_anchor_ed_n", 0)),
+    "qualifying_anchor_fallback_n": int(globals().get("qualifying_anchor_fallback_n", 0)),
     "omr_diagnostics": omr_diagnostics if "omr_diagnostics" in globals() else None,
     "omr_window_diagnostics": omr_window_diagnostics if "omr_window_diagnostics" in globals() else None,
     "anthro_timing_tier_counts": omr_diagnostics.get("selected_tier_counts", {}) if "omr_diagnostics" in globals() else {},
@@ -9792,6 +10153,9 @@ qa_summary = {
     "anthropometric_cleaning_audit": anthropometric_cleaning_audit_records,
     "hco3_integrity_audit": hco3_integrity_audit_records,
     "hco3_coverage_audit": hco3_coverage_audit_records,
+    "hco3_band_qc_inconsistency_n": int(
+        globals().get("hco3_band_qc_inconsistency_n", 0)
+    ),
     "charted_anthro_diagnostics": charted_anthro_diagnostics if "charted_anthro_diagnostics" in globals() else None,
     "timing_integrity_audit": timing_integrity_audit_records,
     "ventilation_timing_audit": ventilation_timing_audit_records,
@@ -9835,6 +10199,11 @@ qa_summary = {
         else None,
         "hco3_coverage": str(hco3_coverage_audit_path)
         if "hco3_coverage_audit_path" in globals()
+        else None,
+        "gas_source_diagnostics_by_ed_stay": str(
+            globals().get("gas_source_diagnostics_artifact_path")
+        )
+        if "gas_source_diagnostics_artifact_path" in globals()
         else None,
     },
     "timing_integrity_audit_path": str(timing_integrity_audit_path)
@@ -9993,13 +10362,20 @@ add_ed_cols = [c for c in ed_first.columns if c not in df_cc.columns]
 
 final_cc = df_cc.merge(ed_first[["hadm_id"] + add_ed_cols], on="hadm_id", how="left")
 pre_filter_n = int(len(final_cc))
-if "pco2_threshold_0_24h" not in final_cc.columns:
-    raise KeyError("Expected pco2_threshold_0_24h in final_cc before export.")
-final_cc["pco2_threshold_0_24h"] = (
-    pd.to_numeric(final_cc["pco2_threshold_0_24h"], errors="coerce")
+if "pco2_threshold_any" not in final_cc.columns:
+    raise KeyError("Expected pco2_threshold_any in final_cc before export.")
+final_cc["pco2_threshold_any"] = (
+    pd.to_numeric(final_cc["pco2_threshold_any"], errors="coerce")
     .fillna(0)
     .astype("Int64")
 )
+final_cc["pco2_threshold_0_24h"] = (
+    (final_cc["pco2_threshold_any"] == 1)
+    & pd.to_numeric(
+        final_cc.get("dt_qualifying_hypercapnia_hours", pd.Series(np.nan, index=final_cc.index)),
+        errors="coerce",
+    ).le(24.0)
+).astype("Int64")
 if "any_hypercap_icd" not in final_cc.columns:
     final_cc["any_hypercap_icd"] = 0
 final_cc["any_hypercap_icd"] = (
@@ -10008,14 +10384,14 @@ final_cc["any_hypercap_icd"] = (
     .astype("Int64")
 )
 final_cc["enrolled_any"] = (
-    (final_cc["pco2_threshold_0_24h"] == 1)
+    (final_cc["pco2_threshold_any"] == 1)
     | (final_cc["any_hypercap_icd"] == 1)
 ).astype("Int64")
 final_cc["enrollment_route"] = np.select(
     [
-        (final_cc["any_hypercap_icd"] == 0) & (final_cc["pco2_threshold_0_24h"] == 1),
-        (final_cc["any_hypercap_icd"] == 1) & (final_cc["pco2_threshold_0_24h"] == 0),
-        (final_cc["any_hypercap_icd"] == 1) & (final_cc["pco2_threshold_0_24h"] == 1),
+        (final_cc["any_hypercap_icd"] == 0) & (final_cc["pco2_threshold_any"] == 1),
+        (final_cc["any_hypercap_icd"] == 1) & (final_cc["pco2_threshold_any"] == 0),
+        (final_cc["any_hypercap_icd"] == 1) & (final_cc["pco2_threshold_any"] == 1),
     ],
     ["GAS_ONLY", "ICD_ONLY", "ICD+GAS"],
     default="NONE",
@@ -10023,7 +10399,7 @@ final_cc["enrollment_route"] = np.select(
 final_cc = final_cc.loc[final_cc["enrolled_any"] == 1].copy()
 post_filter_n = int(len(final_cc))
 print(
-    "Cohort size comparison (pre vs final ICD OR 0–24h qualifying):",
+    "Cohort size comparison (pre vs final ICD OR any-time qualifying):",
     f"pre={pre_filter_n:,}",
     f"post={post_filter_n:,}",
     f"removed={pre_filter_n - post_filter_n:,}",
@@ -10051,6 +10427,41 @@ if "qualifying_source_branch" in final_cc.columns:
 prior_runs_dir = DATA_DIR / "prior runs"
 prior_runs_dir.mkdir(parents=True, exist_ok=True)
 out_date = datetime.now().strftime("%Y-%m-%d")
+artifacts_dir = WORK_DIR / "artifacts"
+artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+gas_source_diag_required_columns = [
+    "gas_source_inference_primary_tier",
+    "gas_source_hint_conflict_rate",
+    "gas_source_resolved_rate",
+]
+if "ed_stay_id" not in final_cc.columns:
+    raise KeyError("ed_stay_id is required to export gas source diagnostics artifact.")
+gas_source_diag_export = final_cc[["ed_stay_id", "hadm_id"]].copy()
+for required_column in gas_source_diag_required_columns:
+    if required_column in final_cc.columns:
+        gas_source_diag_export[required_column] = final_cc[required_column]
+    elif required_column == "gas_source_inference_primary_tier":
+        gas_source_diag_export[required_column] = "fallback_unknown"
+    else:
+        gas_source_diag_export[required_column] = 0.0
+gas_source_diag_export["gas_source_inference_primary_tier"] = (
+    gas_source_diag_export["gas_source_inference_primary_tier"]
+    .astype("string")
+    .fillna("fallback_unknown")
+    .replace("", "fallback_unknown")
+)
+for rate_column in ("gas_source_hint_conflict_rate", "gas_source_resolved_rate"):
+    gas_source_diag_export[rate_column] = (
+        pd.to_numeric(gas_source_diag_export[rate_column], errors="coerce")
+        .fillna(0.0)
+        .clip(lower=0.0, upper=1.0)
+    )
+if gas_source_diag_export["ed_stay_id"].duplicated().any():
+    raise ValueError("gas_source_diagnostics_by_ed_stay requires one row per ed_stay_id.")
+gas_source_diagnostics_artifact_path = artifacts_dir / "gas_source_diagnostics_by_ed_stay.csv"
+gas_source_diag_export.to_csv(gas_source_diagnostics_artifact_path, index=False)
+print("Wrote:", gas_source_diagnostics_artifact_path)
 
 cohort_contract = validate_cohort_contract(final_cc)
 cohort_contract_report = {
@@ -10095,6 +10506,9 @@ qa_payload["contract_warning_codes"] = contract_warning_codes
 qa_payload["contract_error_codes"] = contract_error_codes
 qa_payload["qa_status_final"] = qa_status_final
 qa_payload["cohort_contract_report_path"] = str(cohort_contract_paths["contract_report_path"])
+qa_payload["gas_source_diagnostics_artifact_path"] = str(
+    gas_source_diagnostics_artifact_path
+)
 qa_path.write_text(json.dumps(qa_payload, indent=2))
 print("Updated:", qa_path, f"(qa_status_final={qa_status_final})")
 
@@ -10135,6 +10549,8 @@ cohort_export_drop_columns = [
     "poc_other_po2",
     "max_pco2_0_6h_source_branch",
     "max_pco2_0_24h_source_branch",
+    "presenting_hypercapnia",
+    "late_hypercapnia",
 ]
 cohort_export_drop_existing = [
     column for column in cohort_export_drop_columns if column in final_cc.columns
@@ -10469,16 +10885,30 @@ META = {
         "derivation": "max(unknown-source pCO2 ≥ 50) per hadm_id",
         "units": "binary (0/1)",
     },
+    "pco2_threshold_any": {
+        "label": "Any-time hypercapnic pCO2 threshold met",
+        "definition": "Indicator that a qualifying ABG/VBG/UNKNOWN hypercapnic pCO2 event exists at any time in the admission stay.",
+        "source": "Derived",
+        "derivation": "1 when qualifying_pco2_time is present for stay-level qualifying logic",
+        "units": "binary (0/1)",
+    },
+    "pco2_threshold_0_24h": {
+        "label": "Within-24h hypercapnic marker",
+        "definition": "Indicator that the first qualifying hypercapnic pCO2 event occurred within 24 hours of ED presentation anchor.",
+        "source": "Derived",
+        "derivation": "pco2_threshold_any == 1 and dt_first_qualifying_gas_hours <= 24",
+        "units": "binary (0/1)",
+    },
     "qualifying_pco2_time": {
         "label": "Qualifying hypercapnic pCO2 time",
-        "definition": "Earliest hypercapnic pCO2 event within ED 0–24h window (canonical qualifying event timestamp).",
+        "definition": "Earliest hypercapnic pCO2 event during the admission stay (canonical qualifying event timestamp).",
         "source": "mimiciv_hosp.labevents + mimiciv_icu.chartevents",
-        "derivation": "min charttime among threshold-qualifying ABG/VBG/UNKNOWN events in ED 0–24h",
+        "derivation": "min charttime among threshold-qualifying ABG/VBG/UNKNOWN events after presentation anchor",
         "units": "datetime",
     },
     "qualifying_pco2_mmhg": {
         "label": "Qualifying hypercapnic pCO2 (mmHg)",
-        "definition": "Canonical qualifying pCO2 value from earliest ED 0–24h hypercapnic event.",
+        "definition": "Canonical qualifying pCO2 value from earliest stay-level hypercapnic event.",
         "source": "mimiciv_hosp.labevents + mimiciv_icu.chartevents",
         "derivation": "pCO2 value at qualifying_pco2_time after unit normalization to mmHg",
         "units": "mmHg",
@@ -10506,16 +10936,16 @@ META = {
     },
     "first_gas_time": {
         "label": "First gas panel time",
-        "definition": "Earliest gas panel time in the ED 0–24h window.",
-        "source": "mimiciv_hosp.labevents (gas panels)",
-        "derivation": "min panel_time within ED 0–24h window",
+        "definition": "Earliest qualifying hypercapnic gas time across the admission stay.",
+        "source": "mimiciv_hosp.labevents + mimiciv_icu.chartevents",
+        "derivation": "alias of qualifying_pco2_time",
         "units": "datetime",
     },
     "dt_first_qualifying_gas_hours": {
-        "label": "Hours to first gas panel",
-        "definition": "Hours from first ED arrival to first gas panel time.",
+        "label": "Hours to first qualifying hypercapnic gas",
+        "definition": "Hours from ED presentation anchor to first qualifying hypercapnic blood gas.",
         "source": "Derived",
-        "derivation": "(first_gas_time - ed_intime_first) in hours",
+        "derivation": "(qualifying_pco2_time - presentation anchor) in hours; values may exceed 24",
         "units": "hours",
     },
     "first_other_time": {
@@ -10524,20 +10954,6 @@ META = {
         "source": "mimiciv_hosp.labevents + mimiciv_icu.chartevents",
         "derivation": "min(other-source pCO2 charttime) across LAB and POC",
         "units": "datetime",
-    },
-    "presenting_hypercapnia": {
-        "label": "Presenting (≤6h) gas timing",
-        "definition": "Indicator that first gas panel occurred within 6h of first ED arrival.",
-        "source": "Derived",
-        "derivation": "dt_first_qualifying_gas_hours ≤ 6",
-        "units": "binary (0/1)",
-    },
-    "late_hypercapnia": {
-        "label": "Late (>6h) gas timing",
-        "definition": "Indicator that first gas panel occurred >6h after first ED arrival.",
-        "source": "Derived",
-        "derivation": "dt_first_qualifying_gas_hours > 6",
-        "units": "binary (0/1)",
     },
     "gas_source_other_rate": {
         "label": "Gas source other/unknown rate",
