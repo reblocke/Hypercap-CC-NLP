@@ -628,9 +628,30 @@ Now:
   - `quarto render "Chart Review Sample Calc.qmd"` passed.
   - rendered output confirms `expected_ci_width_with_n60` (`conf.width ≈ 0.282` for κ=0.70 under planning proportions).
   - `make lint` passed.
+- Git push failure troubleshooting + remediation (2026-03-02/03):
+  - Reproduced push failure with verbose transport logs:
+    - `GIT_TRACE=1 GIT_CURL_VERBOSE=1 git push --verbose origin main`
+    - observed `HTTP 408` / sideband disconnect during upload.
+  - Diagnosed root cause as oversized generated artifacts in local ahead commits (multiple `debug/run_manifests/*_git.diff` blobs ~360 MB and `debug/versioning/*_git_diff.patch` blobs ~120 MB).
+  - Implemented history cleanup rewrite:
+    - created safety branch `codex/push-cleanup-backup-20260302_211707`,
+    - reset `main` to `origin/main`,
+    - reapplied source-only files and recommitted as `68559a5`.
+  - Added ignore guards to prevent reintroducing bulky generated artifacts:
+    - `debug/run_manifests/`, `debug/versioning/`, `debug/model_compare/`, `hypercap_outputs_bundle_*/`, `outputs*.zip`.
+  - Validation:
+    - `make lint` passed.
+    - `make test` passed (`110 passed`).
+    - push now succeeds: `268b9a0..68559a5  main -> main`.
+
+Now:
+- Repository is synchronized (`main` == `origin/main`) after push cleanup rewrite.
+- Safety artifacts retained locally for rollback if needed:
+  - backup branch `codex/push-cleanup-backup-20260302_211707`
+  - stash entry `stash@{0}: pre-push-cleanup-20260302_211707`
 
 Next:
-- Await next request; refreshed outputs zip and `Rplots.pdf` suppression are complete.
+- Await next request; optional follow-up is local object-store cleanup (`git gc`) after confirming no rollback needed.
 
 Open questions (UNCONFIRMED if needed):
 - None.
