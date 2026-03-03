@@ -11,44 +11,59 @@ execute:
   warning: false
   message: false
   error: false
+editor: 
+  markdown: 
+    wrap: sentence
 ---
-
 
 # MIMIC‑IV Hypercapnia Cohort — **ICD ∪ Physiologic Thresholds** (BigQuery)
 
-TODO: 
-
-[ ] want to add ED-rendered diagnoses - a flag to split off whether the hypercapnic respiratory failure ICD was rendered in the ED or during the hospital stay. 
-[ ] are the installation instructions at the beginning of this notebook consistent with the way we intend the notebook to be used? is it also consistent with the README.md instructions?
-
 **Goal:** Build an admissions‑level tabular dataset that **enrolls** any hospital admission (`hadm_id`) with a qualifying hypercapnic blood gas (LAB or POC) at **any time during the stay**, while retaining a marker for whether the **first qualifying** event occurred within **24 hours** of first ED arrival:
 
-1. **Arterial blood gas (ABG):** PaCO₂ **> 45.0 mmHg**
-2. **Venous blood gas (VBG):** PaCO₂ **> 50.0 mmHg**
-3. **Unknown/indeterminate blood gas source:** PaCO₂ **> 50.0 mmHg**
+1.  **Arterial blood gas (ABG):** PaCO₂ **\> 45.0 mmHg**
+2.  **Venous blood gas (VBG):** PaCO₂ **\> 50.0 mmHg**
+3.  **Unknown/indeterminate blood gas source:** PaCO₂ **\> 50.0 mmHg**
 
-Then, keep all downstream columns/logic from the current workflow:
-- Per‑code ICD indicators and an `any_hypercap_icd` flag.
-- Deterministic extraction of the **first qualifying hypercapnic blood gas** with source/site provenance.
-- Demographics/outcomes, NIH/OMB race & ethnicity, ED triage + first ED vitals, ICU meta (first stay + LOS), ventilation flags.
-- Sanity checks.
+Flow:
 
-> **Assumptions**
-> - You already configured BigQuery auth (`gcloud auth application-default login`) and `.env` variables as in the previous notebook.
+1.  **Setup section** verifies credentials, datasets, and configuration.\
+    If this fails, nothing else should be trusted.
+2.  **SQL registry** defines every query template in one place.\
+    This is where to look when you need to understand data extraction rules.
+3.  **Cohort build sections** create two linked tables:
+    -   an admission-level table (`hadm_id`) for enrollment logic,
+    -   an ED-stay table (`ed_stay_id`) for downstream analysis exports.
+4.  **Transform sections** derive clinically meaningful columns (gas thresholds, timing, source classes, vitals/anthropometrics, ICD unions).
+5.  **QA/audit sections** generate explicit checks and dated audit files in `MIMIC tabular data/prior runs/`.
+6.  **Output section** writes the canonical workbook used by the next pipeline stage (`MIMICIV all with CC.xlsx`).
+
+## Summary of functionality
+
+-   **Purpose:** Build the canonical cohort workbook used by downstream classifier/rater/analysis stages.
+-   **Inputs:** BigQuery MIMIC-IV datasets (`hosp`, `icu`, auto-detected `ed`) + `.env` configuration.
+-   **Canonical outputs:**
+    -   `MIMIC tabular data/MIMICIV all with CC.xlsx = the dataset`
+    -   `qa_summary.json [ ] TODO this contains?`
+-   **Run-archived outputs:** dated workbooks/parquet/audits under `MIMIC tabular data/prior runs/`.
+-   **Key env vars:** `WORK_DIR`, `WORK_PROJECT`, `BQ_PHYSIONET_PROJECT`, `BQ_DATASET_HOSP`, `BQ_DATASET_ICU`, `BQ_DATASET_ED`, `WRITE_ARCHIVE_XLSX_EXPORTS`.
+-   **Quality Assurance (QA) artifacts emitted:** timing/ventilation audits, gas-source audits, pCO2/HCO3 audits, anthropometric audits, contract report.
+
+> **Assumptions** - You already configured BigQuery auth (`gcloud auth application-default login`) and created `.env` from `.env.example` per `README.md`.
 > - The PhysioNet hosting project is `physionet-data`.
-> - Datasets exist (e.g., `mimiciv_3_1_hosp`, `mimiciv_3_1_icu`, and an ED dataset such as `mimiciv_ed`). This notebook auto-detects the ED dataset.
+> - Datasets exist (e.g., `mimiciv_3_1_hosp`, `mimiciv_3_1_icu`, and an ED dataset such as `mimiciv_ed`).
+> This notebook auto-detects the ED dataset.
 
-**Execution timing note:** To capture per-cell runtimes, enable cell execution timing in VS Code (Notebook: Show Cell Execution Time) or enable ExecuteTime in Jupyter. Then re-run and save to allow runtime summaries.
+## Pipeline stages
 
-## Pipeline stages (readable map)
-1. **Stage A — Config & helpers**: dataset IDs, thresholds, shared helper functions.
-2. **Stage B — Cohort spine**: ICD + gas thresholds → `hadm_list` / `ed_stay_list`.
-3. **Stage C — Bulk pulls**: one query per table where possible.
-4. **Stage D — Transforms**: panels, flags, timing, comorbidities, vitals.
-5. **Stage E — QA checks**: deterministic assertions and range checks.
-6. **Stage F — Outputs**: parquet + Excel exports.
+1.  **Stage A — Config & helpers**: dataset IDs, thresholds, shared helper functions.
+2.  **Stage B — Cohort spine**: ICD + gas thresholds → `hadm_list` / `ed_stay_list`.
+3.  **Stage C — Bulk pulls**: one query per table where possible.
+4.  **Stage D — Transforms**: panels, flags, timing, comorbidities, vitals.
+5.  **Stage E — QA checks**: deterministic assertions and range checks.
+6.  **Stage F — Outputs**: parquet + Excel exports.
 
 ## SQL registry (centralized query templates)
+
 All BigQuery SQL is defined in one place below, then referenced by name in subsequent cells.
 
 ```{python}
@@ -81,38 +96,50 @@ Purpose: make a clean, reproducible start on a new machine.
 Outcome: verify auth, project config, and dataset access; provide a reusable BigQuery runner for the build notebook.
 
 **Rationale:** Establish the BigQuery environment and dataset configuration so queries are consistent and reproducible across runs.
+This notebook is Stage 1 of the canonical Quarto pipeline; use `README.md` as the source of truth for full repository setup.
 
 ## 0. Prerequisites (one-time)
 
-**Accounts & access**
-- PhysioNet access to MIMIC-IV on BigQuery; in BigQuery Console star project `physionet-data`.
+**Accounts & access** - PhysioNet access to MIMIC-IV on BigQuery; in BigQuery Console star project `physionet-data`.
 - A Google Cloud **Project ID** with BigQuery API enabled (this is your **billing** project).
 
-**CLI & environment**
-- Google Cloud SDK (gcloud) installed and on PATH.
-- Python environment created with `uv` (see README) and Jupyter kernel selected.
-- A project-local **`.env`** with the variables below.
+**CLI & environment** - Google Cloud SDK (gcloud) installed and on PATH.
+- Python environment synced with `uv` (run `uv sync` at repo root).
+- A project-local **`.env`** created from `.env.example`.
 
-**.env variables**
-```ini
+**.env workflow**
+
+``` bash
+uv sync
+cp .env.example .env
+```
+
+Then edit `.env` and fill your project-specific values.
+
+**Minimum `.env` keys for this cohort notebook**
+
+``` ini
 MIMIC_BACKEND=bigquery
 WORK_PROJECT=<your-billing-project-id>
 BQ_PHYSIONET_PROJECT=physionet-data
 BQ_DATASET_HOSP=mimiciv_3_1_hosp
 BQ_DATASET_ICU=mimiciv_3_1_icu
 BQ_DATASET_ED=mimiciv_ed
-WORK_DIR=/path/to/Hypercap-CC-NLP
-# GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+WORK_DIR=/path/to/Hypercap-CC-NLP  # optional but recommended
+# GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json  # optional
 ```
 
 **Command line quickstart**
-```bash
-brew install --cask google-cloud-sdk
+
+``` bash
 gcloud init
 gcloud auth application-default login
 gcloud services enable bigquery.googleapis.com --project <your-billing-project-id>
 ls -l ~/.config/gcloud/application_default_credentials.json
 ```
+
+Install `gcloud` using the method appropriate for your OS (see Google Cloud SDK install docs).
+Do not rely on a single package-manager command in this notebook.
 
 **Rationale:** Verify access and credentials up front to prevent silent failures later in the pipeline.
 
@@ -132,55 +159,66 @@ from google.cloud import bigquery
 from google.oauth2 import service_account
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv()  # Load repository .env so notebook behavior is environment-driven and reproducible.
 
-WORK_DIR = Path(os.getenv("WORK_DIR", Path.cwd())).expanduser().resolve()
-DATA_DIR = WORK_DIR / "MIMIC tabular data"
+WORK_DIR = Path(os.getenv("WORK_DIR", Path.cwd())).expanduser().resolve()  # Project root used for all relative paths.
+DATA_DIR = WORK_DIR / "MIMIC tabular data"  # Canonical data output directory for workbook artifacts.
 DATA_DIR.mkdir(parents=True, exist_ok=True)
-SRC_DIR = WORK_DIR / "src"
+PRIOR_RUNS_DIR = DATA_DIR / "prior runs"  # Date-stamped run outputs and audits.
+PRIOR_RUNS_DIR.mkdir(parents=True, exist_ok=True)
+RUN_TIMESTAMP = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")  # Run-level unique timestamp for archive filenames.
+RUN_DATE = pd.Timestamp.now().strftime("%Y-%m-%d")  # Run-level date for dated audit outputs.
+WRITE_ARCHIVE_XLSX_EXPORTS = os.getenv("WRITE_ARCHIVE_XLSX_EXPORTS", "0").strip() == "1"  # Optional archival XLSX exports.
+COHORT_DEBUG_INVENTORY = os.getenv("COHORT_DEBUG_INVENTORY", "0").strip() == "1"  # Toggle for verbose inventory/debug writes.
+SRC_DIR = WORK_DIR / "src"  # Local helper package path for contracts/audit utilities.
 if SRC_DIR.exists() and str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
+
+def archive_xlsx_path(stem: str) -> Path:
+    """Return a prior-runs XLSX path using the run-level timestamp."""
+    return PRIOR_RUNS_DIR / f"{stem}_{RUN_TIMESTAMP}.xlsx"
+
 # Local helper functions (core cohort logic must remain embedded in this notebook)
-OMR_RESULT_NAMES = ("bmi", "height", "weight")
+OMR_RESULT_NAMES = ("bmi", "height", "weight")  # Canonical OMR metric names accepted from source records.
 OMR_OUTPUT_COLUMNS = (
     "bmi_closest_pre_ed",
     "height_closest_pre_ed",
     "weight_closest_pre_ed",
-)
+)  # Primary anthropometric values written to cohort.
 
-ANTHRO_UNIT_COLUMNS: dict[str, str] = {
+ANTHRO_UNIT_COLUMNS: dict[str, str] = {  # Unit columns paired to each anthropometric value.
     "bmi": "bmi_closest_pre_ed_uom",
     "height": "height_closest_pre_ed_uom",
     "weight": "weight_closest_pre_ed_uom",
 }
 
-ANTHRO_TIME_COLUMNS: dict[str, str] = {
+ANTHRO_TIME_COLUMNS: dict[str, str] = {  # Timestamp columns paired to each anthropometric value.
     "bmi": "bmi_closest_pre_ed_time",
     "height": "height_closest_pre_ed_time",
     "weight": "weight_closest_pre_ed_time",
 }
 
-ANTHRO_VALUE_COLUMNS: dict[str, str] = {
+ANTHRO_VALUE_COLUMNS: dict[str, str] = {  # Value columns for each anthropometric metric.
     "bmi": "bmi_closest_pre_ed",
     "height": "height_closest_pre_ed",
     "weight": "weight_closest_pre_ed",
 }
 
-ANTHRO_CANONICAL_UNITS: dict[str, str] = {
+ANTHRO_CANONICAL_UNITS: dict[str, str] = {  # Target units after normalization/conversion.
     "bmi": "kg/m2",
     "height": "cm",
     "weight": "kg",
 }
 
-ANTHRO_SOURCE_PRIORITY: dict[str, int] = {
+ANTHRO_SOURCE_PRIORITY: dict[str, int] = {  # Deterministic tie-break order when values are equally close in time.
     "ED": 0,
     "ICU": 1,
     "HOSPITAL": 2,
     "missing": 99,
 }
 
-ANTHRO_BMI_PAIR_WINDOW_HOURS = 24.0 * 7.0
+ANTHRO_BMI_PAIR_WINDOW_HOURS = 24.0 * 7.0  # Max time gap (hours) allowed to pair height+weight for BMI backfill.
 
 OMR_PROVENANCE_COLUMNS = (
     "anthro_timing_tier",
@@ -191,50 +229,54 @@ OMR_PROVENANCE_COLUMNS = (
     "anthro_obstime",
     "anthro_hours_offset",
     "anthro_timing_basis",
-)
+)  # Provenance/quality columns for anthropometric selection diagnostics.
 
-OMR_TIMING_TIERS = ("pre_ed_365", "post_ed_365", "missing")
+OMR_TIMING_TIERS = ("pre_ed_365", "post_ed_365", "missing")  # Allowed anthropometric timing categories.
 
-EXPECTED_STRUCTURAL_NULL_FIELDS: tuple[str, ...] = ()
+EXPECTED_STRUCTURAL_NULL_FIELDS: tuple[str, ...] = ()  # Fields expected to be all-null by design (currently none).
 
 PACO2_VALUE_UOM_PAIRS = (
     ("poc_abg_paco2", "poc_abg_paco2_uom"),
     ("poc_vbg_paco2", "poc_vbg_paco2_uom"),
-    ("poc_other_paco2", "poc_other_paco2_uom"),
-)
+)  # Required pCO2/uom column pairs used in uom consistency checks.
 
 DEFAULT_VITALS_MODEL_RANGES: dict[str, tuple[float, float]] = {
-    "ed_triage_hr": (20.0, 250.0),
-    "ed_first_hr": (20.0, 250.0),
+    "ed_triage_hr": (20.0, 300.0),
+    "ed_first_hr": (20.0, 300.0),
     "ed_triage_rr": (4.0, 80.0),
     "ed_first_rr": (4.0, 80.0),
-}
+}  # Plausibility bounds for ED vital-sign cleanup.
 
 DEFAULT_GAS_MODEL_RANGES: dict[str, tuple[float, float]] = {
     "first_ph": (6.8, 7.8),
     "first_pco2": (10.0, 200.0),
     "first_other_pco2": (10.0, 200.0),
     "first_lactate": (0.0, 30.0),
-}
+}  # Plausibility bounds for gas/lactate model-safe columns.
 
-_NUMERIC_TOKEN_PATTERN = re.compile(r"(-?\d+(?:\.\d+)?)")
+_NUMERIC_TOKEN_PATTERN = re.compile(r"(-?\d+(?:\.\d+)?)")  # Generic numeric extractor for mixed text fields.
+_PAIN_FRACTION_PATTERN = re.compile(r"^\s*(-?\d+(?:\.\d+)?)\s*/\s*10\s*$")  # Parse pain forms like "7/10".
+_PAIN_TEXT_NUMBER_PATTERN = re.compile(r"(-?\d+(?:\.\d+)?)")  # Fallback numeric extraction from free-text pain.
 _ARTERIAL_HINT_PATTERN = re.compile(
     r"(arterial|abg|a[- ]?line|art line|\bart\b|\bartery\b)",
     re.I,
-)
+)  # Tokens implying arterial sample/source.
 _VENOUS_HINT_PATTERN = re.compile(
     r"(venous|vbg|cvbg|mixed venous|central venous|\bven\b)",
     re.I,
-)
+)  # Tokens implying venous sample/source.
 _PO2_LABEL_DENY_PATTERN_DEFAULT = re.compile(
     r"(?:^|[^a-z])p(?:a)?\s*o\s*2(?:[^a-z]|$)|\bpo2\b|\bpao2\b|oxygen|o2\s*(?:sat|saturation)|sao2|spo2|fio2|et\s*co2|end[- ]?tidal|t\s*co2|tco2|total\s*co2|hco3|bicar|v\s*co2|vco2|co2\s*(?:prod|production|elimin|elimination)",
     re.I,
-)
+)  # Denylist regex preventing PO2/O2/saturation fields from being misread as pCO2.
 
-BLOOD_GAS_SPEC_PATH = WORK_DIR / "specs" / "blood_gas_itemids.json"
+BLOOD_GAS_SPEC_PATH = WORK_DIR / "specs" / "blood_gas_itemids.json"  # Versioned source-of-truth itemid manifest.
+CC_PSEUDO_MISSING_EXACT = {"-", "n", "___"}  # Exact ED chief-complaint placeholders treated as missing.
+CC_PSEUDO_MISSING_UNDERSCORE_REGEX = re.compile(r"^_+$")  # Underscore-only placeholders treated as missing.
 
 
 def _coerce_itemid_list(values: Sequence[Any], *, key_name: str) -> list[int]:
+    """Cast manifest itemid values to deduplicated sorted integers with strict validation."""
     cleaned: list[int] = []
     for raw in values:
         try:
@@ -253,7 +295,10 @@ def _sql_int_array(values: Sequence[int], *, empty_sentinel: int = -999999999) -
 
 
 def load_blood_gas_itemid_manifest(path: Path) -> dict[str, Any]:
-    """Load and validate versioned blood-gas itemid manifest."""
+    """Load and validate versioned blood-gas itemid manifest.
+
+    Returns a normalized manifest dict used by SQL builders and QC checks.
+    """
     if not path.exists():
         raise FileNotFoundError(
             f"Blood-gas manifest missing at {path}. Add specs/blood_gas_itemids.json."
@@ -262,14 +307,15 @@ def load_blood_gas_itemid_manifest(path: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError("Blood-gas manifest must be a JSON object.")
 
-    for section in ("lab", "icu", "denylist"):
+    for section in ("lab", "icu", "denylist"):  # Required top-level schema.
         if section not in payload or not isinstance(payload[section], dict):
             raise ValueError(f"Blood-gas manifest missing required section '{section}'.")
 
-    lab = payload["lab"]
-    icu = payload["icu"]
-    denylist = payload["denylist"]
+    lab = payload["lab"]  # LAB branch itemids and fluid constraints.
+    icu = payload["icu"]  # ICU/POC branch itemids and QC policy.
+    denylist = payload["denylist"]  # Label deny tokens used for contamination safeguards.
 
+    # LAB analyte itemids: pCO2/pO2/pH/HCO3 plus specimen-type itemids.
     lab_pco2 = _coerce_itemid_list(lab.get("pco2_itemids", []), key_name="lab.pco2_itemids")
     lab_pco2_excluded = _coerce_itemid_list(
         lab.get("excluded_pco2_itemids", []),
@@ -286,24 +332,25 @@ def load_blood_gas_itemid_manifest(path: Path) -> dict[str, Any]:
         lab.get("specimen_type_itemids", []),
         key_name="lab.specimen_type_itemids",
     )
-    if not lab_pco2:
+    if not lab_pco2:  # Hard requirement: at least one lab pCO2 itemid.
         raise ValueError("Blood-gas manifest requires at least one lab.pco2_itemids value.")
-    if not lab_po2:
+    if not lab_po2:  # Hard requirement: at least one lab pO2 itemid.
         raise ValueError("Blood-gas manifest requires at least one lab.po2_itemids value.")
-    if not lab_ph:
+    if not lab_ph:  # Hard requirement: at least one lab pH itemid.
         raise ValueError("Blood-gas manifest requires at least one lab.ph_itemids value.")
-    if not lab_hco3:
+    if not lab_hco3:  # Hard requirement: at least one lab HCO3 itemid.
         raise ValueError("Blood-gas manifest requires at least one lab.hco3_itemids value.")
-    if not lab_spec:
+    if not lab_spec:  # Hard requirement: at least one lab specimen-type itemid.
         raise ValueError(
             "Blood-gas manifest requires at least one lab.specimen_type_itemids value."
         )
 
-    blood_fluid_terms = [str(term).strip().lower() for term in lab.get("blood_fluid_terms", ["blood"])]
+    blood_fluid_terms = [str(term).strip().lower() for term in lab.get("blood_fluid_terms", ["blood"])]  # Allowed blood-fluid labels for LAB gas filtering.
     blood_fluid_terms = sorted(set(term for term in blood_fluid_terms if term))
     if not blood_fluid_terms:
         blood_fluid_terms = ["blood"]
 
+    # ICU analyte itemids: pCO2/pO2/pH/HCO3 plus subtype itemids and exclusions.
     icu_pco2 = _coerce_itemid_list(icu.get("pco2_itemids", []), key_name="icu.pco2_itemids")
     icu_pco2_abg = _coerce_itemid_list(
         icu.get("pco2_abg_itemids", []),
@@ -312,6 +359,10 @@ def load_blood_gas_itemid_manifest(path: Path) -> dict[str, Any]:
     icu_pco2_vbg = _coerce_itemid_list(
         icu.get("pco2_vbg_itemids", []),
         key_name="icu.pco2_vbg_itemids",
+    )
+    icu_pco2_unknown = _coerce_itemid_list(
+        icu.get("pco2_unknown_itemids", []),
+        key_name="icu.pco2_unknown_itemids",
     )
     icu_pco2_excluded = _coerce_itemid_list(
         icu.get("excluded_pco2_itemids", []),
@@ -336,65 +387,77 @@ def load_blood_gas_itemid_manifest(path: Path) -> dict[str, Any]:
         icu.get("specimen_type_itemids", []),
         key_name="icu.specimen_type_itemids",
     )
-    if icu_pco2_excluded:
+    if icu_pco2_excluded:  # Apply explicit ICU pCO2 denylist exclusions.
         excluded_set = set(icu_pco2_excluded)
         icu_pco2 = sorted(set(icu_pco2).difference(excluded_set))
         icu_pco2_abg = sorted(set(icu_pco2_abg).difference(excluded_set))
         icu_pco2_vbg = sorted(set(icu_pco2_vbg).difference(excluded_set))
-    if icu_po2_excluded:
+        icu_pco2_unknown = sorted(set(icu_pco2_unknown).difference(excluded_set))
+    if icu_po2_excluded:  # Apply explicit ICU pO2 denylist exclusions.
         excluded_set_po2 = set(icu_po2_excluded)
         icu_po2 = sorted(set(icu_po2).difference(excluded_set_po2))
         icu_po2_abg = sorted(set(icu_po2_abg).difference(excluded_set_po2))
         icu_po2_vbg = sorted(set(icu_po2_vbg).difference(excluded_set_po2))
-    if icu_pco2_abg and not set(icu_pco2_abg).issubset(set(icu_pco2)):
+    if icu_pco2_abg and not set(icu_pco2_abg).issubset(set(icu_pco2)):  # ABG subtype ids must be in overall pCO2 ids.
         raise ValueError(
             "Blood-gas manifest icu.pco2_abg_itemids must be a subset of icu.pco2_itemids."
         )
-    if icu_pco2_vbg and not set(icu_pco2_vbg).issubset(set(icu_pco2)):
+    if icu_pco2_vbg and not set(icu_pco2_vbg).issubset(set(icu_pco2)):  # VBG subtype ids must be in overall pCO2 ids.
         raise ValueError(
             "Blood-gas manifest icu.pco2_vbg_itemids must be a subset of icu.pco2_itemids."
         )
-    if icu_po2_abg and not set(icu_po2_abg).issubset(set(icu_po2)):
+    if icu_pco2_unknown and not set(icu_pco2_unknown).issubset(set(icu_pco2)):  # Unknown subtype ids must be in overall pCO2 ids.
+        raise ValueError(
+            "Blood-gas manifest icu.pco2_unknown_itemids must be a subset of icu.pco2_itemids."
+        )
+    if set(icu_pco2_unknown).intersection(set(icu_pco2_abg)) or set(  # Unknown subtype ids cannot overlap ABG/VBG subtype ids.
+        icu_pco2_unknown
+    ).intersection(set(icu_pco2_vbg)):
+        raise ValueError(
+            "Blood-gas manifest icu.pco2_unknown_itemids must be disjoint from "
+            "icu.pco2_abg_itemids and icu.pco2_vbg_itemids."
+        )
+    if icu_po2_abg and not set(icu_po2_abg).issubset(set(icu_po2)):  # ABG subtype ids must be in overall pO2 ids.
         raise ValueError(
             "Blood-gas manifest icu.po2_abg_itemids must be a subset of icu.po2_itemids."
         )
-    if icu_po2_vbg and not set(icu_po2_vbg).issubset(set(icu_po2)):
+    if icu_po2_vbg and not set(icu_po2_vbg).issubset(set(icu_po2)):  # VBG subtype ids must be in overall pO2 ids.
         raise ValueError(
             "Blood-gas manifest icu.po2_vbg_itemids must be a subset of icu.po2_itemids."
         )
 
-    deny_tokens = [
+    deny_tokens = [  # Normalized label deny tokens used for ICU item filtering.
         str(token).strip().lower()
         for token in denylist.get("label_tokens", [])
         if str(token).strip()
     ]
-    allow_pattern_fallback = bool(icu.get("allow_pattern_fallback", True))
-    inclusion_mode = str(icu.get("inclusion_mode", "validated_only")).strip().lower()
+    allow_pattern_fallback = bool(icu.get("allow_pattern_fallback", True))  # Whether label-pattern fallback is allowed when manifest ids are sparse.
+    inclusion_mode = str(icu.get("inclusion_mode", "validated_only")).strip().lower()  # ICU inclusion policy mode.
     if inclusion_mode not in {"validated_only", "disabled"}:
         raise ValueError(
             "Blood-gas manifest icu.inclusion_mode must be one of "
             "{'validated_only', 'disabled'}."
         )
 
-    pco2_qc_payload = icu.get("pco2_qc", {})
+    pco2_qc_payload = icu.get("pco2_qc", {})  # Optional per-itemid QC policy block for ICU pCO2.
     if pco2_qc_payload is None:
         pco2_qc_payload = {}
     if not isinstance(pco2_qc_payload, dict):
         raise ValueError("Blood-gas manifest icu.pco2_qc must be a JSON object.")
-    qc_allowed_uoms = [
+    qc_allowed_uoms = [  # Permitted unit strings for ICU pCO2 values.
         str(value).strip().lower()
         for value in pco2_qc_payload.get("allowed_uoms", ["", "mmhg", "kpa"])
     ]
     qc_allowed_uoms = sorted(set(qc_allowed_uoms))
     if not qc_allowed_uoms:
         qc_allowed_uoms = ["", "mmhg", "kpa"]
-    qc_label_include = [
+    qc_label_include = [  # Tokens that must appear in ICU item labels to pass QC.
         str(value).strip().lower()
         for value in pco2_qc_payload.get("label_must_include_tokens", ["pco2"])
         if str(value).strip()
     ]
     qc_label_include = sorted(set(qc_label_include))
-    qc_label_exclude = [
+    qc_label_exclude = [  # Tokens that invalidate ICU item labels (likely non-pCO2 concepts).
         str(value).strip().lower()
         for value in pco2_qc_payload.get(
             "label_must_exclude_tokens",
@@ -403,14 +466,14 @@ def load_blood_gas_itemid_manifest(path: Path) -> dict[str, Any]:
         if str(value).strip()
     ]
     qc_label_exclude = sorted(set(qc_label_exclude))
-    qc_median_min = float(pco2_qc_payload.get("median_min", 45.0))
-    qc_median_max = float(pco2_qc_payload.get("median_max", 80.0))
+    qc_median_min = float(pco2_qc_payload.get("median_min", 45.0))  # Lower bound for pCO2 median plausibility.
+    qc_median_max = float(pco2_qc_payload.get("median_max", 80.0))  # Upper bound for pCO2 median plausibility.
     if qc_median_min > qc_median_max:
         raise ValueError(
             "Blood-gas manifest icu.pco2_qc median_min must be <= median_max."
         )
 
-    manifest = {
+    manifest = {  # Normalized manifest object used downstream by SQL and audit logic.
         "version": str(payload.get("version", "UNSPECIFIED")),
         "lab": {
             "pco2_itemids": lab_pco2,
@@ -426,6 +489,7 @@ def load_blood_gas_itemid_manifest(path: Path) -> dict[str, Any]:
             "pco2_itemids": icu_pco2,
             "pco2_abg_itemids": icu_pco2_abg,
             "pco2_vbg_itemids": icu_pco2_vbg,
+            "pco2_unknown_itemids": icu_pco2_unknown,
             "excluded_pco2_itemids": icu_pco2_excluded,
             "po2_itemids": icu_po2,
             "po2_abg_itemids": icu_po2_abg,
@@ -450,11 +514,11 @@ def load_blood_gas_itemid_manifest(path: Path) -> dict[str, Any]:
     return manifest
 
 
-BLOOD_GAS_MANIFEST = load_blood_gas_itemid_manifest(BLOOD_GAS_SPEC_PATH)
-LAB_PCO2_ITEMIDS = BLOOD_GAS_MANIFEST["lab"]["pco2_itemids"]
-LAB_EXCLUDED_PCO2_ITEMIDS = BLOOD_GAS_MANIFEST["lab"]["excluded_pco2_itemids"]
-LAB_PO2_ITEMIDS = BLOOD_GAS_MANIFEST["lab"]["po2_itemids"]
-LAB_EXCLUDED_PO2_ITEMIDS = BLOOD_GAS_MANIFEST["lab"]["excluded_po2_itemids"]
+BLOOD_GAS_MANIFEST = load_blood_gas_itemid_manifest(BLOOD_GAS_SPEC_PATH)  # Validated manifest payload for this run.
+LAB_PCO2_ITEMIDS = BLOOD_GAS_MANIFEST["lab"]["pco2_itemids"]  # LAB pCO2 itemids allowed for extraction.
+LAB_EXCLUDED_PCO2_ITEMIDS = BLOOD_GAS_MANIFEST["lab"]["excluded_pco2_itemids"]  # LAB pCO2 itemids explicitly excluded.
+LAB_PO2_ITEMIDS = BLOOD_GAS_MANIFEST["lab"]["po2_itemids"]  # LAB pO2 itemids allowed for extraction.
+LAB_EXCLUDED_PO2_ITEMIDS = BLOOD_GAS_MANIFEST["lab"]["excluded_po2_itemids"]  # LAB pO2 itemids explicitly excluded.
 if LAB_EXCLUDED_PCO2_ITEMIDS:
     LAB_PCO2_ITEMIDS = sorted(
         set(LAB_PCO2_ITEMIDS).difference(set(LAB_EXCLUDED_PCO2_ITEMIDS))
@@ -473,25 +537,26 @@ if not LAB_PO2_ITEMIDS:
         "All lab.po2_itemids were excluded by lab.excluded_po2_itemids. "
         "Update specs/blood_gas_itemids.json."
     )
-LAB_PH_ITEMIDS = BLOOD_GAS_MANIFEST["lab"]["ph_itemids"]
-LAB_HCO3_ITEMIDS = BLOOD_GAS_MANIFEST["lab"]["hco3_itemids"]
-LAB_SPECIMEN_TYPE_ITEMIDS = BLOOD_GAS_MANIFEST["lab"]["specimen_type_itemids"]
-LAB_BLOOD_FLUID_TERMS = BLOOD_GAS_MANIFEST["lab"]["blood_fluid_terms"]
-ICU_PCO2_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["pco2_itemids"]
-ICU_PCO2_ABG_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["pco2_abg_itemids"]
-ICU_PCO2_VBG_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["pco2_vbg_itemids"]
-ICU_EXCLUDED_PCO2_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["excluded_pco2_itemids"]
-ICU_PO2_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["po2_itemids"]
-ICU_PO2_ABG_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["po2_abg_itemids"]
-ICU_PO2_VBG_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["po2_vbg_itemids"]
-ICU_EXCLUDED_PO2_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["excluded_po2_itemids"]
-ICU_PH_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["ph_itemids"]
-ICU_HCO3_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["hco3_itemids"]
-ICU_SPECIMEN_TYPE_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["specimen_type_itemids"]
-ICU_ALLOW_PATTERN_FALLBACK = bool(BLOOD_GAS_MANIFEST["icu"]["allow_pattern_fallback"])
-ICU_INCLUSION_MODE = str(BLOOD_GAS_MANIFEST["icu"]["inclusion_mode"]).strip().lower()
-ICU_PCO2_QC = BLOOD_GAS_MANIFEST["icu"]["pco2_qc"]
-ICU_LABEL_DENY_TOKENS = BLOOD_GAS_MANIFEST["denylist"]["label_tokens"]
+LAB_PH_ITEMIDS = BLOOD_GAS_MANIFEST["lab"]["ph_itemids"]  # LAB pH itemids.
+LAB_HCO3_ITEMIDS = BLOOD_GAS_MANIFEST["lab"]["hco3_itemids"]  # LAB HCO3 itemids.
+LAB_SPECIMEN_TYPE_ITEMIDS = BLOOD_GAS_MANIFEST["lab"]["specimen_type_itemids"]  # LAB specimen-type itemids.
+LAB_BLOOD_FLUID_TERMS = BLOOD_GAS_MANIFEST["lab"]["blood_fluid_terms"]  # Allowed LAB blood-fluid labels.
+ICU_PCO2_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["pco2_itemids"]  # ICU pCO2 itemids allowed for extraction.
+ICU_PCO2_ABG_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["pco2_abg_itemids"]  # ICU pCO2 itemids pre-typed as ABG.
+ICU_PCO2_VBG_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["pco2_vbg_itemids"]  # ICU pCO2 itemids pre-typed as VBG.
+ICU_PCO2_UNKNOWN_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["pco2_unknown_itemids"]  # ICU pCO2 itemids typed as unknown source.
+ICU_EXCLUDED_PCO2_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["excluded_pco2_itemids"]  # ICU pCO2 exclusions.
+ICU_PO2_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["po2_itemids"]  # ICU pO2 itemids allowed for extraction.
+ICU_PO2_ABG_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["po2_abg_itemids"]  # ICU pO2 ABG subtype itemids.
+ICU_PO2_VBG_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["po2_vbg_itemids"]  # ICU pO2 VBG subtype itemids.
+ICU_EXCLUDED_PO2_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["excluded_po2_itemids"]  # ICU pO2 exclusions.
+ICU_PH_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["ph_itemids"]  # ICU pH itemids.
+ICU_HCO3_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["hco3_itemids"]  # ICU HCO3 itemids.
+ICU_SPECIMEN_TYPE_ITEMIDS = BLOOD_GAS_MANIFEST["icu"]["specimen_type_itemids"]  # ICU specimen-type itemids.
+ICU_ALLOW_PATTERN_FALLBACK = bool(BLOOD_GAS_MANIFEST["icu"]["allow_pattern_fallback"])  # Whether ICU label-pattern fallback is permitted.
+ICU_INCLUSION_MODE = str(BLOOD_GAS_MANIFEST["icu"]["inclusion_mode"]).strip().lower()  # ICU inclusion mode (`validated_only`/`disabled`).
+ICU_PCO2_QC = BLOOD_GAS_MANIFEST["icu"]["pco2_qc"]  # ICU pCO2 QC settings block.
+ICU_LABEL_DENY_TOKENS = BLOOD_GAS_MANIFEST["denylist"]["label_tokens"]  # Global deny tokens for ICU label filtering.
 ICU_PCO2_QC_ALLOWED_UOMS = {
     str(value).strip().lower() for value in ICU_PCO2_QC["allowed_uoms"]
 }
@@ -503,38 +568,39 @@ ICU_PCO2_QC_EXCLUDE_TOKENS = [
     str(value).strip().lower()
     for value in ICU_PCO2_QC["label_must_exclude_tokens"]
 ]
-POC_QC_MIN_VALID_N_WARN = 100
-POC_QC_MIN_VALID_N_CHECK = 50
-POC_QC_P05_MIN = 10.0
-POC_QC_P50_MIN = 20.0
-POC_QC_P50_MAX = 80.0
-POC_QC_P95_MAX = 120.0
-POC_QC_PO2_CONTAM_P50_MIN = 75.0
-POC_QC_PO2_CONTAM_P25_MIN = 60.0
-POC_QC_OUT_OF_RANGE_REMOVED_RATE_WARN = 0.001
-POC_QC_OUT_OF_RANGE_REMOVED_RATE_FAIL = 0.005
-POC_QC_OUT_OF_RANGE_REMOVED_N_FAIL = 25
+POC_QC_MIN_VALID_N_WARN = 100  # Warning threshold for low valid-row counts per ICU pCO2 itemid.
+POC_QC_MIN_VALID_N_CHECK = 50  # Minimum rows required to evaluate distribution-based ICU pCO2 QC.
+POC_QC_P05_MIN = 10.0  # Lower bound for p05 plausibility in ICU pCO2 QC.
+POC_QC_P50_MIN = 20.0  # Lower bound for p50 plausibility in ICU pCO2 QC.
+POC_QC_P50_MAX = 80.0  # Upper bound for p50 plausibility in ICU pCO2 QC.
+POC_QC_P95_MAX = 120.0  # Upper bound for p95 plausibility in ICU pCO2 QC.
+POC_QC_PO2_CONTAM_P50_MIN = 75.0  # p50 cutoff suggesting probable PO2 contamination.
+POC_QC_PO2_CONTAM_P25_MIN = 60.0  # p25 cutoff paired with p50 for PO2 contamination heuristic.
+POC_QC_OUT_OF_RANGE_REMOVED_RATE_WARN = 0.001  # Warning threshold for removed out-of-range ICU pCO2 rows.
+POC_QC_OUT_OF_RANGE_REMOVED_RATE_FAIL = 0.005  # Fail threshold for removed out-of-range ICU pCO2 rows.
+POC_QC_OUT_OF_RANGE_REMOVED_N_FAIL = 25  # Absolute-count fail threshold for removed out-of-range ICU pCO2 rows.
 
-LAB_PCO2_SQL_ARRAY = _sql_int_array(LAB_PCO2_ITEMIDS)
-LAB_PO2_SQL_ARRAY = _sql_int_array(LAB_PO2_ITEMIDS)
-LAB_PH_SQL_ARRAY = _sql_int_array(LAB_PH_ITEMIDS)
-LAB_HCO3_SQL_ARRAY = _sql_int_array(LAB_HCO3_ITEMIDS)
-LAB_SPECIMEN_SQL_ARRAY = _sql_int_array(LAB_SPECIMEN_TYPE_ITEMIDS)
-ICU_PCO2_SQL_ARRAY = _sql_int_array(ICU_PCO2_ITEMIDS)
-ICU_PCO2_ABG_SQL_ARRAY = _sql_int_array(ICU_PCO2_ABG_ITEMIDS)
-ICU_PCO2_VBG_SQL_ARRAY = _sql_int_array(ICU_PCO2_VBG_ITEMIDS)
-ICU_PO2_SQL_ARRAY = _sql_int_array(ICU_PO2_ITEMIDS)
-ICU_PO2_ABG_SQL_ARRAY = _sql_int_array(ICU_PO2_ABG_ITEMIDS)
-ICU_PO2_VBG_SQL_ARRAY = _sql_int_array(ICU_PO2_VBG_ITEMIDS)
-ICU_PH_SQL_ARRAY = _sql_int_array(ICU_PH_ITEMIDS)
-ICU_HCO3_SQL_ARRAY = _sql_int_array(ICU_HCO3_ITEMIDS)
-ICU_SPECIMEN_SQL_ARRAY = _sql_int_array(ICU_SPECIMEN_TYPE_ITEMIDS)
-LAB_BLOOD_FLUID_SQL_LIST = ", ".join(f"'{term}'" for term in LAB_BLOOD_FLUID_TERMS)
+LAB_PCO2_SQL_ARRAY = _sql_int_array(LAB_PCO2_ITEMIDS)  # BigQuery array literal for LAB pCO2 itemids.
+LAB_PO2_SQL_ARRAY = _sql_int_array(LAB_PO2_ITEMIDS)  # BigQuery array literal for LAB pO2 itemids.
+LAB_PH_SQL_ARRAY = _sql_int_array(LAB_PH_ITEMIDS)  # BigQuery array literal for LAB pH itemids.
+LAB_HCO3_SQL_ARRAY = _sql_int_array(LAB_HCO3_ITEMIDS)  # BigQuery array literal for LAB HCO3 itemids.
+LAB_SPECIMEN_SQL_ARRAY = _sql_int_array(LAB_SPECIMEN_TYPE_ITEMIDS)  # BigQuery array literal for LAB specimen-type itemids.
+ICU_PCO2_SQL_ARRAY = _sql_int_array(ICU_PCO2_ITEMIDS)  # BigQuery array literal for ICU pCO2 itemids.
+ICU_PCO2_ABG_SQL_ARRAY = _sql_int_array(ICU_PCO2_ABG_ITEMIDS)  # BigQuery array literal for ICU ABG pCO2 subtype itemids.
+ICU_PCO2_VBG_SQL_ARRAY = _sql_int_array(ICU_PCO2_VBG_ITEMIDS)  # BigQuery array literal for ICU VBG pCO2 subtype itemids.
+ICU_PCO2_UNKNOWN_SQL_ARRAY = _sql_int_array(ICU_PCO2_UNKNOWN_ITEMIDS)  # BigQuery array literal for ICU unknown-source pCO2 subtype itemids.
+ICU_PO2_SQL_ARRAY = _sql_int_array(ICU_PO2_ITEMIDS)  # BigQuery array literal for ICU pO2 itemids.
+ICU_PO2_ABG_SQL_ARRAY = _sql_int_array(ICU_PO2_ABG_ITEMIDS)  # BigQuery array literal for ICU ABG pO2 subtype itemids.
+ICU_PO2_VBG_SQL_ARRAY = _sql_int_array(ICU_PO2_VBG_ITEMIDS)  # BigQuery array literal for ICU VBG pO2 subtype itemids.
+ICU_PH_SQL_ARRAY = _sql_int_array(ICU_PH_ITEMIDS)  # BigQuery array literal for ICU pH itemids.
+ICU_HCO3_SQL_ARRAY = _sql_int_array(ICU_HCO3_ITEMIDS)  # BigQuery array literal for ICU HCO3 itemids.
+ICU_SPECIMEN_SQL_ARRAY = _sql_int_array(ICU_SPECIMEN_TYPE_ITEMIDS)  # BigQuery array literal for ICU specimen-type itemids.
+LAB_BLOOD_FLUID_SQL_LIST = ", ".join(f"'{term}'" for term in LAB_BLOOD_FLUID_TERMS)  # SQL IN-list for accepted LAB blood-fluid labels.
 ICU_LABEL_DENY_REGEX = (
     "|".join(re.escape(token) for token in ICU_LABEL_DENY_TOKENS)
     if ICU_LABEL_DENY_TOKENS
     else _PO2_LABEL_DENY_PATTERN_DEFAULT.pattern
-)
+)  # Regex used to reject ICU labels that imply non-pCO2 concepts.
 
 
 def _to_int64(series: pd.Series) -> pd.Series:
@@ -2213,14 +2279,14 @@ def normalize_temperature_to_f(temp: pd.Series) -> pd.DataFrame:
     """Normalize mixed-unit temperature values to cleaned Fahrenheit output.
 
     Rules:
-    - values in ``[20, 50]`` are treated as Celsius-like and converted to Fahrenheit,
+    - values in ``[25, 45]`` are treated as Celsius-like and converted to Fahrenheit,
     - all other numeric values are treated as Fahrenheit already,
-    - cleaned output is valid only for Fahrenheit ``[50, 120]``.
+    - cleaned output is valid only for Fahrenheit ``[50, 115]``.
     """
     numeric = pd.to_numeric(temp, errors="coerce")
-    celsius_like = numeric.between(20.0, 50.0, inclusive="both")
+    celsius_like = numeric.between(25.0, 45.0, inclusive="both")
     temp_f = numeric.where(~celsius_like, numeric * 9.0 / 5.0 + 32.0)
-    out_of_range = temp_f.notna() & ~temp_f.between(50.0, 120.0, inclusive="both")
+    out_of_range = temp_f.notna() & ~temp_f.between(50.0, 115.0, inclusive="both")
     temp_f_clean = temp_f.where(~out_of_range)
     return pd.DataFrame(
         {
@@ -2232,16 +2298,55 @@ def normalize_temperature_to_f(temp: pd.Series) -> pd.DataFrame:
 
 
 def clean_pain_score(pain: pd.Series) -> pd.DataFrame:
-    """Clean pain score with explicit sentinel handling."""
-    numeric = pd.to_numeric(pain, errors="coerce")
-    sentinel = numeric.eq(13)
-    out_of_range = numeric.notna() & (~sentinel) & ((numeric < 0) | (numeric > 10))
-    clean = numeric.where(~(sentinel | out_of_range))
+    """Parse pain scores to a numeric 0–10 scale with conservative salvage rules."""
+    pain_fraction_pattern = globals().get(
+        "_PAIN_FRACTION_PATTERN", r"^\s*(-?\d+(?:\.\d+)?)\s*/\s*10\s*$"
+    )
+    pain_text_number_pattern = globals().get(
+        "_PAIN_TEXT_NUMBER_PATTERN", r"(-?\d+(?:\.\d+)?)"
+    )
+    raw_series = pain.astype("string")
+    normalized = raw_series.fillna("").str.strip()
+
+    numeric_direct = pd.to_numeric(normalized, errors="coerce")
+    fraction_numeric = pd.to_numeric(
+        normalized.str.extract(pain_fraction_pattern, expand=False),
+        errors="coerce",
+    )
+    text_numeric = pd.to_numeric(
+        normalized.str.extract(pain_text_number_pattern, expand=False),
+        errors="coerce",
+    )
+
+    parsed_from_fraction = numeric_direct.isna() & fraction_numeric.notna()
+    numeric = numeric_direct.where(~parsed_from_fraction, fraction_numeric)
+    parsed_from_text_numeric = numeric.isna() & text_numeric.notna()
+    numeric = numeric.where(~parsed_from_text_numeric, text_numeric)
+
+    scaled_from_hundred = (
+        numeric.notna()
+        & numeric.gt(10.0)
+        & numeric.le(100.0)
+        & ((numeric % 10).abs() < 1e-9)
+    )
+    scaled_numeric = numeric.where(~scaled_from_hundred, numeric / 10.0)
+
+    sentinel = scaled_numeric.eq(13.0)
+    out_of_range = (
+        scaled_numeric.notna()
+        & (~sentinel)
+        & ((scaled_numeric < 0.0) | (scaled_numeric > 10.0))
+    )
+    non_numeric_set_na = normalized.ne("") & scaled_numeric.isna()
+    clean = scaled_numeric.where(~(sentinel | out_of_range))
     return pd.DataFrame(
         {
             "pain_clean": clean,
             "pain_is_sentinel_13": sentinel.astype("boolean"),
             "pain_out_of_range": out_of_range.astype("boolean"),
+            "pain_parsed_from_fraction": parsed_from_fraction.astype("boolean"),
+            "pain_parsed_from_text_numeric": parsed_from_text_numeric.astype("boolean"),
+            "pain_non_numeric_set_na": non_numeric_set_na.astype("boolean"),
         }
     )
 
@@ -2266,7 +2371,7 @@ def clean_o2sat(o2sat: pd.Series) -> pd.DataFrame:
     """Clean oxygen saturation and keep explicit >100 and zero flags."""
     numeric = pd.to_numeric(o2sat, errors="coerce")
     gt_100 = numeric > 100
-    out_of_range = numeric.notna() & (numeric < 0)
+    out_of_range = numeric.notna() & ((numeric < 0) | gt_100)
     clean = numeric.where(~(gt_100 | out_of_range))
     return pd.DataFrame(
         {
@@ -2276,6 +2381,24 @@ def clean_o2sat(o2sat: pd.Series) -> pd.DataFrame:
             "o2sat_zero": numeric.eq(0).astype("boolean"),
         }
     )
+
+
+def canonicalize_cc_for_inclusion(series: pd.Series) -> pd.Series:
+    """Normalize ED chief-complaint strings for deterministic inclusion filtering."""
+    canonical = series.astype("string").fillna("").str.strip().str.lower()
+    canonical = canonical.str.replace("–", "-", regex=False).str.replace("—", "-", regex=False)
+    return canonical.str.replace(r"\s+", " ", regex=True)
+
+
+def chief_complaint_inclusion_mask(series: pd.Series) -> pd.Series:
+    """Return rows with meaningful ED chief complaint content (pseudo-missing excluded)."""
+    canonical = canonicalize_cc_for_inclusion(series)
+    pseudo_missing = (
+        canonical.eq("")
+        | canonical.isin(CC_PSEUDO_MISSING_EXACT)
+        | canonical.str.match(CC_PSEUDO_MISSING_UNDERSCORE_REGEX, na=False)
+    )
+    return (~pseudo_missing).astype(bool)
 
 
 def _series_distribution_stats(values: pd.Series) -> dict[str, Any]:
@@ -2395,7 +2518,7 @@ def add_vitals_model_fields(
                 model_column=f"{prefix}_temp_model",
                 outlier_flag_column=f"{prefix}_temp_outlier_flag",
                 lower_bound=50.0,
-                upper_bound=120.0,
+                upper_bound=115.0,
                 numeric=pd.to_numeric(updated[temp_raw_col], errors="coerce"),
                 outlier_flag=updated[temp_range_flag_col],
             )
@@ -2405,11 +2528,21 @@ def add_vitals_model_fields(
             pain_clean_col = f"{prefix}_pain_clean"
             pain_sentinel_col = f"{prefix}_pain_is_sentinel_13"
             pain_range_col = f"{prefix}_pain_out_of_range"
+            pain_fraction_col = f"{prefix}_pain_parsed_from_fraction"
+            pain_text_col = f"{prefix}_pain_parsed_from_text_numeric"
+            pain_non_numeric_col = f"{prefix}_pain_non_numeric_set_na"
             updated[pain_clean_col] = pain_clean["pain_clean"]
             updated[pain_sentinel_col] = pain_clean["pain_is_sentinel_13"]
             updated[pain_range_col] = pain_clean["pain_out_of_range"]
+            updated[pain_fraction_col] = pain_clean["pain_parsed_from_fraction"]
+            updated[pain_text_col] = pain_clean["pain_parsed_from_text_numeric"]
+            updated[pain_non_numeric_col] = pain_clean["pain_non_numeric_set_na"]
             updated[f"{prefix}_pain_model"] = updated[pain_clean_col]
-            pain_outlier = updated[pain_sentinel_col].fillna(False) | updated[pain_range_col].fillna(False)
+            pain_outlier = (
+                updated[pain_sentinel_col].fillna(False)
+                | updated[pain_range_col].fillna(False)
+                | updated[pain_non_numeric_col].fillna(False)
+            )
             updated[f"{prefix}_pain_outlier_flag"] = pain_outlier.astype("boolean")
             _append_audit_row(
                 raw_column=pain_raw_col,
@@ -2504,14 +2637,26 @@ def build_ed_vitals_audit_artifacts(
             "vital_name": "triage_pain",
             "raw_col": "ed_triage_pain",
             "clean_col": "ed_triage_pain_clean",
-            "flags": ["ed_triage_pain_is_sentinel_13", "ed_triage_pain_out_of_range"],
+            "flags": [
+                "ed_triage_pain_is_sentinel_13",
+                "ed_triage_pain_out_of_range",
+                "ed_triage_pain_non_numeric_set_na",
+                "ed_triage_pain_parsed_from_fraction",
+                "ed_triage_pain_parsed_from_text_numeric",
+            ],
             "extra_cols": [],
         },
         {
             "vital_name": "first_pain",
             "raw_col": "ed_first_pain",
             "clean_col": "ed_first_pain_clean",
-            "flags": ["ed_first_pain_is_sentinel_13", "ed_first_pain_out_of_range"],
+            "flags": [
+                "ed_first_pain_is_sentinel_13",
+                "ed_first_pain_out_of_range",
+                "ed_first_pain_non_numeric_set_na",
+                "ed_first_pain_parsed_from_fraction",
+                "ed_first_pain_parsed_from_text_numeric",
+            ],
             "extra_cols": ["ed_first_vitals_time"],
         },
         {
@@ -2665,6 +2810,58 @@ def build_ed_vitals_audit_artifacts(
     return distribution, extremes, delta
 
 
+VITAL_OUTLIER_AUDIT_SPECS: tuple[dict[str, Any], ...] = (
+    {"vital_name": "ed_triage_temp", "raw_col": "ed_triage_temp", "clean_col": "ed_triage_temp_model", "lo": 50.0, "hi": 115.0},
+    {"vital_name": "ed_first_temp", "raw_col": "ed_first_temp", "clean_col": "ed_first_temp_model", "lo": 50.0, "hi": 115.0},
+    {"vital_name": "ed_triage_hr", "raw_col": "ed_triage_hr", "clean_col": "ed_triage_hr_model", "lo": 20.0, "hi": 300.0},
+    {"vital_name": "ed_first_hr", "raw_col": "ed_first_hr", "clean_col": "ed_first_hr_model", "lo": 20.0, "hi": 300.0},
+    {"vital_name": "ed_triage_rr", "raw_col": "ed_triage_rr", "clean_col": "ed_triage_rr_model", "lo": 4.0, "hi": 80.0},
+    {"vital_name": "ed_first_rr", "raw_col": "ed_first_rr", "clean_col": "ed_first_rr_model", "lo": 4.0, "hi": 80.0},
+    {"vital_name": "ed_triage_o2sat", "raw_col": "ed_triage_o2sat", "clean_col": "ed_triage_o2sat_model", "lo": 0.0, "hi": 100.0},
+    {"vital_name": "ed_first_o2sat", "raw_col": "ed_first_o2sat", "clean_col": "ed_first_o2sat_model", "lo": 0.0, "hi": 100.0},
+    {"vital_name": "ed_triage_sbp", "raw_col": "ed_triage_sbp", "clean_col": "ed_triage_sbp_model", "lo": 20.0, "hi": 300.0},
+    {"vital_name": "ed_first_sbp", "raw_col": "ed_first_sbp", "clean_col": "ed_first_sbp_model", "lo": 20.0, "hi": 300.0},
+    {"vital_name": "ed_triage_dbp", "raw_col": "ed_triage_dbp", "clean_col": "ed_triage_dbp_model", "lo": 10.0, "hi": 200.0},
+    {"vital_name": "ed_first_dbp", "raw_col": "ed_first_dbp", "clean_col": "ed_first_dbp_model", "lo": 10.0, "hi": 200.0},
+    {"vital_name": "ed_triage_pain", "raw_col": "ed_triage_pain", "clean_col": "ed_triage_pain_model", "lo": 0.0, "hi": 10.0},
+    {"vital_name": "ed_first_pain", "raw_col": "ed_first_pain", "clean_col": "ed_first_pain_model", "lo": 0.0, "hi": 10.0},
+)
+
+
+def build_vitals_outlier_phase_audit(
+    frame: pd.DataFrame,
+    *,
+    scope_name: str,
+    phase_name: str,
+    use_clean_columns: bool,
+) -> pd.DataFrame:
+    """Summarize out-of-range vitals for a frame/scope/phase audit snapshot."""
+    rows: list[dict[str, Any]] = []
+    for spec in VITAL_OUTLIER_AUDIT_SPECS:
+        source_column = spec["clean_col"] if use_clean_columns and spec["clean_col"] in frame.columns else spec["raw_col"]
+        if source_column not in frame.columns:
+            continue
+        values = pd.to_numeric(frame[source_column], errors="coerce")
+        out_of_range = values.notna() & ((values < spec["lo"]) | (values > spec["hi"]))
+        non_missing_n = int(values.notna().sum())
+        out_of_range_n = int(out_of_range.sum())
+        rows.append(
+            {
+                "scope_name": scope_name,
+                "phase_name": phase_name,
+                "vital_name": spec["vital_name"],
+                "source_column": source_column,
+                "lower_bound": float(spec["lo"]),
+                "upper_bound": float(spec["hi"]),
+                "n_rows": int(len(frame)),
+                "n_non_missing": non_missing_n,
+                "out_of_range_n": out_of_range_n,
+                "out_of_range_pct": float(out_of_range_n / non_missing_n) if non_missing_n else 0.0,
+            }
+        )
+    return pd.DataFrame(rows).sort_values(["scope_name", "phase_name", "vital_name"]).reset_index(drop=True)
+
+
 def evaluate_uom_expectations(ed_df: pd.DataFrame) -> dict[str, Any]:
     """Evaluate expected-null and value/uom consistency rules."""
     structural_nulls: dict[str, dict[str, Any]] = {}
@@ -2781,7 +2978,7 @@ def render_latex_longtable(
         latex_text = "\\begin{landscape}\\n" + latex_text + "\\n\\end{landscape}\\n"
     return latex_text
 
-from hypercap_cc_nlp.pipeline_audit import collect_run_manifest
+from hypercap_cc_nlp.pipeline_audit import collect_run_manifest, sanitize_manifest_payload
 from hypercap_cc_nlp.pipeline_contracts import validate_cohort_contract, write_contract_report
 
 # ---- Backend selection (we use BigQuery)
@@ -2909,7 +3106,7 @@ RUN_METADATA = {
     "physionet_project": PHYS,
     "datasets": {"hosp": HOSP, "icu": ICU, "ed": ED},
     "dataset_probes": {"hosp": HOSP_PROBE, "icu": ICU_PROBE, "ed": ED_PROBE},
-    "notebook": "MIMICIV_hypercap_EXT_cohort.ipynb",
+    "notebook": "MIMICIV_hypercap_EXT_cohort.qmd",
     "blood_gas_manifest_path": BLOOD_GAS_MANIFEST["path"],
     "blood_gas_manifest_version": BLOOD_GAS_MANIFEST["version"],
 }
@@ -2920,30 +3117,13 @@ print("Dataset probes:", RUN_METADATA["dataset_probes"])
 
 ```{python}
 #| label: mimiciv-hypercap-ext-cohort-cell-004
-# Purpose: Create reusable data-quality and merge guardrail helpers to prevent silent join errors.
+# Purpose: Create reusable data-quality helpers to prevent silent data integrity errors.
 
-# --- Helper utilities for reproducibility and safe joins
-def require_cols(df: pd.DataFrame, cols: list[str], name: str) -> None:
-    missing = [c for c in cols if c not in df.columns]
-    if missing:
-        raise KeyError(f"{name} missing columns: {missing}")
-
+# --- Helper utilities for reproducibility and data-quality guardrails
 def assert_unique(df: pd.DataFrame, key: str, name: str) -> None:
     if df[key].duplicated().any():
         n = int(df[key].duplicated().sum())
         raise ValueError(f"{name} has {n} duplicate {key} values")
-
-def safe_merge(left: pd.DataFrame, right: pd.DataFrame, on: list[str] | str, how: str, name: str) -> pd.DataFrame:
-    # guard against accidental duplicate columns
-    overlap = set(left.columns) & set(right.columns)
-    if isinstance(on, str):
-        on_cols = {on}
-    else:
-        on_cols = set(on)
-    overlap = overlap - on_cols
-    if overlap:
-        raise ValueError(f"{name} merge would duplicate columns: {sorted(overlap)}")
-    return left.merge(right, on=on, how=how)
 
 def check_ranges(df: pd.DataFrame, ranges: dict[str, tuple[float, float]]) -> pd.DataFrame:
     rows = []
@@ -3114,7 +3294,6 @@ FROM combined
 
 cohort_icd = run_sql_bq(sql("cohort_icd_sql"))
 print("ICD cohort admissions:", len(cohort_icd))
-cohort_icd.head(3)
 ```
 
 ### 2) Blood gas inclusion thresholds — qualifying hypercapnic gases any-time in stay (LAB + POC)
@@ -3221,6 +3400,7 @@ icu_pco2_raw AS (
     CASE
       WHEN ce.itemid IN UNNEST({ICU_PCO2_ABG_SQL_ARRAY}) THEN 'arterial'
       WHEN ce.itemid IN UNNEST({ICU_PCO2_VBG_SQL_ARRAY}) THEN 'venous'
+      WHEN ce.itemid IN UNNEST({ICU_PCO2_UNKNOWN_SQL_ARRAY}) THEN 'unknown'
       ELSE 'unknown'
     END AS site_from_itemid,
     COALESCE(
@@ -3566,7 +3746,6 @@ if "qualifying_anchor_source" in co2_thresh.columns:
         f"ADMITTIME_FALLBACK={qualifying_anchor_fallback_n}",
     )
     co2_thresh = co2_thresh.drop(columns=["qualifying_anchor_source"])
-co2_thresh.head(3)
 ```
 
 ### 3) Cohort enrollment and `hadm_list` for downstream queries
@@ -4130,7 +4309,28 @@ if {"first_other_src", "poc_other_paco2"}.issubset(bg_pairs.columns):
 else:
     bg_pairs["first_other_src_detail"] = "missing"
 
-bg_pairs.head(3)
+# If no ICU unknown-site pCO2 itemids are configured, drop POC unknown detail columns.
+# This keeps the canonical export schema parsimonious when no rows can populate them.
+if not ICU_PCO2_UNKNOWN_ITEMIDS:
+    poc_unknown_detail_columns = [
+        "poc_other_ph",
+        "poc_other_ph_uom",
+        "poc_other_po2",
+        "poc_other_paco2",
+        "poc_other_paco2_uom",
+        "poc_other_time",
+    ]
+    poc_unknown_drop_existing = [
+        column_name
+        for column_name in poc_unknown_detail_columns
+        if column_name in bg_pairs.columns
+    ]
+    if poc_unknown_drop_existing:
+        bg_pairs = bg_pairs.drop(columns=poc_unknown_drop_existing)
+        print(
+            "Dropped POC unknown-site detail columns (no unknown itemids configured):",
+            ", ".join(poc_unknown_drop_existing),
+        )
 ```
 
 ### 5) Demographics & outcomes
@@ -4169,7 +4369,6 @@ JOIN `{PHYS}.{HOSP}.patients` p USING (subject_id)
 """
 demo = run_sql_bq(sql("demo_sql"), {"hadms": hadm_list})
 print("Demo rows:", len(demo))
-demo.head(3)
 ```
 
 ```{python}
@@ -4378,7 +4577,6 @@ FROM race_assign
 """
 race_eth = run_sql_bq(race_eth_sql, {"hadms": hadm_list})
 print("Race/Eth rows:", len(race_eth))
-race_eth.head(3)
 ```
 
 ### 7) ED triage (linked to hadm) and first ED vitals
@@ -4716,14 +4914,30 @@ df = safe_merge_on_hadm(df, icu_meta,   right_name="icu_meta")
 df = safe_merge_on_hadm(df, vent_combined,       right_name="vent_combined")
 
 # Anchor to first ED presentation (per admission)
-if "ed_intime_first" in globals():
-    df = safe_merge_on_hadm(df, ed_intime_first, right_name="ed_intime_first")
+if "ed_intime_first" not in locals():
+    SQL["ed_anchor_sql"] = f"""
+    WITH hadms AS (SELECT x AS hadm_id FROM UNNEST(@hadms) AS x)
+    SELECT
+      hadm_id,
+      MIN(intime) AS ed_intime_first
+    FROM `{PHYS}.{ED}.edstays`
+    WHERE hadm_id IN (SELECT hadm_id FROM hadms)
+    GROUP BY hadm_id
+    """
+    ed_intime_first = run_sql_bq(sql("ed_anchor_sql"), {"hadms": hadm_list})
+    ed_intime_first["ed_intime_first"] = pd.to_datetime(
+        ed_intime_first.get("ed_intime_first"),
+        errors="coerce",
+    )
+df = safe_merge_on_hadm(df, ed_intime_first, right_name="ed_intime_first")
+if "ed_intime_first" not in df.columns:
+    raise KeyError("ed_intime_first missing after deterministic ED anchor merge.")
+if "first_imv_time" not in df.columns or "first_niv_time" not in df.columns:
+    raise KeyError("vent_combined merge missing expected first_imv_time/first_niv_time columns.")
 
 # Derived timing: first NIV/IMV relative to ED presentation
-if "ed_intime_first" in df.columns and "first_imv_time" in df.columns:
-    df["dt_first_imv_hours"] = (df["first_imv_time"] - df["ed_intime_first"]).dt.total_seconds() / 3600.0
-if "ed_intime_first" in df.columns and "first_niv_time" in df.columns:
-    df["dt_first_niv_hours"] = (df["first_niv_time"] - df["ed_intime_first"]).dt.total_seconds() / 3600.0
+df["dt_first_imv_hours"] = (df["first_imv_time"] - df["ed_intime_first"]).dt.total_seconds() / 3600.0
+df["dt_first_niv_hours"] = (df["first_niv_time"] - df["ed_intime_first"]).dt.total_seconds() / 3600.0
 
 # ABG/VBG before IMV (hadm-level)
 if {"first_abg_time", "first_imv_time"}.issubset(df.columns):
@@ -4954,13 +5168,10 @@ def add_collapsed_race_eth(
 
 df = add_collapsed_race_eth(df)
 
-print("Final df rows:", len(df), "cols:", len(df.columns))
-
 # Safety checks
 assert "subject_id" in df.columns, "subject_id missing from final df"
 assert not any(c.endswith("_x") or c.endswith("_y") for c in df.columns), "Found suffixed columns"
 print("Final df rows:", len(df), "cols:", len(df.columns))
-df.head(3)
 ```
 
 ```{python}
@@ -4995,7 +5206,9 @@ except Exception as e:
     ed_to_icu = None
 
 # 2) Cohort-level counts (admission-level)
-cohort_union = int((cohort_any["enrolled_any"] == 1).sum()) if "cohort_any" in globals() and "enrolled_any" in cohort_any.columns else len(hadm_list)
+if "enrolled_any" not in cohort_any.columns:
+    raise KeyError("cohort_any missing enrolled_any during flow-count summary.")
+cohort_union = int((cohort_any["enrolled_any"] == 1).sum())
 cohort_df_n = len(df)
 
 # Any blood gas present (ABG/VBG, LAB/POC)
@@ -5021,7 +5234,7 @@ threshold_count = (
 
 # ED chief complaint missing / present (within cohort)
 if "ed_triage_cc" in df.columns:
-    mask_cc_present = df["ed_triage_cc"].notna() & (df["ed_triage_cc"].astype(str).str.strip() != "")
+    mask_cc_present = chief_complaint_inclusion_mask(df["ed_triage_cc"])
     cc_present = int(mask_cc_present.sum())
     cc_missing = int((~mask_cc_present).sum())
 else:
@@ -5058,6 +5271,14 @@ if cohort_ed_to_icu is not None:
     rows.append({"step": "Cohort ED→ICU (ED CC present + ICU stay)", "count": cohort_ed_to_icu, "scope": "Cohort"})
 
 flow_counts = pd.DataFrame(rows)
+flow_counts_path = PRIOR_RUNS_DIR / f"{RUN_DATE} cohort_flow_counts.csv"
+flow_counts.to_csv(flow_counts_path, index=False)
+print("Wrote:", flow_counts_path)
+
+flow_counts_lookup = {
+    str(step): int(count)
+    for step, count in flow_counts[["step", "count"]].itertuples(index=False, name=None)
+}
 flow_counts
 ```
 
@@ -5129,7 +5350,7 @@ summary_rows = []
 
 # Chief complaint missingness (ED triage CC)
 if "ed_triage_cc" in df.columns:
-    cc_present = df["ed_triage_cc"].notna() & (df["ed_triage_cc"].astype(str).str.strip() != "")
+    cc_present = chief_complaint_inclusion_mask(df["ed_triage_cc"])
     summary_rows.append({
         "variable": "ed_triage_cc_present",
         "missing_n": int((~cc_present).sum()),
@@ -5303,14 +5524,8 @@ print(
 #| label: mimiciv-hypercap-ext-cohort-cell-022
 # Purpose: Optional archive export of the full hadm-level cohort workbook.
 
-from datetime import datetime
-
-WRITE_ARCHIVE_XLSX_EXPORTS = os.getenv("WRITE_ARCHIVE_XLSX_EXPORTS", "0") == "1"
-
 if WRITE_ARCHIVE_XLSX_EXPORTS:
-    prior_runs_dir = DATA_DIR / "prior runs"
-    prior_runs_dir.mkdir(parents=True, exist_ok=True)
-    out_path = prior_runs_dir / f"mimic_hypercap_EXT_bq_abg_vbg_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    out_path = archive_xlsx_path("mimic_hypercap_EXT_bq_abg_vbg")
     with pd.ExcelWriter(out_path, engine="openpyxl") as xw:
         df.to_excel(xw, sheet_name="cohort", index=False)
         try:
@@ -5320,89 +5535,6 @@ if WRITE_ARCHIVE_XLSX_EXPORTS:
     out_path
 else:
     print("Skipping archive hadm-level workbook export (set WRITE_ARCHIVE_XLSX_EXPORTS=1 to enable).")
-```
-
-### Create Annotation Dataset
-
-**Rationale:** Create ED chief-complaint subsets and a reproducible sample for manual annotation.
-
-```{python}
-#| label: mimiciv-hypercap-ext-cohort-cell-023
-# Purpose: Capture ED presentation context (chief complaint, acuity, and early vitals) at the ED-stay level.
-
-# ---- Extra exports: (1) ED chief-complaint only; (2) random sample of 160 patients ----
-from datetime import datetime
-
-# Dated artifacts go to archive folder (optional)
-prior_runs_dir = DATA_DIR / "prior runs"
-prior_runs_dir.mkdir(parents=True, exist_ok=True)
-timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-WRITE_ARCHIVE_XLSX_EXPORTS = os.getenv("WRITE_ARCHIVE_XLSX_EXPORTS", "0") == "1"
-
-# 1) Filter to rows with a non-empty ED chief complaint
-if "ed_triage_cc" not in df.columns:
-    raise KeyError(
-        "Column 'ed_triage_cc' not found in df. "
-        "Ensure the ED triage merge cell ran earlier."
-    )
-
-mask_cc = df["ed_triage_cc"].notna() & (df["ed_triage_cc"].astype(str).str.strip() != "")
-df_cc = df.loc[mask_cc].copy()
-
-print(f"ED-CC present rows: {len(df_cc)} of {len(df)} "
-      f"({(len(df_cc) / max(len(df),1)):.1%} of cohort).")
-
-# Save ED-CC-only cohort only when archive exports are enabled
-if WRITE_ARCHIVE_XLSX_EXPORTS:
-    out_path_cc = prior_runs_dir / f"mimic_hypercap_EXT_EDcc_only_bq_abg_vbg_{timestamp}.xlsx"
-    with pd.ExcelWriter(out_path_cc, engine="openpyxl") as xw:
-        df_cc.to_excel(xw, sheet_name="cohort_cc_only", index=False)
-        try:
-            qc.to_excel(xw, sheet_name="qc_abg_vbg", index=False)
-        except Exception:
-            pass
-    print("Saved:", out_path_cc)
-
-# 2) Random sample of n = 160 patients (distinct subject_id), one row per patient
-if "subject_id" not in df_cc.columns:
-    raise KeyError("Column 'subject_id' missing; cannot sample by patient.")
-
-# Make a one-row-per-patient frame by earliest admission
-if "admittime" in df_cc.columns:
-    df_cc_one = (
-        df_cc.sort_values(["subject_id", "admittime"])
-             .groupby("subject_id", as_index=False)
-             .head(1)
-    )
-else:
-    # Fallback if admittime not present: choose the smallest hadm_id per patient
-    df_cc_one = (
-        df_cc.sort_values(["subject_id", "hadm_id"])
-             .groupby("subject_id", as_index=False)
-             .head(1)
-    )
-
-N = 160
-n_avail = len(df_cc_one)
-n_take = min(N, n_avail)
-if n_avail < N:
-    print(f"Warning: only {n_avail} unique patients with ED chief complaint; sampling all of them.")
-
-RANDOM_SEED = 42
-df_cc_sample = df_cc_one.sample(n=n_take, random_state=RANDOM_SEED)
-
-# Save the sample only when archive exports are enabled
-if WRITE_ARCHIVE_XLSX_EXPORTS:
-    out_path_cc_sample = prior_runs_dir / f"mimic_hypercap_EXT_EDcc_sample{n_take}_bq_abg_vbg_{timestamp}.xlsx"
-    with pd.ExcelWriter(out_path_cc_sample, engine="openpyxl") as xw:
-        df_cc_sample.to_excel(xw, sheet_name="cohort_cc_sample", index=False)
-        try:
-            qc.to_excel(xw, sheet_name="qc_abg_vbg", index=False)
-        except Exception:
-            pass
-    print("Saved:", out_path_cc_sample)
-else:
-    print("Skipping ED-CC archive exports (set WRITE_ARCHIVE_XLSX_EXPORTS=1 to enable).")
 ```
 
 # ED-stay cohort expansion (timing, severity, comorbidity, outcomes)
@@ -5427,25 +5559,23 @@ if 'df' not in globals():
 
 ED_KEY = "ed_stay_id"  # target key for ED-level cohort
 
-print("Current admission-level df:", df.shape)
-print("Current columns count:", len(df.columns))
-if ED_KEY in df.columns:
-    print("ED stay unique count:", int(df[ED_KEY].nunique()))
-else:
-    print("ED stay unique count: ED_KEY not in columns")
+if COHORT_DEBUG_INVENTORY:
+    print("Current admission-level df:", df.shape)
+    print("Current columns count:", len(df.columns))
+    if ED_KEY in df.columns:
+        print("ED stay unique count:", int(df[ED_KEY].nunique()))
+    else:
+        print("ED stay unique count: ED_KEY not in columns")
 
-# Persist columns snapshot
-cols_out = WORK_DIR / "current_columns.json"
-cols_out.write_text(json.dumps(sorted(df.columns), indent=2))
-print("Wrote:", cols_out)
+    # Persist columns snapshot for debug-only inventory audits
+    cols_out = WORK_DIR / "current_columns.json"
+    cols_out.write_text(json.dumps(sorted(df.columns), indent=2))
+    print("Wrote:", cols_out)
 
-
-
-# Persist ED-stay columns snapshot (if ed_df exists)
-if "ed_df" in globals():
-    ed_cols_out = WORK_DIR / "ed_columns.json"
-    ed_cols_out.write_text(json.dumps(sorted(ed_df.columns), indent=2))
-    print("Wrote:", ed_cols_out)
+    if "ed_df" in globals():
+        ed_cols_out = WORK_DIR / "ed_columns.json"
+        ed_cols_out.write_text(json.dumps(sorted(ed_df.columns), indent=2))
+        print("Wrote:", ed_cols_out)
 ```
 
 ```{python}
@@ -5455,8 +5585,8 @@ if "ed_df" in globals():
 # Target field registry
 TARGET_RAW_FIELDS = {
     "ed_edstays": [
-        "ed_stay_id","subject_id","hadm_id","ed_intime","ed_outtime","ed_intime_first",
-        "arrival_transport","disposition","ed_gender","ed_race",
+        "ed_stay_id","subject_id","hadm_id","ed_intime","ed_outtime",
+        "arrival_transport","disposition_ed",
     ],
     "ed_triage": [
         "ed_triage_temp","ed_triage_hr","ed_triage_rr","ed_triage_o2sat",
@@ -5467,16 +5597,17 @@ TARGET_RAW_FIELDS = {
         "ed_first_o2sat","ed_first_sbp","ed_first_dbp","ed_first_rhythm","ed_first_pain",
     ],
     "admissions": [
-        "admittime","dischtime","deathtime","hospital_expire_flag",
+        "admittime","dischtime","deathtime",
         "administrative_class","from_location","discharge_location",
-        "insurance","language","marital_status","hosp_race",
+        "insurance","language","marital_status",
+        "gender","age","race","hosp_race",
     ],
     "icu": [
         "icu_stay_id","icu_intime_first","icu_outtime_last","icu_los_total","n_icu_stays",
         "first_careunit","last_careunit",
     ],
     "labs_gas": [
-        "first_gas_time","first_pco2","first_ph","first_hco3","first_hco3_time","first_hco3_source","first_hco3_itemid","first_hco3_qc_flag","first_lactate",
+        "first_ph","first_hco3","first_hco3_time","first_hco3_source","first_hco3_itemid","first_hco3_qc_flag","first_lactate",
         "serum_hco3_time","serum_hco3_mmol_l","serum_hco3_itemid",
         "qualifying_pco2_time","qualifying_pco2_mmhg","qualifying_site","qualifying_source_branch","qualifying_threshold_mmhg",
         "first_abg_po2","first_vbg_po2","first_other_po2",
@@ -5487,6 +5618,8 @@ TARGET_RAW_FIELDS = {
         "pco2_threshold_0_24h",
         "max_pco2_0_6h","min_ph_0_6h","max_pco2_0_24h","min_ph_0_24h",
         "gas_source_unknown_rate","gas_source_other_rate",
+        # Gas provenance fields are exported intentionally for source-trace audits.
+        # They support reviewer verification when ABG/VBG typing is missing/ambiguous.
         "first_gas_specimen_type","first_gas_specimen_present","first_gas_pco2_itemid","first_gas_pco2_fluid",
         "co2_other_is_blood_asserted","first_gas_anchor_has_pco2","first_gas_anchor_source_validated",
         "dt_first_imv_hours","dt_first_niv_hours","first_other_time",
@@ -5505,7 +5638,7 @@ TARGET_RAW_FIELDS = {
         "flag_opioid_substance","flag_pneumonia",
     ],
     "timing": [
-        "dt_qualifying_hypercapnia_hours","dt_first_qualifying_gas_hours",
+        "dt_qualifying_hypercapnia_hours",
         "hypercap_timing_class",
         "enrollment_route",
         "dt_first_imv_hours","dt_first_niv_hours","abg_before_imv","vbg_before_imv",
@@ -5531,10 +5664,11 @@ missing_derived = [c for c in TARGET_DERIVED_FIELDS if c not in df.columns]
 missing_by_group["derived"] = missing_derived
 
 missing_flat = [c for cols in missing_by_group.values() for c in cols]
-print("Missing fields total:", len(missing_flat))
-for group, cols in missing_by_group.items():
-    if cols:
-        print(f"- {group}: {cols}")
+if COHORT_DEBUG_INVENTORY:
+    print("Missing fields total:", len(missing_flat))
+    for group, cols in missing_by_group.items():
+        if cols:
+            print(f"- {group}: {cols}")
 ```
 
 ### Phase 1 — ED encounter spine and ED enrichment (one row per ED stay)
@@ -5556,7 +5690,7 @@ SELECT
   s.intime AS ed_intime,
   s.outtime AS ed_outtime,
   s.arrival_transport,
-  s.disposition,
+  s.disposition AS disposition_ed,
   s.gender AS ed_gender,
   s.race   AS ed_race
 FROM `{PHYS}.{ED}.edstays` s
@@ -5586,124 +5720,125 @@ ed_df = ed_df.merge(ed_intime_first, on="hadm_id", how="left")
 #| label: mimiciv-hypercap-ext-cohort-cell-027
 # Purpose: Define a reusable BigQuery execution helper so SQL calls are consistent across notebook stages.
 
-# ED triage and first ED vitals (reuse existing logic if present; otherwise join)
+# ED triage and first ED vitals (deterministic canonical path).
+# We intentionally run explicit SQL here instead of "reuse if already loaded"
+# branches so the stage has one predictable execution path in pipeline runs.
+SQL["ed_triage_sql"] = f"""
+WITH hadms AS (SELECT x AS hadm_id FROM UNNEST(@hadms) AS x)
+SELECT
+  s.stay_id AS ed_stay_id,
+  s.hadm_id,
+  t.temperature    AS ed_triage_temp,
+  t.heartrate      AS ed_triage_hr,
+  t.resprate       AS ed_triage_rr,
+  t.o2sat          AS ed_triage_o2sat,
+  t.sbp            AS ed_triage_sbp,
+  t.dbp            AS ed_triage_dbp,
+  t.pain           AS ed_triage_pain,
+  t.acuity         AS ed_triage_acuity,
+  t.chiefcomplaint AS ed_triage_cc
+FROM `{PHYS}.{ED}.edstays` s
+JOIN hadms h ON h.hadm_id = s.hadm_id
+LEFT JOIN `{PHYS}.{ED}.triage` t ON t.stay_id = s.stay_id
+"""
+ed_triage = run_sql_bq(sql("ed_triage_sql"), {"hadms": hadm_list})
+print("ED triage rows:", len(ed_triage))
 
-def _needs_cols(df, cols):
-    return (df is None) or any(c not in df.columns for c in cols)
+SQL["ed_first_vitals_by_stay_sql"] = f"""
+SELECT
+  stay_id AS ed_stay_id,
+  charttime,
+  temperature,
+  heartrate,
+  resprate,
+  o2sat,
+  sbp,
+  dbp,
+  rhythm,
+  pain
+FROM `{PHYS}.{ED}.vitalsign`
+WHERE stay_id IN UNNEST(@stay_ids)
+"""
+stay_id_map = (
+    ed_spine[["ed_stay_id", "hadm_id"]]
+    .dropna(subset=["ed_stay_id"])
+    .copy()
+)
+stay_id_map["ed_stay_id"] = pd.to_numeric(stay_id_map["ed_stay_id"], errors="coerce")
+stay_id_map = stay_id_map.dropna(subset=["ed_stay_id"])
+stay_id_map["ed_stay_id"] = stay_id_map["ed_stay_id"].astype(int)
+stay_ids = sorted(stay_id_map["ed_stay_id"].unique().tolist())
 
-# Use existing ed_triage / ed_first if already in memory from earlier cells
-try:
-    _ = ed_triage
-except NameError:
-    ed_triage = None
+first_vitals_chunks: list[pd.DataFrame] = []
+for start_index in range(0, len(stay_ids), 5000):
+    stay_chunk = stay_ids[start_index:start_index + 5000]
+    chunk_df = run_sql_bq(sql("ed_first_vitals_by_stay_sql"), {"stay_ids": stay_chunk})
+    if len(chunk_df) == 0:
+        continue
+    chunk_df["ed_stay_id"] = pd.to_numeric(chunk_df["ed_stay_id"], errors="coerce")
+    chunk_df = chunk_df.dropna(subset=["ed_stay_id"])
+    chunk_df["ed_stay_id"] = chunk_df["ed_stay_id"].astype(int)
+    first_vitals_chunks.append(chunk_df)
 
-try:
-    _ = ed_first
-except NameError:
-    ed_first = None
-
-# Force re-query if required keys are missing
-if _needs_cols(locals().get('ed_triage', None), ['ed_stay_id', 'hadm_id']):
-    ed_triage = None
-if _needs_cols(locals().get('ed_first', None), ['ed_stay_id']):
-    ed_first = None
-
-# If missing, prefer in-memory tables loaded earlier in the notebook.
-# This avoids re-running expensive ED queries during nbconvert.
-if ed_triage is None:
-    if 'edmap' in globals() and 'tri_all' in globals():
-        ed_triage = (
-            edmap[['stay_id', 'hadm_id']]
-            .merge(tri_all, on='stay_id', how='left')
-            .rename(columns={'stay_id': 'ed_stay_id'})
+if first_vitals_chunks:
+    ed_vitals_first_long = pd.concat(first_vitals_chunks, ignore_index=True)
+    ed_vitals_first_long["charttime"] = pd.to_datetime(
+        ed_vitals_first_long["charttime"], errors="coerce"
+    )
+    ed_first = (
+        ed_vitals_first_long
+        .sort_values(["ed_stay_id", "charttime"], kind="stable")
+        .groupby("ed_stay_id", as_index=False)
+        .first()
+        .rename(
+            columns={
+                "charttime": "ed_first_vitals_time",
+                "temperature": "ed_first_temp",
+                "heartrate": "ed_first_hr",
+                "resprate": "ed_first_rr",
+                "o2sat": "ed_first_o2sat",
+                "sbp": "ed_first_sbp",
+                "dbp": "ed_first_dbp",
+                "rhythm": "ed_first_rhythm",
+                "pain": "ed_first_pain",
+            }
         )
-        print('ED triage rows (from in-memory tables):', len(ed_triage))
-    else:
-        ed_triage_sql = f"""
-        WITH hadms AS (SELECT x AS hadm_id FROM UNNEST(@hadms) AS x)
-        SELECT
-          s.stay_id AS ed_stay_id,
-          s.hadm_id,
-          t.temperature    AS ed_triage_temp,
-          t.heartrate      AS ed_triage_hr,
-          t.resprate       AS ed_triage_rr,
-          t.o2sat          AS ed_triage_o2sat,
-          t.sbp            AS ed_triage_sbp,
-          t.dbp            AS ed_triage_dbp,
-          t.pain           AS ed_triage_pain,
-          t.acuity         AS ed_triage_acuity,
-          t.chiefcomplaint AS ed_triage_cc
-        FROM `{PHYS}.{ED}.edstays` s
-        JOIN hadms h ON h.hadm_id = s.hadm_id
-        LEFT JOIN `{PHYS}.{ED}.triage` t ON t.stay_id = s.stay_id
-        """
-        ed_triage = run_sql_bq(ed_triage_sql, {'hadms': hadm_list})
-        print('ED triage rows (fallback query):', len(ed_triage))
+    )
+else:
+    ed_first = pd.DataFrame(
+        columns=[
+            "ed_stay_id",
+            "ed_first_vitals_time",
+            "ed_first_temp",
+            "ed_first_hr",
+            "ed_first_rr",
+            "ed_first_o2sat",
+            "ed_first_sbp",
+            "ed_first_dbp",
+            "ed_first_rhythm",
+            "ed_first_pain",
+        ]
+    )
 
-if ed_first is None:
-    if 'edmap' in globals() and 'first_stay_all' in globals():
-        ed_first = (
-            edmap[['stay_id', 'hadm_id']]
-            .merge(first_stay_all, on='stay_id', how='left')
-            .rename(columns={'stay_id': 'ed_stay_id'})
-        )
-        print('ED first vitals rows (from in-memory tables):', len(ed_first))
-    else:
-        ed_first_vitals_sql = f"""
-        WITH hadms AS (SELECT x AS hadm_id FROM UNNEST(@hadms) AS x),
-        edmap AS (
-          SELECT stay_id, hadm_id
-          FROM `{PHYS}.{ED}.edstays`
-          WHERE hadm_id IN (SELECT hadm_id FROM hadms)
-        ),
-        vs AS (
-          SELECT stay_id, charttime, temperature, heartrate, resprate, o2sat, sbp, dbp, rhythm, pain
-          FROM `{PHYS}.{ED}.vitalsign`
-        ),
-        first_vs AS (
-          SELECT
-            v.stay_id,
-            (ARRAY_AGG(STRUCT(v.charttime, v.temperature, v.heartrate, v.resprate, v.o2sat, v.sbp, v.dbp, v.rhythm, v.pain)
-                       ORDER BY v.charttime LIMIT 1))[OFFSET(0)] AS pick
-          FROM vs v
-          JOIN edmap m USING (stay_id)
-          GROUP BY v.stay_id
-        )
-        SELECT
-          f.stay_id AS ed_stay_id,
-          m.hadm_id,
-          pick.charttime AS ed_first_vitals_time,
-          pick.temperature AS ed_first_temp,
-          pick.heartrate AS ed_first_hr,
-          pick.resprate AS ed_first_rr,
-          pick.o2sat AS ed_first_o2sat,
-          pick.sbp AS ed_first_sbp,
-          pick.dbp AS ed_first_dbp,
-          pick.rhythm AS ed_first_rhythm,
-          pick.pain AS ed_first_pain
-        FROM first_vs f
-        JOIN edmap m ON m.stay_id = f.stay_id
-        """
-        ed_first = run_sql_bq(ed_first_vitals_sql, {'hadms': hadm_list})
-        print('ED first vitals rows (fallback query):', len(ed_first))
+ed_first = ed_first.merge(
+    stay_id_map.drop_duplicates("ed_stay_id"),
+    on="ed_stay_id",
+    how="left",
+)
+print("ED first vitals rows:", len(ed_first))
 
-# Debug columns before merge
-print('ed_triage cols:', list(ed_triage.columns))
-print('ed_first cols:', list(ed_first.columns))
-print('ed_df cols:', list(ed_df.columns))
+if "ed_stay_id" not in ed_df.columns:
+    raise KeyError("ed_df missing ed_stay_id; ensure ED spine extraction ran.")
 
-if 'ed_stay_id' not in ed_df.columns:
-    raise KeyError('ed_df missing ed_stay_id; ensure ED spine cell ran.')
+required_triage_cols = {"ed_stay_id", "hadm_id"}
+if not required_triage_cols.issubset(ed_triage.columns):
+    raise KeyError(f"ED triage query missing required columns: {required_triage_cols}")
+required_first_cols = {"ed_stay_id", "hadm_id"}
+if not required_first_cols.issubset(ed_first.columns):
+    raise KeyError(f"ED first-vitals query missing required columns: {required_first_cols}")
 
-# Merge ED triage + vitals onto ed_df with available keys
-merge_keys_triage = [k for k in ["ed_stay_id", "hadm_id"] if k in ed_df.columns and k in ed_triage.columns]
-if not merge_keys_triage:
-    raise KeyError("No common keys between ed_df and ed_triage")
-ed_df = ed_df.merge(ed_triage, on=merge_keys_triage, how="left")
-merge_keys_first = [k for k in ["ed_stay_id", "hadm_id"] if k in ed_df.columns and k in ed_first.columns]
-if not merge_keys_first:
-    raise KeyError("No common keys between ed_df and ed_first")
-ed_df = ed_df.merge(ed_first, on=merge_keys_first, how="left")
+ed_df = ed_df.merge(ed_triage, on=["ed_stay_id", "hadm_id"], how="left")
+ed_df = ed_df.merge(ed_first, on=["ed_stay_id", "hadm_id"], how="left")
 ```
 
 ### Phase 2 — Hospital admission context and outcomes
@@ -6589,7 +6724,7 @@ other_source_rate = float(gas_source_audit.get("source_rates", {}).get("unknown"
 panel_unknown_hadm_count = 0
 panel_hadm_denom = int(pd.to_numeric(ed_df.get("hadm_id"), errors="coerce").dropna().nunique())
 hadm_other_rate_0_24h = 0.0
-if "panel" in globals() and isinstance(panel, pd.DataFrame) and not panel.empty:
+if isinstance(panel, pd.DataFrame) and not panel.empty:
     panel_tmp = panel.copy()
     panel_tmp["dt_hours"] = pd.to_numeric(panel_tmp.get("dt_hours"), errors="coerce")
     panel_tmp["source"] = (
@@ -6635,17 +6770,14 @@ print("Gas source rates:", gas_source_audit.get("source_rates", {}))
 print("Gas source inference tiers:", gas_source_audit.get("tier_rates", {}))
 print("Unresolved specimen IDs:", gas_source_audit.get("unresolved_specimen_id_count", 0))
 
-prior_runs_dir = DATA_DIR / "prior runs"
-prior_runs_dir.mkdir(parents=True, exist_ok=True)
-out_date = datetime.now().strftime("%Y-%m-%d")
-gas_source_audit_path = prior_runs_dir / f"{out_date} gas_source_audit.json"
+gas_source_audit_path = PRIOR_RUNS_DIR / f"{RUN_DATE} gas_source_audit.json"
 
 reduction_target = float(os.getenv("COHORT_OTHER_RELATIVE_REDUCTION_MIN", "0"))
 baseline_other_rate = None
 baseline_audit_path = None
 baseline_mode_mismatch_path = None
 current_source_mode = str(gas_source_audit.get("mode", "")).strip().lower()
-for candidate in sorted(prior_runs_dir.glob("* gas_source_audit.json"), reverse=True):
+for candidate in sorted(PRIOR_RUNS_DIR.glob("* gas_source_audit.json"), reverse=True):
     if candidate.resolve() == gas_source_audit_path.resolve():
         continue
     try:
@@ -6980,14 +7112,9 @@ else:
 
 icu_itemids = sorted({int(i) for dfm in icu_matches.values() for i in dfm["itemid"].tolist()})
 print("ICU POC candidate itemids:", len(icu_itemids))
-if not icu_itemid_map.empty:
-    print("ICU POC itemid map preview:")
-    print(icu_itemid_map.head(20).to_string(index=False))
 
-audit_date = pd.Timestamp.now().strftime("%Y-%m-%d")
-prior_runs_dir = DATA_DIR / "prior runs"
-prior_runs_dir.mkdir(parents=True, exist_ok=True)
-icu_itemid_map_path = prior_runs_dir / f"{audit_date} icu_poc_itemid_map.csv"
+audit_date = RUN_DATE
+icu_itemid_map_path = PRIOR_RUNS_DIR / f"{audit_date} icu_poc_itemid_map.csv"
 icu_itemid_map.to_csv(icu_itemid_map_path, index=False)
 print("Wrote:", icu_itemid_map_path)
 
@@ -7039,7 +7166,7 @@ if not manifest_missing.empty:
         "Blood-gas manifest references itemids not present in runtime dictionaries: "
         f"{missing_repr}"
     )
-blood_gas_itemid_manifest_audit_path = prior_runs_dir / f"{audit_date} blood_gas_itemid_manifest_audit.csv"
+blood_gas_itemid_manifest_audit_path = PRIOR_RUNS_DIR / f"{audit_date} blood_gas_itemid_manifest_audit.csv"
 blood_gas_itemid_manifest_audit.to_csv(blood_gas_itemid_manifest_audit_path, index=False)
 print("Wrote:", blood_gas_itemid_manifest_audit_path)
 ```
@@ -7054,9 +7181,9 @@ if len(icu_itemids) == 0:
     icu_poc_long = pd.DataFrame()
     print("No ICU POC itemids found.")
 else:
-    # ensure icu stay ids available
-    if 'icu' not in globals():
-        raise NameError("ICU stays table 'icu' not found; run ICU phase first.")
+    # ensure ICU stay ids are available from the canonical ICU extraction phase
+    if "icu_stay_id" not in icu.columns or "hadm_id" not in icu.columns:
+        raise KeyError("ICU dataframe missing required columns: icu_stay_id/hadm_id.")
 
     icu_stays = icu[["icu_stay_id","hadm_id","intime"]].copy()
     icu_stays = icu_stays.dropna(subset=["icu_stay_id"])
@@ -7183,8 +7310,12 @@ if len(icu_poc_long) > 0:
             .fillna(-1)
             .astype(int)
             .isin(set(ICU_PCO2_VBG_ITEMIDS)),
+            pd.to_numeric(panel_poc.get("pco2_itemid"), errors="coerce")
+            .fillna(-1)
+            .astype(int)
+            .isin(set(ICU_PCO2_UNKNOWN_ITEMIDS)),
         ],
-        ["arterial", "venous"],
+        ["arterial", "venous", "unknown"],
         default="unknown",
     )
     panel_poc["source_branch"] = "POC"
@@ -7223,7 +7354,7 @@ if len(icu_poc_long) > 0:
     icu_itemid_usage = icu_itemid_usage.sort_values(
         ["row_count", "itemid"], ascending=[False, True], kind="stable"
     ).reset_index(drop=True)
-    icu_itemid_usage_path = prior_runs_dir / f"{audit_date} icu_poc_itemid_usage.csv"
+    icu_itemid_usage_path = PRIOR_RUNS_DIR / f"{audit_date} icu_poc_itemid_usage.csv"
     icu_itemid_usage.to_csv(icu_itemid_usage_path, index=False)
     print("Wrote:", icu_itemid_usage_path)
     if "blood_gas_itemid_manifest_audit" in globals() and not blood_gas_itemid_manifest_audit.empty:
@@ -7266,8 +7397,6 @@ for col in [
     if col not in panel_poc.columns:
         panel_poc[col] = pd.NA
 
-poc_inclusion_enabled = False  # deprecated compatibility alias (maps to blocking pass)
-poc_inclusion_reason = "not_evaluated"  # deprecated compatibility alias
 poc_itemid_qc_status = "fail"
 poc_itemid_qc_blocking_passed = False
 poc_itemid_qc_reason = "not_evaluated"
@@ -7304,6 +7433,8 @@ if len(icu_poc_long) > 0 and pco2_ids:
                 sample_type_hint = "ABG"
             elif int(itemid_value) in set(ICU_PCO2_VBG_ITEMIDS):
                 sample_type_hint = "VBG"
+            elif int(itemid_value) in set(ICU_PCO2_UNKNOWN_ITEMIDS):
+                sample_type_hint = "UNKNOWN"
             else:
                 sample_type_hint = "UNKNOWN"
             value_units = sorted(set(group["valueuom_norm"].dropna().astype(str).tolist()))
@@ -7479,7 +7610,7 @@ for column_name in pco2_itemid_qc_columns:
     if column_name not in pco2_itemid_qc_audit.columns:
         pco2_itemid_qc_audit[column_name] = pd.NA
 pco2_itemid_qc_audit = pco2_itemid_qc_audit[pco2_itemid_qc_columns]
-pco2_itemid_qc_audit_path = prior_runs_dir / f"{audit_date} pco2_itemid_qc_audit.csv"
+pco2_itemid_qc_audit_path = PRIOR_RUNS_DIR / f"{audit_date} pco2_itemid_qc_audit.csv"
 pco2_itemid_qc_audit.to_csv(pco2_itemid_qc_audit_path, index=False)
 print("Wrote:", pco2_itemid_qc_audit_path)
 
@@ -7548,7 +7679,7 @@ for column_name in hco3_itemid_qc_columns:
     if column_name not in hco3_itemid_qc_audit.columns:
         hco3_itemid_qc_audit[column_name] = pd.NA
 hco3_itemid_qc_audit = hco3_itemid_qc_audit[hco3_itemid_qc_columns]
-hco3_itemid_qc_audit_path = prior_runs_dir / f"{audit_date} hco3_itemid_qc_audit.csv"
+hco3_itemid_qc_audit_path = PRIOR_RUNS_DIR / f"{audit_date} hco3_itemid_qc_audit.csv"
 hco3_itemid_qc_audit.to_csv(hco3_itemid_qc_audit_path, index=False)
 print("Wrote:", hco3_itemid_qc_audit_path)
 
@@ -7631,8 +7762,6 @@ else:
     poc_itemid_qc_failed_itemids_n = 1
 
 poc_itemid_qc_blocking_passed = bool(poc_itemid_qc_status in {"pass", "warning"})
-poc_inclusion_enabled = bool(poc_itemid_qc_blocking_passed)
-poc_inclusion_reason = str(poc_itemid_qc_reason)
 
 print(
     "POC itemid QC status:",
@@ -7648,9 +7777,6 @@ poc_qualifying_earliest_0_24h_hadm_n = 0
 poc_qualifying_earliest_0_24h_hadm_rate = 0.0
 poc_qualifying_any_type_0_24h_hadm_n = 0
 poc_qualifying_any_type_0_24h_hadm_rate = 0.0
-poc_hypercap_0_24h_edstay_n = 0  # deprecated alias (maps to poc_qualifying_any_type_0_24h_hadm_n)
-poc_hypercap_0_24h_edstay_rate = 0.0  # deprecated alias
-poc_hypercap_0_24h_alias_of = "poc_qualifying_any_type_0_24h_hadm_*"
 
 # Optional fallback for first_hco3 from ICU POC only when explicit manifest itemids are provided.
 if ICU_HCO3_ITEMIDS and len(panel_poc) > 0:
@@ -7684,11 +7810,7 @@ if ICU_HCO3_ITEMIDS and len(panel_poc) > 0:
 
 # optional export
 if len(panel_poc) > 0:
-    from datetime import datetime
-
-    prior_runs_dir = DATA_DIR / "prior runs"
-    prior_runs_dir.mkdir(parents=True, exist_ok=True)
-    poc_path = prior_runs_dir / f"gas_panels_poc_{datetime.now().strftime('%Y%m%d_%H%M%S')}.parquet"
+    poc_path = PRIOR_RUNS_DIR / f"gas_panels_poc_{RUN_TIMESTAMP}.parquet"
     panel_poc.to_parquet(poc_path, index=False)
     print("Wrote:", poc_path)
 ```
@@ -7734,10 +7856,8 @@ diag_table = (
 )
 print(diag_table)
 
-prior_runs_dir = DATA_DIR / "prior runs"
-prior_runs_dir.mkdir(parents=True, exist_ok=True)
-out_date = datetime.now().strftime("%Y-%m-%d")
-omr_diag_path = prior_runs_dir / f"{out_date} omr_diagnostics.json"
+out_date = RUN_DATE
+omr_diag_path = PRIOR_RUNS_DIR / f"{out_date} omr_diagnostics.json"
 omr_diag_path.write_text(json.dumps(omr_diagnostics, indent=2))
 print("Wrote:", omr_diag_path)
 
@@ -8273,7 +8393,7 @@ anthro_audit_rows.append(
 
 anthropometric_cleaning_audit = pd.DataFrame(anthro_audit_rows)
 anthropometric_cleaning_audit_path = (
-    prior_runs_dir / f"{out_date} anthropometric_cleaning_audit.csv"
+    PRIOR_RUNS_DIR / f"{out_date} anthropometric_cleaning_audit.csv"
 )
 anthropometric_cleaning_audit.to_csv(anthropometric_cleaning_audit_path, index=False)
 print("Wrote:", anthropometric_cleaning_audit_path)
@@ -8282,7 +8402,7 @@ anthro_coverage_audit = build_anthro_coverage_audit(ed_df)
 anthro_coverage_audit["omr"] = omr_diagnostics
 anthro_coverage_audit["charted_fallback"] = charted_anthro_diagnostics
 anthro_coverage_audit["cleaning_audit_path"] = str(anthropometric_cleaning_audit_path)
-anthro_coverage_audit_path = prior_runs_dir / f"{out_date} anthropometrics_coverage_audit.json"
+anthro_coverage_audit_path = PRIOR_RUNS_DIR / f"{out_date} anthropometrics_coverage_audit.json"
 anthro_coverage_audit_path.write_text(json.dumps(anthro_coverage_audit, indent=2))
 print("Wrote:", anthro_coverage_audit_path)
 
@@ -8601,7 +8721,6 @@ ed_df["pco2_threshold_0_24h"] = (
     (pd.to_numeric(ed_df["pco2_threshold_any"], errors="coerce").fillna(0).astype(int) == 1)
     & pd.to_numeric(ed_df["dt_qualifying_hypercapnia_hours"], errors="coerce").le(24.0)
 ).astype("Int64")
-ed_df["dt_first_qualifying_gas_hours"] = ed_df["dt_qualifying_hypercapnia_hours"]
 ed_df["first_gas_time"] = ed_df["qualifying_pco2_time"]
 ed_df["first_pco2"] = ed_df["qualifying_pco2_mmhg"]
 ed_df["first_gas_anchor_has_pco2"] = ed_df["qualifying_pco2_time"].notna()
@@ -9185,28 +9304,28 @@ if enrolled_mask.any():
 STRICT_QA = False
 
 # 1) Key uniqueness
-if 'ed_df' in globals() and 'ed_stay_id' in ed_df.columns:
-    try:
-        assert_unique(ed_df, 'ed_stay_id', 'ed_df')
-        print('QA: ed_stay_id unique OK')
-    except Exception as e:
-        print('QA FAIL:', e)
-        if STRICT_QA:
-            raise
+if "ed_stay_id" not in ed_df.columns:
+    raise KeyError("ed_df missing ed_stay_id in QA block.")
+try:
+    assert_unique(ed_df, 'ed_stay_id', 'ed_df')
+    print('QA: ed_stay_id unique OK')
+except Exception as e:
+    print('QA FAIL:', e)
+    if STRICT_QA:
+        raise
 
 # 2) Inclusion sanity: enrolled rows must match ICD OR gas-qualified any-time.
-if 'ed_df' in globals():
-    enrolled = pd.to_numeric(ed_df.get('enrolled_any'), errors='coerce').fillna(0).astype(int)
-    threshold = pd.to_numeric(ed_df.get('pco2_threshold_any'), errors='coerce').fillna(0).astype(int)
-    icd_any = pd.to_numeric(ed_df.get('any_hypercap_icd'), errors='coerce').fillna(0).astype(int)
-    enrolled_expected = ((threshold == 1) | (icd_any == 1)).astype(int)
-    mismatch_n = int((enrolled != enrolled_expected).sum())
-    print('QA: enrolled_any != (any_hypercap_icd OR pco2_threshold_any) count:', mismatch_n)
-    if STRICT_QA and mismatch_n > 0:
-        raise AssertionError('Found rows where enrolled_any disagrees with ICD OR any-time gas rule.')
+enrolled = pd.to_numeric(ed_df.get('enrolled_any'), errors='coerce').fillna(0).astype(int)
+threshold = pd.to_numeric(ed_df.get('pco2_threshold_any'), errors='coerce').fillna(0).astype(int)
+icd_any = pd.to_numeric(ed_df.get('any_hypercap_icd'), errors='coerce').fillna(0).astype(int)
+enrolled_expected = ((threshold == 1) | (icd_any == 1)).astype(int)
+mismatch_n = int((enrolled != enrolled_expected).sum())
+print('QA: enrolled_any != (any_hypercap_icd OR pco2_threshold_any) count:', mismatch_n)
+if STRICT_QA and mismatch_n > 0:
+    raise AssertionError('Found rows where enrolled_any disagrees with ICD OR any-time gas rule.')
 
 # 3) Temporal sanity: first_gas_time >= ed_intime (allow small negative drift)
-if 'ed_df' in globals() and 'first_gas_time' in ed_df.columns and 'ed_intime' in ed_df.columns:
+if 'first_gas_time' in ed_df.columns and 'ed_intime' in ed_df.columns:
     dt = (pd.to_datetime(ed_df['first_gas_time']) - pd.to_datetime(ed_df['ed_intime'])).dt.total_seconds() / 3600
     n_neg = int((dt < -1).sum())  # allow 1h clock drift
     print('QA: first_gas_time < ed_intime by >1h:', n_neg)
@@ -9214,17 +9333,16 @@ if 'ed_df' in globals() and 'first_gas_time' in ed_df.columns and 'ed_intime' in
         raise AssertionError('first_gas_time before ed_intime by >1h')
 
 # 4) Range checks (report only)
-if 'ed_df' in globals():
-    ranges = {
-        'first_ph': (6.8, 7.8),
-        'first_pco2': (10, 200),
-        'first_lactate': (0, 30),
-        'creatinine': (0, 20),
-    }
-    rc = check_ranges(ed_df, ranges)
-    if not rc.empty:
-        print('QA range check (n out-of-range):')
-        print(rc.to_string(index=False))
+ranges = {
+    'first_ph': (6.8, 7.8),
+    'first_pco2': (10, 200),
+    'first_lactate': (0, 30),
+    'creatinine': (0, 20),
+}
+rc = check_ranges(ed_df, ranges)
+if not rc.empty:
+    print('QA range check (n out-of-range):')
+    print(rc.to_string(index=False))
 ```
 
 ```{python}
@@ -9238,6 +9356,10 @@ from datetime import datetime
 if ed_df["ed_stay_id"].nunique() != len(ed_df):
     raise ValueError("ed_stay_id not unique after merges")
 
+# Snapshot pre-clean frames for scope-specific raw-vs-clean audit artifacts.
+ed_df_pre_clean = ed_df.copy(deep=True)
+df_pre_clean = df.copy(deep=True) if "df" in globals() else pd.DataFrame()
+
 # T1b — create cleaned vitals model fields while preserving raw values.
 ed_df, vitals_outlier_audit = add_vitals_model_fields(ed_df)
 ed_df, gas_outlier_audit = add_gas_model_fields(ed_df)
@@ -9245,6 +9367,10 @@ outliers_audit = pd.concat([vitals_outlier_audit, gas_outlier_audit], ignore_ind
 
 # T1c — fail-fast cleaned-vitals bounds checks.
 clean_bounds = {
+    "ed_triage_temp_f_clean": (50.0, 115.0),
+    "ed_first_temp_f_clean": (50.0, 115.0),
+    "ed_triage_hr_model": (20.0, 300.0),
+    "ed_first_hr_model": (20.0, 300.0),
     "ed_triage_o2sat_clean": (0.0, 100.0),
     "ed_first_o2sat_clean": (0.0, 100.0),
     "ed_triage_sbp_clean": (20.0, 300.0),
@@ -9266,33 +9392,87 @@ for temp_clean_column in ("ed_triage_temp_f_clean", "ed_first_temp_f_clean"):
     if temp_clean_column not in ed_df.columns:
         continue
     numeric = pd.to_numeric(ed_df[temp_clean_column], errors="coerce")
-    residual_celsius_like_n = int(numeric.between(20.0, 50.0, inclusive="both").sum())
+    residual_celsius_like_n = int(numeric.between(25.0, 45.0, inclusive="both").sum())
     if residual_celsius_like_n:
         raise ValueError(
-            f"Found {residual_celsius_like_n} cleaned values still in 20–50°F band in {temp_clean_column}."
+            f"Found {residual_celsius_like_n} cleaned values still in 25–45°F band in {temp_clean_column}."
         )
 
 ed_vitals_distribution_summary, ed_vitals_extreme_examples, ed_vitals_model_delta = build_ed_vitals_audit_artifacts(ed_df)
 
-prior_runs_dir = DATA_DIR / "prior runs"
-prior_runs_dir.mkdir(parents=True, exist_ok=True)
-out_date = datetime.now().strftime("%Y-%m-%d")
+out_date = RUN_DATE
 
-vitals_outlier_audit_path = prior_runs_dir / f"{out_date} vitals_outlier_audit.csv"
+vitals_outlier_audit_path = PRIOR_RUNS_DIR / f"{out_date} vitals_outlier_audit.csv"
 vitals_outlier_audit.to_csv(vitals_outlier_audit_path, index=False)
 print("Wrote:", vitals_outlier_audit_path)
-outliers_audit_path = prior_runs_dir / f"{out_date} outliers_audit.csv"
+outliers_audit_path = PRIOR_RUNS_DIR / f"{out_date} outliers_audit.csv"
 outliers_audit.to_csv(outliers_audit_path, index=False)
 print("Wrote:", outliers_audit_path)
-ed_vitals_distribution_summary_path = prior_runs_dir / f"{out_date} ed_vitals_distribution_summary.csv"
+ed_vitals_distribution_summary_path = PRIOR_RUNS_DIR / f"{out_date} ed_vitals_distribution_summary.csv"
 ed_vitals_distribution_summary.to_csv(ed_vitals_distribution_summary_path, index=False)
 print("Wrote:", ed_vitals_distribution_summary_path)
-ed_vitals_extreme_examples_path = prior_runs_dir / f"{out_date} ed_vitals_extreme_examples.csv"
+ed_vitals_extreme_examples_path = PRIOR_RUNS_DIR / f"{out_date} ed_vitals_extreme_examples.csv"
 ed_vitals_extreme_examples.to_csv(ed_vitals_extreme_examples_path, index=False)
 print("Wrote:", ed_vitals_extreme_examples_path)
-ed_vitals_model_delta_path = prior_runs_dir / f"{out_date} ed_vitals_model_delta.csv"
+ed_vitals_model_delta_path = PRIOR_RUNS_DIR / f"{out_date} ed_vitals_model_delta.csv"
 ed_vitals_model_delta.to_csv(ed_vitals_model_delta_path, index=False)
 print("Wrote:", ed_vitals_model_delta_path)
+
+pain_debug_rows = []
+for pain_column in ("ed_triage_pain", "ed_first_pain"):
+    if pain_column not in ed_df.columns:
+        continue
+    top_values = (
+        ed_df[pain_column]
+        .astype("string")
+        .fillna("")
+        .str.strip()
+        .replace("", pd.NA)
+        .value_counts(dropna=True)
+        .head(20)
+    )
+    for raw_value, count in top_values.items():
+        pain_debug_rows.append(
+            {
+                "column_name": pain_column,
+                "raw_pain_value": str(raw_value),
+                "count": int(count),
+            }
+        )
+pain_value_examples = pd.DataFrame(pain_debug_rows)
+pain_value_examples_path = PRIOR_RUNS_DIR / f"{out_date} ed_pain_raw_top20.csv"
+pain_value_examples.to_csv(pain_value_examples_path, index=False)
+print("Wrote:", pain_value_examples_path)
+
+audits_root = WORK_DIR / "debug" / "audits"
+ed_spine_audits_dir = audits_root / "ed_spine"
+ed_spine_audits_dir.mkdir(parents=True, exist_ok=True)
+vitals_outlier_ed_spine_pre_clean = build_vitals_outlier_phase_audit(
+    ed_df_pre_clean,
+    scope_name="ed_spine",
+    phase_name="raw_pre_clean",
+    use_clean_columns=False,
+)
+vitals_outlier_ed_spine_post_clean = build_vitals_outlier_phase_audit(
+    ed_df,
+    scope_name="ed_spine",
+    phase_name="clean_post_clean",
+    use_clean_columns=True,
+)
+vitals_outlier_ed_spine_pre_clean_path = (
+    ed_spine_audits_dir / "vitals_outlier_audit_raw_pre_clean.csv"
+)
+vitals_outlier_ed_spine_post_clean_path = (
+    ed_spine_audits_dir / "vitals_outlier_audit_clean_post_clean.csv"
+)
+vitals_outlier_ed_spine_pre_clean.to_csv(
+    vitals_outlier_ed_spine_pre_clean_path, index=False
+)
+vitals_outlier_ed_spine_post_clean.to_csv(
+    vitals_outlier_ed_spine_post_clean_path, index=False
+)
+print("Wrote:", vitals_outlier_ed_spine_pre_clean_path)
+print("Wrote:", vitals_outlier_ed_spine_post_clean_path)
 
 timing_integrity_audit = pd.DataFrame(
     [
@@ -9308,7 +9488,7 @@ timing_integrity_audit = pd.DataFrame(
         }
     ]
 )
-timing_integrity_audit_path = prior_runs_dir / f"{out_date} timing_integrity_audit.csv"
+timing_integrity_audit_path = PRIOR_RUNS_DIR / f"{out_date} timing_integrity_audit.csv"
 timing_integrity_audit.to_csv(timing_integrity_audit_path, index=False)
 print("Wrote:", timing_integrity_audit_path)
 
@@ -9325,7 +9505,7 @@ ventilation_timing_audit = pd.DataFrame(
         }
     ]
 )
-ventilation_timing_audit_path = prior_runs_dir / f"{out_date} ventilation_timing_audit.csv"
+ventilation_timing_audit_path = PRIOR_RUNS_DIR / f"{out_date} ventilation_timing_audit.csv"
 ventilation_timing_audit.to_csv(ventilation_timing_audit_path, index=False)
 print("Wrote:", ventilation_timing_audit_path)
 
@@ -9353,7 +9533,7 @@ hco3_source_counts["null_value_rate"] = np.where(
     0.0,
 )
 hco3_source_counts["source_value_mismatch_n"] = hco3_source_value_mismatch_n
-hco3_integrity_audit_path = prior_runs_dir / f"{out_date} hco3_integrity_audit.csv"
+hco3_integrity_audit_path = PRIOR_RUNS_DIR / f"{out_date} hco3_integrity_audit.csv"
 hco3_source_counts.to_csv(hco3_integrity_audit_path, index=False)
 print("Wrote:", hco3_integrity_audit_path)
 
@@ -9398,7 +9578,7 @@ for source_name, source_mask in hco3_source.groupby(hco3_source).groups.items():
     _append_hco3_coverage_row("first_hco3_source", str(source_name), hco3_source_mask)
 
 hco3_coverage_audit = pd.DataFrame(hco3_coverage_rows)
-hco3_coverage_audit_path = prior_runs_dir / f"{out_date} hco3_coverage_audit.csv"
+hco3_coverage_audit_path = PRIOR_RUNS_DIR / f"{out_date} hco3_coverage_audit.csv"
 hco3_coverage_audit.to_csv(hco3_coverage_audit_path, index=False)
 print("Wrote:", hco3_coverage_audit_path)
 
@@ -9449,27 +9629,20 @@ expected_structural_null_fields = sorted(
     set(EXPECTED_STRUCTURAL_NULL_FIELDS).intersection(ed_df.columns)
 )
 
-# Compute UOM checks against canonical export frame contract (or deterministic preview).
-if "final_cc" in globals():
-    uom_scope_df = final_cc
-    uom_scope_frame = "final_cc"
-elif "df" in globals() and "ed_triage_cc" in df.columns:
-    _mask_df_cc = df["ed_triage_cc"].notna() & (df["ed_triage_cc"].astype(str).str.strip() != "")
-    _df_cc = df.loc[_mask_df_cc].copy()
-    _mask_cc = ed_df["ed_triage_cc"].notna() & (ed_df["ed_triage_cc"].astype(str).str.strip() != "")
-    _ed_cc_only = ed_df.loc[_mask_cc].copy()
-    _ed_tmp = _ed_cc_only.copy()
-    if "ed_intime" in _ed_tmp.columns:
-        _ed_tmp = _ed_tmp.sort_values(["hadm_id", "ed_intime", "ed_stay_id"], na_position="last")
-    else:
-        _ed_tmp = _ed_tmp.sort_values(["hadm_id", "ed_stay_id"], na_position="last")
-    _ed_first = _ed_tmp.drop_duplicates("hadm_id", keep="first")
-    _add_ed_cols = [c for c in _ed_first.columns if c not in _df_cc.columns]
-    uom_scope_df = _df_cc.merge(_ed_first[["hadm_id"] + _add_ed_cols], on="hadm_id", how="left")
-    uom_scope_frame = "final_cc_preview"
+# Compute UOM checks against a deterministic preview of final export scope.
+_mask_df_cc = chief_complaint_inclusion_mask(df["ed_triage_cc"])
+_df_cc = df.loc[_mask_df_cc].copy()
+_mask_cc = chief_complaint_inclusion_mask(ed_df["ed_triage_cc"])
+_ed_cc_only = ed_df.loc[_mask_cc].copy()
+_ed_tmp = _ed_cc_only.copy()
+if "ed_intime" in _ed_tmp.columns:
+    _ed_tmp = _ed_tmp.sort_values(["hadm_id", "ed_intime", "ed_stay_id"], na_position="last")
 else:
-    uom_scope_df = ed_df
-    uom_scope_frame = "ed_df"
+    _ed_tmp = _ed_tmp.sort_values(["hadm_id", "ed_stay_id"], na_position="last")
+_ed_first = _ed_tmp.drop_duplicates("hadm_id", keep="first")
+_add_ed_cols = [c for c in _ed_first.columns if c not in _df_cc.columns]
+uom_scope_df = _df_cc.merge(_ed_first[["hadm_id"] + _add_ed_cols], on="hadm_id", how="left")
+uom_scope_frame = "final_cc_preview"
 
 uom_expectation_checks = evaluate_uom_expectations(uom_scope_df)
 uom_expectation_scope = {"frame": uom_scope_frame, "row_count": int(len(uom_scope_df))}
@@ -9482,7 +9655,7 @@ first_other_scope_df = (
 )
 first_other_scope_frame = "uom_scope_df" if first_other_scope_df is uom_scope_df else "ed_df"
 first_other_pco2_audit = build_first_other_pco2_audit(first_other_scope_df)
-first_other_pco2_audit_path = prior_runs_dir / f"{out_date} first_other_pco2_audit.csv"
+first_other_pco2_audit_path = PRIOR_RUNS_DIR / f"{out_date} first_other_pco2_audit.csv"
 first_other_pco2_audit.to_csv(first_other_pco2_audit_path, index=False)
 print("Wrote:", first_other_pco2_audit_path)
 print("first_other_pco2 audit scope:", first_other_scope_frame)
@@ -9498,11 +9671,8 @@ pct_any_24h = float(p24["ed_stay_id"].nunique() / max(ed_df["ed_stay_id"].nuniqu
 print("% any gas panel 0–6h:", round(pct_any_6h*100,1))
 print("% any gas panel 0–24h:", round(pct_any_24h*100,1))
 
-if "gas_source_audit" not in globals():
-    gas_source_audit = summarize_gas_source(panel if "panel" in globals() else pd.DataFrame())
-
 gas_overlap_summary = build_gas_source_overlap_summary(ed_df)
-gas_overlap_summary_path = prior_runs_dir / f"{out_date} gas_source_overlap_summary.csv"
+gas_overlap_summary_path = PRIOR_RUNS_DIR / f"{out_date} gas_source_overlap_summary.csv"
 gas_overlap_summary.to_csv(gas_overlap_summary_path, index=False)
 print("Wrote:", gas_overlap_summary_path)
 
@@ -9543,17 +9713,16 @@ def _append_distribution_rows(source_branch: str, source: str, values: pd.Series
     )
 
 pco2_distribution_scope = ed_df
-if "uom_scope_df" in globals() and isinstance(uom_scope_df, pd.DataFrame):
-    poc_scope_columns = ["poc_abg_paco2", "poc_vbg_paco2", "poc_other_paco2"]
-    has_poc_values = any(
-        col in uom_scope_df.columns
-        and pd.to_numeric(uom_scope_df[col], errors="coerce").notna().any()
-        for col in poc_scope_columns
-    )
-    if has_poc_values:
-        pco2_distribution_scope = uom_scope_df
+poc_scope_columns = ["poc_abg_paco2", "poc_vbg_paco2", "poc_other_paco2"]
+has_poc_values = any(
+    col in uom_scope_df.columns
+    and pd.to_numeric(uom_scope_df[col], errors="coerce").notna().any()
+    for col in poc_scope_columns
+)
+if has_poc_values:
+    pco2_distribution_scope = uom_scope_df
 
-if "panel" in globals() and len(panel) > 0 and "pco2" in panel.columns:
+if len(panel) > 0 and "pco2" in panel.columns:
     panel_pco2 = panel.copy()
     panel_pco2["pco2"] = pd.to_numeric(panel_pco2["pco2"], errors="coerce")
     panel_pco2 = panel_pco2.loc[panel_pco2["pco2"].notna()].copy()
@@ -9573,7 +9742,7 @@ for column_name in PCC_DIST_COLUMNS:
     if column_name not in pco2_source_distribution_audit.columns:
         pco2_source_distribution_audit[column_name] = pd.NA
 pco2_source_distribution_audit = pco2_source_distribution_audit[PCC_DIST_COLUMNS]
-pco2_source_distribution_audit_path = prior_runs_dir / f"{out_date} pco2_source_distribution_audit.csv"
+pco2_source_distribution_audit_path = PRIOR_RUNS_DIR / f"{out_date} pco2_source_distribution_audit.csv"
 pco2_source_distribution_audit.to_csv(pco2_source_distribution_audit_path, index=False)
 print("Wrote:", pco2_source_distribution_audit_path)
 
@@ -9617,7 +9786,7 @@ for window_name, max_col, source_col in [
 
 pco2_window_max_contributor_audit = pd.DataFrame(max_contributor_rows)
 pco2_window_max_contributor_audit_path = (
-    prior_runs_dir / f"{out_date} pco2_window_max_contributor_audit.csv"
+    PRIOR_RUNS_DIR / f"{out_date} pco2_window_max_contributor_audit.csv"
 )
 pco2_window_max_contributor_audit.to_csv(
     pco2_window_max_contributor_audit_path, index=False
@@ -9688,7 +9857,7 @@ for source_branch, site_name, pco2_column, ph_column, po2_column in triplet_spec
 
 blood_gas_triplet_completeness_audit = pd.DataFrame(triplet_rows)
 blood_gas_triplet_completeness_audit_path = (
-    prior_runs_dir / f"{out_date} blood_gas_triplet_completeness_audit.csv"
+    PRIOR_RUNS_DIR / f"{out_date} blood_gas_triplet_completeness_audit.csv"
 )
 blood_gas_triplet_completeness_audit.to_csv(
     blood_gas_triplet_completeness_audit_path, index=False
@@ -9737,7 +9906,7 @@ qualifying_pco2_distribution_audit = qualifying_pco2_distribution_audit[
     QUALIFYING_DIST_COLUMNS
 ]
 qualifying_pco2_distribution_audit_path = (
-    prior_runs_dir / f"{out_date} qualifying_pco2_distribution_by_type_audit.csv"
+    PRIOR_RUNS_DIR / f"{out_date} qualifying_pco2_distribution_by_type_audit.csv"
 )
 qualifying_pco2_distribution_audit.to_csv(
     qualifying_pco2_distribution_audit_path, index=False
@@ -9777,11 +9946,6 @@ poc_qualifying_any_type_0_24h_hadm_n = int(poc_any_type_mask.sum())
 poc_qualifying_any_type_0_24h_hadm_rate = float(
     poc_qualifying_any_type_0_24h_hadm_n / max(int(len(ed_df)), 1)
 )
-
-# Deprecated aliases retained for compatibility; values now map to hadm-level any-type POC qualifying counts.
-poc_hypercap_0_24h_edstay_n = int(poc_qualifying_any_type_0_24h_hadm_n)
-poc_hypercap_0_24h_edstay_rate = float(poc_qualifying_any_type_0_24h_hadm_rate)
-poc_hypercap_0_24h_alias_of = "poc_qualifying_any_type_0_24h_hadm_*"
 
 poc_other_values_all = (
     pd.to_numeric(ed_df["poc_other_paco2"], errors="coerce")
@@ -9829,15 +9993,10 @@ other_route_quarantine_audit = pd.DataFrame(
             "poc_qualifying_any_type_0_24h_hadm_rate": float(
                 globals().get("poc_qualifying_any_type_0_24h_hadm_rate", 0.0)
             ),
-            "poc_hypercap_0_24h_edstay_n": int(globals().get("poc_hypercap_0_24h_edstay_n", 0)),
-            "poc_hypercap_0_24h_edstay_rate": float(globals().get("poc_hypercap_0_24h_edstay_rate", 0.0)),
-            "poc_hypercap_0_24h_alias_of": str(
-                globals().get("poc_hypercap_0_24h_alias_of", "poc_qualifying_any_type_0_24h_hadm_*")
-            ),
         }
     ]
 )
-other_route_quarantine_audit_path = prior_runs_dir / f"{out_date} other_route_quarantine_audit.csv"
+other_route_quarantine_audit_path = PRIOR_RUNS_DIR / f"{out_date} other_route_quarantine_audit.csv"
 other_route_quarantine_audit.to_csv(other_route_quarantine_audit_path, index=False)
 print("Wrote:", other_route_quarantine_audit_path)
 
@@ -9856,7 +10015,7 @@ first_gas_anchor_audit = pd.DataFrame(
 first_gas_anchor_audit["first_gas_without_pco2_anchor_n"] = (
     first_gas_anchor_audit["first_gas_time_nonnull_n"] - first_gas_anchor_audit["first_gas_anchor_has_pco2_n"]
 )
-first_gas_anchor_audit_path = prior_runs_dir / f"{out_date} first_gas_anchor_audit.csv"
+first_gas_anchor_audit_path = PRIOR_RUNS_DIR / f"{out_date} first_gas_anchor_audit.csv"
 first_gas_anchor_audit.to_csv(first_gas_anchor_audit_path, index=False)
 print("Wrote:", first_gas_anchor_audit_path)
 
@@ -9881,7 +10040,7 @@ for audit_only_column in [
 hadm_rows = int(len(df)) if "df" in globals() else None
 hadm_cc_rows = None
 if "df" in globals() and "ed_triage_cc" in df.columns:
-    _hadm_cc_mask = df["ed_triage_cc"].notna() & (df["ed_triage_cc"].astype(str).str.strip() != "")
+    _hadm_cc_mask = chief_complaint_inclusion_mask(df["ed_triage_cc"])
     hadm_cc_rows = int(_hadm_cc_mask.sum())
 
 uom_failed_checks = []
@@ -10028,6 +10187,10 @@ dt_after_24h_rate = float(
 
 # T4 — QA summary artifact.
 qa_summary = {
+    "run_id": f"cohort_{RUN_TIMESTAMP}",
+    "scope_name": "ed_spine",
+    "n_rows": int(len(ed_df)),
+    "exported_workbook_path": "MIMIC tabular data/MIMICIV all with CC.xlsx",
     "ed_spine_rows": int(len(ed_df)),
     "ed_rows": int(len(ed_df)),
     "ed_unique": int(ed_df["ed_stay_id"].nunique()),
@@ -10090,6 +10253,7 @@ qa_summary = {
     "poc_itemid_qc_blocking_passed": bool(
         globals().get("poc_itemid_qc_blocking_passed", False)
     ),
+    "poc_itemid_qc_reason": str(globals().get("poc_itemid_qc_reason", "not_evaluated")),
     "poc_itemid_qc_failed_itemids_n": int(
         globals().get("poc_itemid_qc_failed_itemids_n", 0)
     ),
@@ -10102,10 +10266,6 @@ qa_summary = {
     "poc_itemid_qc_warn_reasons": list(
         globals().get("poc_itemid_qc_warn_reasons", [])
     ),
-    "poc_itemid_qc_passed": bool(
-        globals().get("poc_itemid_qc_blocking_passed", False)
-    ),
-    "poc_itemid_qc_reason": str(globals().get("poc_itemid_qc_reason", "not_evaluated")),
     "poc_qualifying_earliest_0_24h_hadm_n": int(
         globals().get("poc_qualifying_earliest_0_24h_hadm_n", 0)
     ),
@@ -10117,11 +10277,6 @@ qa_summary = {
     ),
     "poc_qualifying_any_type_0_24h_hadm_rate": float(
         globals().get("poc_qualifying_any_type_0_24h_hadm_rate", 0.0)
-    ),
-    "poc_hypercap_0_24h_edstay_n": int(globals().get("poc_hypercap_0_24h_edstay_n", 0)),
-    "poc_hypercap_0_24h_edstay_rate": float(globals().get("poc_hypercap_0_24h_edstay_rate", 0.0)),
-    "poc_hypercap_0_24h_alias_of": str(
-        globals().get("poc_hypercap_0_24h_alias_of", "poc_qualifying_any_type_0_24h_hadm_*")
     ),
     "poc_used_in_qualification_logic": bool(
         globals().get(
@@ -10173,7 +10328,17 @@ qa_summary = {
         "distribution_summary": str(ed_vitals_distribution_summary_path),
         "extreme_examples": str(ed_vitals_extreme_examples_path),
         "model_delta": str(ed_vitals_model_delta_path),
+        "pain_raw_top20": str(pain_value_examples_path),
+        "ed_spine_raw_pre_clean": str(vitals_outlier_ed_spine_pre_clean_path),
+        "ed_spine_clean_post_clean": str(vitals_outlier_ed_spine_post_clean_path),
     },
+    "cohort_flow_counts": (
+        json.loads(flow_counts.to_json(orient="records"))
+        if "flow_counts" in globals()
+        else []
+    ),
+    "cohort_flow_counts_lookup": flow_counts_lookup if "flow_counts_lookup" in globals() else {},
+    "cohort_flow_counts_path": str(flow_counts_path) if "flow_counts_path" in globals() else None,
     "blood_gas_audit_paths": {
         "manifest_itemids": str(blood_gas_itemid_manifest_audit_path)
         if "blood_gas_itemid_manifest_audit_path" in globals()
@@ -10220,8 +10385,13 @@ qa_summary = {
     "qa_infos": qa_infos,
     "run_metadata": RUN_METADATA if "RUN_METADATA" in globals() else None,
 }
+qa_dir = WORK_DIR / "debug" / "qa"
+qa_dir.mkdir(parents=True, exist_ok=True)
+qa_ed_spine_path = qa_dir / "qa_summary_ed_spine.json"
+qa_ed_spine_path.write_text(json.dumps(qa_summary, indent=2))
 qa_path = WORK_DIR / "qa_summary.json"
 qa_path.write_text(json.dumps(qa_summary, indent=2))
+print("Wrote:", qa_ed_spine_path)
 print("Wrote:", qa_path)
 ```
 
@@ -10234,16 +10404,10 @@ print("Wrote:", qa_path)
 # Purpose: Write finalized cohort outputs and derivative tables for downstream analysis workflows.
 
 # Save outputs (dated parquet artifacts archived under prior runs)
-from datetime import datetime
-
-prior_runs_dir = DATA_DIR / "prior runs"
-prior_runs_dir.mkdir(parents=True, exist_ok=True)
-timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-cohort_path = prior_runs_dir / f"cohort_ed_stay_{timestamp}.parquet"
-ed_vitals_path = prior_runs_dir / f"ed_vitals_long_{timestamp}.parquet"
-labs_path = prior_runs_dir / f"labs_long_{timestamp}.parquet"
-gas_panels_path = prior_runs_dir / f"gas_panels_{timestamp}.parquet"
+cohort_path = PRIOR_RUNS_DIR / f"cohort_ed_stay_{RUN_TIMESTAMP}.parquet"
+ed_vitals_path = PRIOR_RUNS_DIR / f"ed_vitals_long_{RUN_TIMESTAMP}.parquet"
+labs_path = PRIOR_RUNS_DIR / f"labs_long_{RUN_TIMESTAMP}.parquet"
+gas_panels_path = PRIOR_RUNS_DIR / f"gas_panels_{RUN_TIMESTAMP}.parquet"
 
 ed_df.to_parquet(cohort_path, index=False)
 ed_vitals_long.to_parquet(ed_vitals_path, index=False)
@@ -10261,15 +10425,8 @@ print("Wrote:", gas_panels_path)
 # Purpose: Report missingness for key variables to support transparent data-quality reporting.
 
 # Also export to Excel (tabular dataset) - optional archive output
-from datetime import datetime
-
-WRITE_ARCHIVE_XLSX_EXPORTS = os.getenv("WRITE_ARCHIVE_XLSX_EXPORTS", "0") == "1"
 if WRITE_ARCHIVE_XLSX_EXPORTS:
-    prior_runs_dir = DATA_DIR / "prior runs"
-    prior_runs_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-
-    xlsx_path = prior_runs_dir / f"mimic_hypercap_EXT_EDstay_bq_gas_{timestamp}.xlsx"
+    xlsx_path = archive_xlsx_path("mimic_hypercap_EXT_EDstay_bq_gas")
 
     with pd.ExcelWriter(xlsx_path, engine="openpyxl") as xw:
         ed_df.to_excel(xw, sheet_name="cohort_ed_stay", index=False)
@@ -10289,12 +10446,6 @@ else:
 # Purpose: Capture ED presentation context (chief complaint, acuity, and early vitals) at the ED-stay level.
 
 # Final Excel outputs requested: all encounters + ED chief-complaint only
-from datetime import datetime
-
-prior_runs_dir = DATA_DIR / "prior runs"
-prior_runs_dir.mkdir(parents=True, exist_ok=True)
-timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-
 # 1) All encounters meeting inclusion criteria (admission-level), with ED linkage flags
 ed_link = (
     ed_df.groupby("hadm_id", as_index=False)
@@ -10305,7 +10456,7 @@ all_encounters["has_ed_encounter"] = all_encounters["n_ed_stays"].fillna(0).asty
 all_encounters["encounter_source"] = all_encounters["has_ed_encounter"].map({1: "ED-linked", 0: "Inpatient-only"})
 
 if WRITE_ARCHIVE_XLSX_EXPORTS:
-    all_path = prior_runs_dir / f"mimic_hypercap_EXT_all_encounters_bq_{timestamp}.xlsx"
+    all_path = archive_xlsx_path("mimic_hypercap_EXT_all_encounters_bq")
     with pd.ExcelWriter(all_path, engine="openpyxl") as xw:
         all_encounters.to_excel(xw, sheet_name="all_encounters", index=False)
     print("Saved:", all_path)
@@ -10314,11 +10465,11 @@ if WRITE_ARCHIVE_XLSX_EXPORTS:
 if "ed_triage_cc" not in ed_df.columns:
     raise KeyError("Column 'ed_triage_cc' not found in ed_df. Ensure ED triage merge ran.")
 
-mask_cc = ed_df["ed_triage_cc"].notna() & (ed_df["ed_triage_cc"].astype(str).str.strip() != "")
+mask_cc = chief_complaint_inclusion_mask(ed_df["ed_triage_cc"])
 ed_cc_only = ed_df.loc[mask_cc].copy()
 
 if WRITE_ARCHIVE_XLSX_EXPORTS:
-    cc_path = prior_runs_dir / f"mimic_hypercap_EXT_EDcc_only_edstay_bq_{timestamp}.xlsx"
+    cc_path = archive_xlsx_path("mimic_hypercap_EXT_EDcc_only_edstay_bq")
     with pd.ExcelWriter(cc_path, engine="openpyxl") as xw:
         ed_cc_only.to_excel(xw, sheet_name="ed_cc_only", index=False)
     print("Saved:", cc_path)
@@ -10333,22 +10484,18 @@ else:
 # Final CC output (cohort-only; excludes NLP-derived columns)
 from datetime import datetime
 
-# Ensure cc-only frames exist (build from df if upstream optional export cells were skipped)
-if "df_cc" not in globals():
-    if "df" not in globals():
-        raise NameError("df not found. Run cohort assembly cells first.")
-    if "ed_triage_cc" not in df.columns:
-        raise KeyError("ed_triage_cc missing in df; cannot build df_cc.")
-    _mask_df_cc = df["ed_triage_cc"].notna() & (df["ed_triage_cc"].astype(str).str.strip() != "")
-    df_cc = df.loc[_mask_df_cc].copy()
+# Deterministic production path: always derive export frames from canonical
+# in-memory stage outputs (`df` and `ed_df`) instead of globals-based fallback.
+if "ed_triage_cc" not in df.columns:
+    raise KeyError("ed_triage_cc missing in df; cannot build df_cc.")
+if "ed_triage_cc" not in ed_df.columns:
+    raise KeyError("ed_triage_cc missing in ed_df; cannot build ed_cc_only.")
 
-if "ed_cc_only" not in globals():
-    if "ed_df" not in globals():
-        raise NameError("ed_df not found. Run the ED-stay build cells first.")
-    if "ed_triage_cc" not in ed_df.columns:
-        raise KeyError("ed_triage_cc missing in ed_df; cannot build ed_cc_only.")
-    _mask_cc = ed_df["ed_triage_cc"].notna() & (ed_df["ed_triage_cc"].astype(str).str.strip() != "")
-    ed_cc_only = ed_df.loc[_mask_cc].copy()
+_mask_df_cc = chief_complaint_inclusion_mask(df["ed_triage_cc"])
+df_cc = df.loc[_mask_df_cc].copy()
+
+_mask_cc = chief_complaint_inclusion_mask(ed_df["ed_triage_cc"])
+ed_cc_only = ed_df.loc[_mask_cc].copy()
 
 # Add ED-stay columns (dedup to earliest ED stay per hadm_id)
 ed_tmp = ed_cc_only.copy()
@@ -10361,6 +10508,51 @@ ed_first = ed_tmp.drop_duplicates("hadm_id", keep="first")
 add_ed_cols = [c for c in ed_first.columns if c not in df_cc.columns]
 
 final_cc = df_cc.merge(ed_first[["hadm_id"] + add_ed_cols], on="hadm_id", how="left")
+
+cc_inclusion_mask = chief_complaint_inclusion_mask(final_cc["ed_triage_cc"])
+if (~cc_inclusion_mask).any():
+    pseudo_rows = int((~cc_inclusion_mask).sum())
+    raise ValueError(
+        "Final CC export contains pseudo-missing ED chief complaints; "
+        f"unexpected rows={pseudo_rows}."
+    )
+
+# Canonicalize cohort-facing demographic fields so downstream stages carry one stable name.
+if "gender" in final_cc.columns:
+    gender_series = final_cc["gender"].astype("string").str.strip()
+else:
+    gender_series = pd.Series(pd.NA, index=final_cc.index, dtype="string")
+if "ed_gender" in final_cc.columns:
+    ed_gender_series = final_cc["ed_gender"].astype("string").str.strip()
+    final_cc["gender"] = gender_series.mask(
+        gender_series.isna() | gender_series.eq(""),
+        ed_gender_series,
+    )
+else:
+    final_cc["gender"] = gender_series
+
+if "age" in final_cc.columns:
+    age_series = pd.to_numeric(final_cc["age"], errors="coerce")
+else:
+    age_series = pd.Series(np.nan, index=final_cc.index, dtype="float64")
+if "age_at_admit" in final_cc.columns:
+    age_at_admit_series = pd.to_numeric(final_cc["age_at_admit"], errors="coerce")
+    final_cc["age"] = age_series.where(age_series.notna(), age_at_admit_series)
+else:
+    final_cc["age"] = age_series
+
+if "race" in final_cc.columns:
+    race_series = final_cc["race"].astype("string").str.strip()
+else:
+    race_series = pd.Series(pd.NA, index=final_cc.index, dtype="string")
+if "ed_race" in final_cc.columns:
+    ed_race_series = final_cc["ed_race"].astype("string").str.strip()
+    race_series = race_series.mask(race_series.isna() | race_series.eq(""), ed_race_series)
+if "hosp_race" in final_cc.columns:
+    hosp_race_series = final_cc["hosp_race"].astype("string").str.strip()
+    race_series = race_series.mask(race_series.isna() | race_series.eq(""), hosp_race_series)
+final_cc["race"] = race_series
+
 pre_filter_n = int(len(final_cc))
 if "pco2_threshold_any" not in final_cc.columns:
     raise KeyError("Expected pco2_threshold_any in final_cc before export.")
@@ -10424,9 +10616,7 @@ if "qualifying_source_branch" in final_cc.columns:
         ).to_string()
     )
 
-prior_runs_dir = DATA_DIR / "prior runs"
-prior_runs_dir.mkdir(parents=True, exist_ok=True)
-out_date = datetime.now().strftime("%Y-%m-%d")
+out_date = RUN_DATE
 artifacts_dir = WORK_DIR / "artifacts"
 artifacts_dir.mkdir(parents=True, exist_ok=True)
 
@@ -10485,10 +10675,11 @@ contract_error_codes = [
     for finding in cohort_contract.get("findings", [])
     if str(finding.get("severity", "")).lower() == "error"
 ]
-if "qa_path" not in globals():
-    qa_path = WORK_DIR / "qa_summary.json"
-if qa_path.exists():
-    qa_payload = json.loads(qa_path.read_text())
+qa_dir = WORK_DIR / "debug" / "qa"
+qa_dir.mkdir(parents=True, exist_ok=True)
+qa_ed_spine_path = qa_dir / "qa_summary_ed_spine.json"
+if qa_ed_spine_path.exists():
+    qa_payload = json.loads(qa_ed_spine_path.read_text())
 else:
     qa_payload = {}
 local_status = str(qa_payload.get("qa_status", "pass")).strip().lower()
@@ -10509,7 +10700,77 @@ qa_payload["cohort_contract_report_path"] = str(cohort_contract_paths["contract_
 qa_payload["gas_source_diagnostics_artifact_path"] = str(
     gas_source_diagnostics_artifact_path
 )
+qa_payload["run_id"] = f"cohort_{RUN_TIMESTAMP}"
+qa_payload["scope_name"] = "ed_cc"
+qa_payload["n_rows"] = int(len(final_cc))
+qa_payload["ed_cc_rows"] = int(len(final_cc))
+qa_payload["ed_spine_rows"] = int(len(ed_df))
+qa_payload["hadm_rows"] = int(len(final_cc))
+qa_payload["hadm_cc_rows"] = int(len(final_cc))
+qa_payload["exported_workbook_path"] = "MIMIC tabular data/MIMICIV all with CC.xlsx"
+qa_payload["qa_scope_notes"] = {
+    "primary_summary_scope": "ed_cc",
+    "secondary_summary_scope": "ed_spine",
+    "secondary_summary_path": "debug/qa/qa_summary_ed_spine.json",
+}
+qa_payload["metric_scope"] = {
+    "default": "ed_cc",
+    "legacy_ed_spine_metrics": [
+        "pct_any_gas_0_6h",
+        "pct_any_gas_0_24h",
+        "timing_integrity_audit",
+        "ventilation_timing_audit",
+    ],
+}
+qa_payload["pco2_threshold_any_n"] = int(
+    pd.to_numeric(final_cc.get("pco2_threshold_any"), errors="coerce")
+    .fillna(0)
+    .astype(int)
+    .sum()
+)
+qa_payload["pco2_threshold_any_rate"] = float(
+    pd.to_numeric(final_cc.get("pco2_threshold_any"), errors="coerce")
+    .fillna(0)
+    .astype(int)
+    .mean()
+)
+qa_payload["pco2_threshold_0_24h_n"] = int(
+    pd.to_numeric(final_cc.get("pco2_threshold_0_24h"), errors="coerce")
+    .fillna(0)
+    .astype(int)
+    .sum()
+)
+qa_payload["pco2_threshold_0_24h_rate"] = float(
+    pd.to_numeric(final_cc.get("pco2_threshold_0_24h"), errors="coerce")
+    .fillna(0)
+    .astype(int)
+    .mean()
+)
+qa_payload["qualifying_source_branch_counts"] = (
+    final_cc.get("qualifying_source_branch", pd.Series(dtype="string"))
+    .fillna("UNKNOWN")
+    .astype("string")
+    .value_counts(dropna=False)
+    .to_dict()
+)
+ed_cc_audits_dir = (WORK_DIR / "debug" / "audits" / "ed_cc")
+vitals_outlier_ed_cc_pre_clean_path = (
+    ed_cc_audits_dir / "vitals_outlier_audit_raw_pre_clean.csv"
+)
+vitals_outlier_ed_cc_post_clean_path = (
+    ed_cc_audits_dir / "vitals_outlier_audit_clean_post_clean.csv"
+)
+qa_payload["vitals_outlier_scope_audit_paths"] = {
+    "ed_spine_raw_pre_clean": str(vitals_outlier_ed_spine_pre_clean_path),
+    "ed_spine_clean_post_clean": str(vitals_outlier_ed_spine_post_clean_path),
+    "ed_cc_raw_pre_clean": str(vitals_outlier_ed_cc_pre_clean_path),
+    "ed_cc_clean_post_clean": str(vitals_outlier_ed_cc_post_clean_path),
+}
+qa_ed_cc_path = qa_dir / "qa_summary_ed_cc.json"
+qa_ed_cc_path.write_text(json.dumps(qa_payload, indent=2))
+qa_path = WORK_DIR / "qa_summary.json"
 qa_path.write_text(json.dumps(qa_payload, indent=2))
+print("Updated:", qa_ed_cc_path, f"(qa_status_final={qa_status_final})")
 print("Updated:", qa_path, f"(qa_status_final={qa_status_final})")
 
 contract_mode = os.getenv("PIPELINE_CONTRACT_MODE", "fail").strip().lower()
@@ -10521,14 +10782,258 @@ if cohort_contract["status"] == "fail" and contract_mode == "fail":
         f"See {cohort_contract_paths['failed_contract_path']}"
     )
 
+# Overwrite ED vitals with cleaned/model values for analysis-facing exports.
+# Gas fields keep the <=5% safety gate to avoid broad semantic drift.
+mandatory_model_overwrite_specs = [
+    ("ed_triage_hr", "ed_triage_hr_model"),
+    ("ed_first_hr", "ed_first_hr_model"),
+    ("ed_triage_rr", "ed_triage_rr_model"),
+    ("ed_first_rr", "ed_first_rr_model"),
+    ("ed_triage_temp", "ed_triage_temp_model"),
+    ("ed_first_temp", "ed_first_temp_model"),
+    ("ed_triage_pain", "ed_triage_pain_model"),
+    ("ed_first_pain", "ed_first_pain_model"),
+    ("ed_triage_sbp", "ed_triage_sbp_model"),
+    ("ed_triage_dbp", "ed_triage_dbp_model"),
+    ("ed_first_sbp", "ed_first_sbp_model"),
+    ("ed_first_dbp", "ed_first_dbp_model"),
+    ("ed_triage_o2sat", "ed_triage_o2sat_model"),
+    ("ed_first_o2sat", "ed_first_o2sat_model"),
+]
+conditional_model_overwrite_specs = [
+    ("first_ph", "first_ph_model"),
+    ("first_lactate", "first_lactate_model"),
+]
+model_overwrite_threshold = 0.05
+model_overwrite_rows: list[dict[str, object]] = []
+model_columns_to_drop: set[str] = set()
+
+for raw_column, model_column in mandatory_model_overwrite_specs:
+    if raw_column not in final_cc.columns or model_column not in final_cc.columns:
+        model_overwrite_rows.append(
+            {
+                "raw_column": raw_column,
+                "model_column": model_column,
+                "status": "missing_column",
+                "changed_n": pd.NA,
+                "changed_rate": pd.NA,
+                "threshold": "mandatory",
+                "overwrite_applied": False,
+            }
+        )
+        continue
+
+    raw_numeric = pd.to_numeric(final_cc[raw_column], errors="coerce")
+    model_numeric = pd.to_numeric(final_cc[model_column], errors="coerce")
+    changed_mask = ~(
+        raw_numeric.eq(model_numeric) | (raw_numeric.isna() & model_numeric.isna())
+    )
+    changed_n = int(changed_mask.sum())
+    changed_rate = float(changed_n / max(len(final_cc), 1))
+    final_cc[raw_column] = model_numeric
+    model_columns_to_drop.add(model_column)
+    model_overwrite_rows.append(
+        {
+            "raw_column": raw_column,
+            "model_column": model_column,
+            "status": "mandatory_overwrite",
+            "changed_n": changed_n,
+            "changed_rate": changed_rate,
+            "threshold": "mandatory",
+            "overwrite_applied": True,
+        }
+    )
+
+for raw_column, model_column in conditional_model_overwrite_specs:
+    if raw_column not in final_cc.columns or model_column not in final_cc.columns:
+        model_overwrite_rows.append(
+            {
+                "raw_column": raw_column,
+                "model_column": model_column,
+                "status": "missing_column",
+                "changed_n": pd.NA,
+                "changed_rate": pd.NA,
+                "threshold": model_overwrite_threshold,
+                "overwrite_applied": False,
+            }
+        )
+        continue
+
+    raw_numeric = pd.to_numeric(final_cc[raw_column], errors="coerce")
+    model_numeric = pd.to_numeric(final_cc[model_column], errors="coerce")
+    changed_mask = ~(
+        raw_numeric.eq(model_numeric) | (raw_numeric.isna() & model_numeric.isna())
+    )
+    changed_n = int(changed_mask.sum())
+    changed_rate = float(changed_n / max(len(final_cc), 1))
+    overwrite_applied = changed_rate <= model_overwrite_threshold
+
+    if overwrite_applied:
+        final_cc[raw_column] = model_numeric
+        model_columns_to_drop.add(model_column)
+        status = "conditional_overwrite"
+    else:
+        status = "conditional_retained_gt5pct_change"
+
+    model_overwrite_rows.append(
+        {
+            "raw_column": raw_column,
+            "model_column": model_column,
+            "status": status,
+            "changed_n": changed_n,
+            "changed_rate": changed_rate,
+            "threshold": model_overwrite_threshold,
+            "overwrite_applied": overwrite_applied,
+        }
+    )
+
+model_overwrite_audit = pd.DataFrame(model_overwrite_rows)
+model_overwrite_audit_path = PRIOR_RUNS_DIR / f"{out_date} model_overwrite_audit.csv"
+model_overwrite_audit.to_csv(model_overwrite_audit_path, index=False)
+print("Wrote:", model_overwrite_audit_path)
+
+gt5_model_changes = model_overwrite_audit.loc[
+    model_overwrite_audit["status"] == "conditional_retained_gt5pct_change",
+    ["raw_column", "model_column", "changed_n", "changed_rate"],
+]
+if not gt5_model_changes.empty:
+    print("Model-to-raw overwrite skipped (>5% changed rows):")
+    print(gt5_model_changes.to_string(index=False))
+
+ed_cc_audits_dir.mkdir(parents=True, exist_ok=True)
+if not df_pre_clean.empty and "ed_triage_cc" in df_pre_clean.columns:
+    ed_cc_pre_clean = df_pre_clean.loc[
+        chief_complaint_inclusion_mask(df_pre_clean["ed_triage_cc"])
+    ].copy()
+else:
+    ed_cc_pre_clean = pd.DataFrame()
+
+vitals_outlier_ed_cc_pre_clean = build_vitals_outlier_phase_audit(
+    ed_cc_pre_clean,
+    scope_name="ed_cc",
+    phase_name="raw_pre_clean",
+    use_clean_columns=False,
+)
+vitals_outlier_ed_cc_post_clean = build_vitals_outlier_phase_audit(
+    final_cc,
+    scope_name="ed_cc",
+    phase_name="clean_post_clean",
+    use_clean_columns=False,
+)
+vitals_outlier_ed_cc_pre_clean_path = (
+    ed_cc_audits_dir / "vitals_outlier_audit_raw_pre_clean.csv"
+)
+vitals_outlier_ed_cc_post_clean_path = (
+    ed_cc_audits_dir / "vitals_outlier_audit_clean_post_clean.csv"
+)
+vitals_outlier_ed_cc_pre_clean.to_csv(
+    vitals_outlier_ed_cc_pre_clean_path, index=False
+)
+vitals_outlier_ed_cc_post_clean.to_csv(
+    vitals_outlier_ed_cc_post_clean_path, index=False
+)
+print("Wrote:", vitals_outlier_ed_cc_pre_clean_path)
+print("Wrote:", vitals_outlier_ed_cc_post_clean_path)
+
 # Keep cohort export focused on analysis-facing composition fields.
 # Row-level gas-source QA diagnostics and redundant enrollment aliases stay in QA artifacts.
+vitals_and_gas_qc_only_columns = [
+    "ed_triage_hr_model",
+    "ed_triage_hr_outlier_flag",
+    "ed_first_hr_model",
+    "ed_first_hr_outlier_flag",
+    "ed_triage_rr_model",
+    "ed_triage_rr_outlier_flag",
+    "ed_first_rr_model",
+    "ed_first_rr_outlier_flag",
+    "ed_triage_temp_f_clean",
+    "ed_triage_temp_was_celsius_like",
+    "ed_triage_temp_out_of_range",
+    "ed_triage_temp_f_model",
+    "ed_triage_temp_c_model",
+    "ed_triage_temp_model",
+    "ed_triage_temp_outlier_flag",
+    "ed_triage_pain_clean",
+    "ed_triage_pain_is_sentinel_13",
+    "ed_triage_pain_out_of_range",
+    "ed_triage_pain_parsed_from_fraction",
+    "ed_triage_pain_parsed_from_text_numeric",
+    "ed_triage_pain_non_numeric_set_na",
+    "ed_triage_pain_model",
+    "ed_triage_pain_outlier_flag",
+    "ed_triage_sbp_clean",
+    "ed_triage_dbp_clean",
+    "ed_triage_sbp_out_of_range",
+    "ed_triage_dbp_out_of_range",
+    "ed_triage_sbp_model",
+    "ed_triage_dbp_model",
+    "ed_triage_sbp_outlier_flag",
+    "ed_triage_dbp_outlier_flag",
+    "ed_triage_o2sat_clean",
+    "ed_triage_o2sat_gt_100",
+    "ed_triage_o2sat_out_of_range",
+    "ed_triage_o2sat_zero",
+    "ed_triage_o2sat_model",
+    "ed_triage_o2sat_outlier_flag",
+    "ed_first_temp_f_clean",
+    "ed_first_temp_was_celsius_like",
+    "ed_first_temp_out_of_range",
+    "ed_first_temp_f_model",
+    "ed_first_temp_c_model",
+    "ed_first_temp_model",
+    "ed_first_temp_outlier_flag",
+    "ed_first_pain_clean",
+    "ed_first_pain_is_sentinel_13",
+    "ed_first_pain_out_of_range",
+    "ed_first_pain_parsed_from_fraction",
+    "ed_first_pain_parsed_from_text_numeric",
+    "ed_first_pain_non_numeric_set_na",
+    "ed_first_pain_model",
+    "ed_first_pain_outlier_flag",
+    "ed_first_sbp_clean",
+    "ed_first_dbp_clean",
+    "ed_first_sbp_out_of_range",
+    "ed_first_dbp_out_of_range",
+    "ed_first_sbp_model",
+    "ed_first_dbp_model",
+    "ed_first_sbp_outlier_flag",
+    "ed_first_dbp_outlier_flag",
+    "ed_first_o2sat_clean",
+    "ed_first_o2sat_gt_100",
+    "ed_first_o2sat_out_of_range",
+    "ed_first_o2sat_zero",
+    "ed_first_o2sat_model",
+    "ed_first_o2sat_outlier_flag",
+    "first_ph_model",
+    "first_ph_outlier_flag",
+    "first_pco2_model",
+    "first_pco2_outlier_flag",
+    "first_lactate_model",
+    "first_lactate_outlier_flag",
+]
 cohort_export_drop_columns = [
     "enrolled_any",
     "enrolled_any_icd_union_secondary",
+    "ed_gender",
+    "ed_race",
+    "ed_intime_first",
+    "age_at_admit",
     "first_pco2",
-    "poc_inclusion_enabled",
-    "poc_inclusion_reason",
+    "first_gas_time",
+    "dt_first_qualifying_gas_hours",
+    "lab_other_ph",
+    "lab_other_ph_uom",
+    "lab_other_paco2",
+    "lab_other_paco2_uom",
+    "lab_other_time",
+    "hospital_expire_flag",
+    "hospital_los_negative_flag",
+    "admittime_before_ed_intime_flag",
+    "dischtime_before_admittime_flag",
+    "time_integrity_any",
+    "timing_usable_for_model",
+    "imv_time_outside_window_flag",
+    "niv_time_outside_window_flag",
     "race_hosp_raw",
     "race_ed_raw",
     "gas_source_unknown_rate",
@@ -10546,12 +11051,20 @@ cohort_export_drop_columns = [
     "lab_other_po2",
     "poc_abg_po2",
     "poc_vbg_po2",
+    "poc_other_ph",
+    "poc_other_ph_uom",
+    "poc_other_paco2",
+    "poc_other_paco2_uom",
+    "poc_other_time",
     "poc_other_po2",
     "max_pco2_0_6h_source_branch",
     "max_pco2_0_24h_source_branch",
     "presenting_hypercapnia",
     "late_hypercapnia",
+    *vitals_and_gas_qc_only_columns,
+    *sorted(model_columns_to_drop),
 ]
+cohort_export_drop_columns = list(dict.fromkeys(cohort_export_drop_columns))
 cohort_export_drop_existing = [
     column for column in cohort_export_drop_columns if column in final_cc.columns
 ]
@@ -10562,7 +11075,7 @@ if cohort_export_drop_existing:
         ", ".join(cohort_export_drop_existing),
     )
 
-dated_out_path = prior_runs_dir / f"{out_date} MIMICIV all with CC.xlsx"
+dated_out_path = PRIOR_RUNS_DIR / f"{out_date} MIMICIV all with CC.xlsx"
 canonical_out_path = DATA_DIR / "MIMICIV all with CC.xlsx"
 
 # Write via temporary files then atomically replace targets to avoid zero-byte outputs on interruption.
@@ -10578,6 +11091,18 @@ def _sha256_file(path: Path) -> str:
         for chunk in iter(lambda: file_handle.read(1024 * 1024), b""):
             hasher.update(chunk)
     return hasher.hexdigest()
+
+
+def _manifest_relpath(path_value: Any) -> str | None:
+    if path_value is None:
+        return None
+    path_obj = Path(path_value).expanduser()
+    if path_obj.is_absolute():
+        try:
+            return str(path_obj.resolve().relative_to(WORK_DIR.resolve()))
+        except ValueError:
+            return f"<external>/{path_obj.name}"
+    return str(path_obj)
 
 _atomic_write_excel(final_cc, dated_out_path)
 _atomic_write_excel(final_cc, canonical_out_path)
@@ -10596,36 +11121,42 @@ cohort_manifest = collect_run_manifest(
 )
 cohort_manifest["stage"] = "cohort"
 cohort_manifest["outputs"] = {
-    "canonical_output_path": str(canonical_out_path),
+    "canonical_output_path": _manifest_relpath(canonical_out_path),
     "canonical_output_sha256": canonical_sha256,
-    "dated_output_path": str(dated_out_path),
+    "dated_output_path": _manifest_relpath(dated_out_path),
     "dated_output_sha256": dated_sha256,
-    "gas_source_audit_path": str(gas_source_audit_path) if "gas_source_audit_path" in globals() else None,
-    "gas_source_overlap_summary_path": str(gas_overlap_summary_path) if "gas_overlap_summary_path" in globals() else None,
-    "pco2_source_distribution_audit_path": str(pco2_source_distribution_audit_path)
+    "gas_source_audit_path": _manifest_relpath(gas_source_audit_path) if "gas_source_audit_path" in globals() else None,
+    "gas_source_overlap_summary_path": _manifest_relpath(gas_overlap_summary_path) if "gas_overlap_summary_path" in globals() else None,
+    "pco2_source_distribution_audit_path": _manifest_relpath(pco2_source_distribution_audit_path)
     if "pco2_source_distribution_audit_path" in globals()
     else None,
-    "pco2_window_max_contributor_audit_path": str(
+    "pco2_window_max_contributor_audit_path": _manifest_relpath(
         pco2_window_max_contributor_audit_path
     )
     if "pco2_window_max_contributor_audit_path" in globals()
     else None,
-    "qualifying_pco2_distribution_by_type_audit_path": str(
+    "qualifying_pco2_distribution_by_type_audit_path": _manifest_relpath(
         qualifying_pco2_distribution_audit_path
     )
     if "qualifying_pco2_distribution_audit_path" in globals()
     else None,
-    "anthropometrics_coverage_audit_path": str(anthro_coverage_audit_path) if "anthro_coverage_audit_path" in globals() else None,
-    "ed_vitals_distribution_summary_path": str(ed_vitals_distribution_summary_path) if "ed_vitals_distribution_summary_path" in globals() else None,
-    "ed_vitals_extreme_examples_path": str(ed_vitals_extreme_examples_path) if "ed_vitals_extreme_examples_path" in globals() else None,
-    "ed_vitals_model_delta_path": str(ed_vitals_model_delta_path) if "ed_vitals_model_delta_path" in globals() else None,
-    "outliers_audit_path": str(outliers_audit_path) if "outliers_audit_path" in globals() else None,
-    "hco3_itemid_qc_audit_path": str(hco3_itemid_qc_audit_path)
+    "anthropometrics_coverage_audit_path": _manifest_relpath(anthro_coverage_audit_path) if "anthro_coverage_audit_path" in globals() else None,
+    "ed_vitals_distribution_summary_path": _manifest_relpath(ed_vitals_distribution_summary_path) if "ed_vitals_distribution_summary_path" in globals() else None,
+    "ed_vitals_extreme_examples_path": _manifest_relpath(ed_vitals_extreme_examples_path) if "ed_vitals_extreme_examples_path" in globals() else None,
+    "ed_vitals_model_delta_path": _manifest_relpath(ed_vitals_model_delta_path) if "ed_vitals_model_delta_path" in globals() else None,
+    "outliers_audit_path": _manifest_relpath(outliers_audit_path) if "outliers_audit_path" in globals() else None,
+    "hco3_itemid_qc_audit_path": _manifest_relpath(hco3_itemid_qc_audit_path)
     if "hco3_itemid_qc_audit_path" in globals()
     else None,
-    "hco3_coverage_audit_path": str(hco3_coverage_audit_path)
+    "hco3_coverage_audit_path": _manifest_relpath(hco3_coverage_audit_path)
     if "hco3_coverage_audit_path" in globals()
     else None,
+    "vitals_outlier_scope_audit_paths": {
+        "ed_spine_raw_pre_clean": _manifest_relpath(vitals_outlier_ed_spine_pre_clean_path),
+        "ed_spine_clean_post_clean": _manifest_relpath(vitals_outlier_ed_spine_post_clean_path),
+        "ed_cc_raw_pre_clean": _manifest_relpath(vitals_outlier_ed_cc_pre_clean_path),
+        "ed_cc_clean_post_clean": _manifest_relpath(vitals_outlier_ed_cc_post_clean_path),
+    },
 }
 cohort_manifest["gas_source"] = {
     "mode": gas_source_mode if "gas_source_mode" in globals() else None,
@@ -10635,7 +11166,8 @@ cohort_manifest["gas_source"] = {
 cohort_manifest["anthropometrics"] = (
     anthro_coverage_audit if "anthro_coverage_audit" in globals() else None
 )
-cohort_manifest_path = prior_runs_dir / f"{out_date} cohort_run_manifest.json"
+cohort_manifest = sanitize_manifest_payload(cohort_manifest, work_dir=WORK_DIR)
+cohort_manifest_path = PRIOR_RUNS_DIR / f"{out_date} cohort_run_manifest.json"
 cohort_manifest_path.write_text(json.dumps(cohort_manifest, indent=2))
 
 print("Saved:", dated_out_path)
@@ -10753,25 +11285,25 @@ META = {
         "derivation": "as recorded",
         "units": "datetime",
     },
-    "ed_intime_first": {
-        "label": "First ED arrival time (admission)",
-        "definition": "Earliest ED arrival time among ED stays linked to the admission.",
-        "source": "mimiciv_ed.edstays",
-        "derivation": "min(edstays.intime) per hadm_id",
-        "units": "datetime",
-    },
     # Demographics / triage
-    "ed_gender": {
-        "label": "ED gender",
-        "definition": "Gender as recorded in ED stay table.",
-        "source": "mimiciv_ed.edstays",
-        "derivation": "as recorded",
+    "gender": {
+        "label": "Gender",
+        "definition": "Canonical sex/gender field for cohort analysis.",
+        "source": "mimiciv_hosp.patients (fallback: mimiciv_ed.edstays)",
+        "derivation": "patients.gender with fallback to edstays.gender when missing",
     },
-    "ed_race": {
-        "label": "ED race",
-        "definition": "Race as recorded in ED stay table.",
-        "source": "mimiciv_ed.edstays",
-        "derivation": "as recorded",
+    "age": {
+        "label": "Age",
+        "definition": "Age at admission in years.",
+        "source": "mimiciv_hosp.patients + mimiciv_hosp.admissions",
+        "derivation": "anchor_age + (admission year - anchor_year), rounded to 0.1",
+        "units": "years",
+    },
+    "race": {
+        "label": "Race",
+        "definition": "Canonical race field for cohort analysis.",
+        "source": "mimiciv_ed.edstays (fallback: mimiciv_hosp.admissions)",
+        "derivation": "ed_race with fallback to hosp_race when ED race is missing",
     },
     "hosp_race": {
         "label": "Hospital race",
@@ -10792,13 +11324,6 @@ META = {
         "derivation": "as recorded",
     },
     # Outcomes
-    "hospital_expire_flag": {
-        "label": "Hospital expire flag",
-        "definition": "Hospital mortality indicator from admissions table.",
-        "source": "mimiciv_hosp.admissions",
-        "derivation": "as recorded",
-        "units": "binary (0/1)",
-    },
     "in_hospital_death": {
         "label": "In-hospital death",
         "definition": "Indicator for in-hospital death during admission.",
@@ -10896,7 +11421,7 @@ META = {
         "label": "Within-24h hypercapnic marker",
         "definition": "Indicator that the first qualifying hypercapnic pCO2 event occurred within 24 hours of ED presentation anchor.",
         "source": "Derived",
-        "derivation": "pco2_threshold_any == 1 and dt_first_qualifying_gas_hours <= 24",
+        "derivation": "pco2_threshold_any == 1 and dt_qualifying_hypercapnia_hours <= 24",
         "units": "binary (0/1)",
     },
     "qualifying_pco2_time": {
@@ -10933,20 +11458,6 @@ META = {
         "source": "Derived",
         "derivation": "45 for ABG; 50 for VBG/UNKNOWN",
         "units": "mmHg",
-    },
-    "first_gas_time": {
-        "label": "First gas panel time",
-        "definition": "Earliest qualifying hypercapnic gas time across the admission stay.",
-        "source": "mimiciv_hosp.labevents + mimiciv_icu.chartevents",
-        "derivation": "alias of qualifying_pco2_time",
-        "units": "datetime",
-    },
-    "dt_first_qualifying_gas_hours": {
-        "label": "Hours to first qualifying hypercapnic gas",
-        "definition": "Hours from ED presentation anchor to first qualifying hypercapnic blood gas.",
-        "source": "Derived",
-        "derivation": "(qualifying_pco2_time - presentation anchor) in hours; values may exceed 24",
-        "units": "hours",
     },
     "first_other_time": {
         "label": "First other-source gas time",
@@ -11027,11 +11538,9 @@ for col in dd_target.columns:
 
 data_dict = pd.DataFrame(rows)
 
-out_date = datetime.now().strftime("%Y-%m-%d")
-prior_runs_dir = DATA_DIR / "prior runs"
-prior_runs_dir.mkdir(parents=True, exist_ok=True)
-out_xlsx = prior_runs_dir / f"{out_date} MIMICIV all with CC_data_dictionary.xlsx"
-out_csv = prior_runs_dir / f"{out_date} MIMICIV all with CC_data_dictionary.csv"
+out_date = RUN_DATE
+out_xlsx = PRIOR_RUNS_DIR / f"{out_date} MIMICIV all with CC_data_dictionary.xlsx"
+out_csv = PRIOR_RUNS_DIR / f"{out_date} MIMICIV all with CC_data_dictionary.csv"
 
 data_dict.to_excel(out_xlsx, index=False)
 data_dict.to_csv(out_csv, index=False)

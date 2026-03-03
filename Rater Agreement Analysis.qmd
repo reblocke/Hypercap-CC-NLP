@@ -1,5 +1,5 @@
 ---
-title: "Rater Agreement Analysis"
+title: "Human Rater Agreement and NLP Benchmarking"
 jupyter: hypercap-cc-nlp
 format:
   pdf:
@@ -13,11 +13,35 @@ execute:
   error: false
 ---
 
-# Code to calculate agreement between Monique and Reyan
+# Human rater agreement and NLP benchmarking
 
-**Rationale:** Quantify inter-rater reliability for multi-label RVC assignments to establish label quality.
+**Rationale:** This stage has two linked goals: (1) quantify human inter-rater agreement (including adjudication behavior), and (2) benchmark NLP labels against adjudicated human labels.
 
 Refactor note: This notebook is now structured for deterministic, fail-fast execution while preserving the original agreement estimands.
+
+## Stage contract (pipeline-facing)
+
+- **Purpose:** Quantify human rater agreement, then benchmark adjudicated human labels vs NLP outputs on the matched sample.
+- **Inputs:** `Annotation/Final 2025-10-14 Annotation Sample.xlsx` + canonical NLP workbook.
+- **Canonical outputs:** artifacts in `annotation_agreement_outputs_nlp/` (join audit, set/binary metrics, manifests).
+- **Run-archived outputs:** deterministic audit/manifests in the output folder.
+- **Key env vars:** `WORK_DIR`, `RATER_ANNOTATION_PATH`, `RATER_NLP_INPUT_FILENAME`.
+- **Join policy:** prefer `ed_stay_id`; fallback to (`hadm_id`, `subject_id`); fail stage only when `matched_rows == 0`.
+
+## Summary of functionality
+
+This stage compares human annotation labels with each other and with NLP output labels.
+
+Use this reading order:
+
+1. **Configuration section**: points to the annotation workbook and NLP workbook being compared.
+2. **Shared helper functions**: standardize labels and convert them to comparable set/binary formats.
+3. **Set-level agreement**: answers “do raters choose the same categories for each visit?”
+4. **Category-level agreement**: computes per-category binary agreement (including chance-corrected metrics).
+5. **Audit outputs**: writes CSV/TXT artifacts in `annotation_agreement_outputs_nlp/` for transparent review.
+
+Key interpretation note:
+- Set-level outputs and binary category-level outputs are designed to be internally consistent; fail-fast checks are included to prevent mathematically contradictory reports.
 
 # 1  Annotation Framework: Multi-Label, Order-Invariant Agreement
 
@@ -49,10 +73,10 @@ Because order is meaningless, comparisons use **set-based overlaps**:
 
 | Metric | Formula | Notes |
 |---------|----------|-------|
-| **Jaccard** | \(|S_A∩S_B| / |S_A∪S_B|\) | Measures intersection over union |
-| **Overlap Coefficient** | \(|S_A∩S_B| / \min(|S_A|, |S_B|)\) | Robust when one rater lists fewer items |
-| **F₁ (Set)** | \(2|S_A∩S_B| / (|S_A|+|S_B|)\) | Equivalent to Sørensen–Dice |
-| **Micro-F₁ (Set)** | \(2∑|S_A∩S_B| / ∑(|S_A|+|S_B|)\) | Corpus-level summary |
+| **Jaccard** | $\frac{\lvert S_A \cap S_B \rvert}{\lvert S_A \cup S_B \rvert}$ | Measures intersection over union |
+| **Overlap Coefficient** | $\frac{\lvert S_A \cap S_B \rvert}{\min(\lvert S_A \rvert, \lvert S_B \rvert)}$ | Robust when one rater lists fewer items |
+| **F₁ (Set)** | $\frac{2\lvert S_A \cap S_B \rvert}{\lvert S_A \rvert + \lvert S_B \rvert}$ | Equivalent to Sørensen–Dice |
+| **Micro-F₁ (Set)** | $\frac{2\sum \lvert S_A \cap S_B \rvert}{\sum (\lvert S_A \rvert + \lvert S_B \rvert)}$ | Corpus-level summary |
 
 These capture graded similarity beyond binary full/none counts.
 
@@ -214,8 +238,10 @@ print(f"Raters output dir: {RATERS_OUTPUT_DIR}")
 print(f"NLP output dir: {NLP_OUTPUT_DIR}")
 ```
 
+### 2.1 Shared imports/constants for helper layer
+
 ```{python}
-#| label: rater-agreement-analysis-cell-002
+#| label: rater-agreement-analysis-cell-002a
 # -----------------------------------------------------------------------------
 # Shared helper functions used by both analyses below.
 #
@@ -231,8 +257,10 @@ import pandas as pd
 
 import hashlib
 
-from hypercap_cc_nlp.pipeline_audit import collect_run_manifest
+from hypercap_cc_nlp.pipeline_audit import collect_run_manifest, sanitize_manifest_payload
 
+# Canonical RVC codebook used across set-level and binary agreement outputs.
+# Keeping this mapping in one place avoids label drift between artifacts.
 RVC_CODE_TO_LABEL: dict[str, str] = {
     "RVC-INJ": "Injuries & adverse effects",
     "RVC-SYM-RESP": "Symptom – Respiratory",
@@ -252,11 +280,23 @@ RVC_CODE_TO_LABEL: dict[str, str] = {
     "RVC-ADMIN": "Administrative",
     "RVC-UNCL": "Uncodable/Unknown",
 }
+# R3↔NLP overlap gate parameters:
+# - target sample size used for expected overlap reporting
+# - fail only when matched rows are zero; otherwise warn when below target
 R3_NLP_TARGET_SAMPLE_N = 160
 R3_NLP_GATE_POLICY = "warn_below_target_fail_on_zero"
+```
+
+### 2.2 Join-key policy and merge-audit helpers
+
+```{python}
+#| label: rater-agreement-analysis-cell-002b
+
+# --- Join-key normalization and deterministic merge-policy helpers -----------
 
 
 def normalize_join_keys(df: pd.DataFrame, key_cols: list[str]) -> pd.DataFrame:
+    """Coerce join keys to nullable integers so workbook formatting does not break joins."""
     validate_required_columns(df, key_cols, "rater join input")
     normalized = df.copy()
     for key in key_cols:
@@ -265,6 +305,7 @@ def normalize_join_keys(df: pd.DataFrame, key_cols: list[str]) -> pd.DataFrame:
 
 
 def _validate_unique_keys(df: pd.DataFrame, key_cols: list[str], *, context: str) -> None:
+    """Fail fast when join keys are not unique in a source table."""
     duplicates = int(df.duplicated(subset=key_cols).sum())
     if duplicates:
         raise ValueError(
@@ -274,6 +315,7 @@ def _validate_unique_keys(df: pd.DataFrame, key_cols: list[str], *, context: str
 
 
 def _anti_join_keys(left_df: pd.DataFrame, right_df: pd.DataFrame, key_cols: list[str]) -> pd.DataFrame:
+    """Return keys present in left_df but missing in right_df (for overlap diagnostics)."""
     right_keys = right_df[key_cols].drop_duplicates()
     only_left = (
         left_df[key_cols]
@@ -290,6 +332,7 @@ def select_join_key_columns(
     df_r3: pd.DataFrame,
     df_nlp: pd.DataFrame,
 ) -> tuple[list[str], str]:
+    """Select the best available key strategy (ed_stay_id, then hadm_id+subject_id, then hadm_id)."""
     preferred_candidates: list[tuple[list[str], str]] = [
         (["ed_stay_id"], "ed_stay_id"),
         (["hadm_id", "subject_id"], "hadm_id_subject_id"),
@@ -316,6 +359,7 @@ def build_join_key_inventory(
     *,
     strategy: str,
 ) -> pd.DataFrame:
+    """Summarize source key coverage and overlap under the selected join strategy."""
     normalized_r3 = normalize_join_keys(df_r3, key_cols)
     normalized_nlp = normalize_join_keys(df_nlp, key_cols)
     r3_keys = normalized_r3[key_cols].drop_duplicates()
@@ -356,6 +400,7 @@ def build_r3_nlp_join_audit(
     gate_policy: str = R3_NLP_GATE_POLICY,
     key_strategy: str = "hadm_id_subject_id",
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, object]]:
+    """Build matched/unmatched key tables plus a structured join audit payload."""
     normalized_r3 = normalize_join_keys(df_r3, key_cols)
     normalized_nlp = normalize_join_keys(df_nlp, key_cols)
 
@@ -415,6 +460,7 @@ def hash_join_keys(
     key_cols: list[str],
     hash_col: str = "key_hash",
 ) -> pd.DataFrame:
+    """Create deterministic SHA256 key hashes for provenance-safe key inventories."""
     normalized = normalize_join_keys(df, key_cols)
     _validate_unique_keys(normalized, key_cols, context="join-key hash input")
     key_frame = normalized[key_cols].drop_duplicates().copy()
@@ -437,6 +483,7 @@ def render_latex_longtable(
     landscape: bool = False,
     index: bool = True,
 ) -> str:
+    """Render a DataFrame as a LaTeX longtable with optional landscape wrapper."""
     latex_text = table_df.to_latex(
         index=index,
         escape=False,
@@ -445,8 +492,14 @@ def render_latex_longtable(
         label=label,
     )
     if landscape:
-        latex_text = "\\begin{landscape}\\n" + latex_text + "\\n\\end{landscape}\\n"
+        latex_text = "\\begin{landscape}\n" + latex_text + "\n\\end{landscape}\n"
     return latex_text
+```
+
+### 2.3 Input validation helpers
+
+```{python}
+#| label: rater-agreement-analysis-cell-002c
 
 
 # --- Input/sheet validation helpers -------------------------------------------
@@ -475,12 +528,14 @@ def read_sheet_checked(xlsx_path: Path, sheet_name: str | int) -> pd.DataFrame:
 
 
 def validate_required_columns(df: pd.DataFrame, required: List[str], df_name: str) -> None:
+    """Assert that required columns are present before downstream processing."""
     missing = sorted(set(required).difference(df.columns))
     if missing:
         raise KeyError(f"{df_name} is missing required columns: {missing}")
 
 
 def validate_unique_keys(df: pd.DataFrame, keys: List[str], df_name: str) -> None:
+    """Assert key uniqueness for deterministic one-row-per-visit merges."""
     validate_required_columns(df, keys, df_name)
     duplicates = int(df.duplicated(subset=keys).sum())
     if duplicates:
@@ -488,6 +543,12 @@ def validate_unique_keys(df: pd.DataFrame, keys: List[str], df_name: str) -> Non
             f"{df_name} has {duplicates} duplicate rows for key columns {keys}. "
             "Expected unique keys before merge."
         )
+```
+
+### 2.4 Label normalization and extraction helpers
+
+```{python}
+#| label: rater-agreement-analysis-cell-002d
 
 
 # --- Label normalization and extraction helpers -------------------------------
@@ -511,6 +572,8 @@ RVC_LABEL_TO_CODE: dict[str, str] = {
     for code, label in RVC_CODE_TO_LABEL.items()
     if normalize_label(label) is not None
 }
+# Known textual variants mapped to canonical codes to stabilize comparisons
+# across annotation and classifier exports.
 RVC_LABEL_TO_CODE.update(
     {
         "Diseases (patient–stated diagnosis)": "RVC-DIS",
@@ -524,6 +587,7 @@ RVC_LABEL_TO_CODE.update(
 
 
 def canonicalize_rvc_code(value: object) -> str | None:
+    """Map raw label text (or already-coded values) into canonical RVC code space."""
     normalized = normalize_label(value)
     if normalized is None:
         return None
@@ -534,6 +598,7 @@ def canonicalize_rvc_code(value: object) -> str | None:
 
 
 def canonical_label_for_code(code: object) -> str:
+    """Return display label for a canonical code (or echo unknown code)."""
     normalized_code = str(code).strip().upper()
     return RVC_CODE_TO_LABEL.get(normalized_code, normalized_code)
 
@@ -646,6 +711,7 @@ def build_label_mapping_audit(
     r3_label_cols: list[str],
     nlp_label_cols: list[str],
 ) -> pd.DataFrame:
+    """Audit raw→normalized→canonical label mapping for both adjudicated and NLP sources."""
     rows: list[dict[str, object]] = []
     for source_name, frame, cols in (
         ("adjudicated_r3", df_r3, r3_label_cols),
@@ -692,16 +758,24 @@ def build_label_mapping_audit(
         .sort_values(["source", "mapped", "row_count", "raw_label"], ascending=[True, True, False, True])
         .reset_index(drop=True)
     )
+```
+
+### 2.5 Set-similarity helpers
+
+```{python}
+#| label: rater-agreement-analysis-cell-002e
 
 
 # --- Set-level agreement metrics (order-invariant multi-label) ----------------
 
 def jaccard(a: Set[str], b: Set[str]) -> float:
+    """Set Jaccard similarity (intersection over union)."""
     union_size = len(a | b)
     return 1.0 if union_size == 0 else len(a & b) / union_size
 
 
 def overlap_coeff(a: Set[str], b: Set[str]) -> float:
+    """Set overlap coefficient (intersection over smaller set size)."""
     min_size = min(len(a), len(b))
     # Convention: when both sets are empty, treat overlap as perfect (1.0)
     # because both raters made the same decision: assign nothing.
@@ -713,17 +787,20 @@ def overlap_coeff(a: Set[str], b: Set[str]) -> float:
 
 
 def f1_set(a: Set[str], b: Set[str]) -> float:
+    """Set-level Sørensen–Dice / F1 score."""
     denom = len(a) + len(b)
     return 1.0 if denom == 0 else 2 * len(a & b) / denom
 
 
 def classify_three(a: Set[str], b: Set[str], c: Set[str]) -> str:
+    """Classify 3-way set agreement into full / partial / none."""
     if a == b == c:
         return "full"
     return "partial" if (a & b) or (a & c) or (b & c) else "none"
 
 
 def micro_f1_raters(a_sets: List[Set[str]], b_sets: List[Set[str]]) -> float:
+    """Compute pooled (micro) set-F1 across all visits."""
     tp = sum(len(a & b) for a, b in zip(a_sets, b_sets))
     denom = sum(len(a) + len(b) for a, b in zip(a_sets, b_sets))
     return 1.0 if denom == 0 else 2 * tp / denom
@@ -775,6 +852,7 @@ def summarize_three_way(
     r2_sets: List[Set[str]],
     r3_sets: List[Set[str]],
 ) -> pd.Series:
+    """Summarize rates of full/partial/none agreement across three raters."""
     labels = [
         classify_three(a, b, c)
         for a, b, c in zip(r1_sets, r2_sets, r3_sets)
@@ -796,6 +874,7 @@ def adjudication_resolution(
     r2_sets: List[Set[str]],
     r3_sets: List[Set[str]],
 ) -> pd.Series:
+    """Describe how adjudicator (R3) resolves visits where R1 and R2 disagree."""
     recs = []
     for a, b, c in zip(r1_sets, r2_sets, r3_sets):
         if a == b:
@@ -828,6 +907,12 @@ def adjudication_resolution(
             "r3_subset_of_union_rate": out["r3_subset_of_union"].mean(),
         }
     )
+```
+
+### 2.6 Binary encoding + chance-corrected metric helpers
+
+```{python}
+#| label: rater-agreement-analysis-cell-002f
 
 
 # --- Binary one-vs-rest encoding for chance-corrected metrics -----------------
@@ -836,6 +921,7 @@ def flatten_binary_decisions(
     raters_sets: Dict[str, List[Set[str]]],
     categories: List[str],
 ) -> Dict[str, np.ndarray]:
+    """Convert per-visit category sets into rater-specific binary matrices."""
     n = len(next(iter(raters_sets.values())))
     k = len(categories)
     idx: Dict[str, int] = {}
@@ -866,6 +952,7 @@ def flatten_binary_decisions_single(
     sets: List[Set[str]],
     categories: List[str],
 ) -> np.ndarray:
+    """Convert one source's set list into a binary category matrix."""
     idx: Dict[str, int] = {}
     for i, category in enumerate(categories):
         normalized_category = normalize_label(category)
@@ -1013,6 +1100,7 @@ def multirater_ac1_per_category(
 
 # Summarize per-category chance-corrected results into macro and micro views.
 def summarize_kappa_ac1(df_pw: pd.DataFrame) -> pd.Series:
+    """Summarize per-category chance-corrected metrics into macro/micro views."""
     out = {
         "macro_cohen_kappa": df_pw["cohen_kappa"].mean(),
         "macro_gwet_ac1": df_pw["gwet_ac1"].mean(),
@@ -1026,11 +1114,18 @@ def summarize_kappa_ac1(df_pw: pd.DataFrame) -> pd.Series:
         out["micro_percent_agreement"] = (df_pw["N"] * df_pw["percent_agreement"]).sum() / df_pw["N"].sum()
 
     return pd.Series(out)
+```
+
+### 2.7 Fail-fast assertion helpers
+
+```{python}
+#| label: rater-agreement-analysis-cell-002g
 
 
 # --- Assertion helpers used to fail fast during notebook runs ------------------
 
 def assert_rate_bounds(series: pd.Series, label: str) -> None:
+    """Assert metric rates stay within [0, 1] after numeric coercion."""
     non_null = series.dropna()
     if non_null.empty:
         return
@@ -1041,6 +1136,7 @@ def assert_rate_bounds(series: pd.Series, label: str) -> None:
 
 
 def assert_expected_columns(df: pd.DataFrame, required: List[str], label: str) -> None:
+    """Assert required columns are present in intermediate/output frames."""
     missing = sorted(set(required).difference(df.columns))
     if missing:
         raise AssertionError(f"{label} missing expected columns: {missing}")
@@ -1479,10 +1575,22 @@ matched_key_hashes.to_csv(
     index=False,
 )
 
+def _manifest_relpath(path_value: object) -> str | None:
+    if path_value is None:
+        return None
+    path_obj = Path(path_value).expanduser()
+    if path_obj.is_absolute():
+        try:
+            return str(path_obj.resolve().relative_to(WORK_DIR.resolve()))
+        except ValueError:
+            return f"<external>/{path_obj.name}"
+    return str(path_obj)
+
+
 input_manifest = {
-    "annotation_path": str(ANNOTATION_PATH),
+    "annotation_path": _manifest_relpath(ANNOTATION_PATH),
     "annotation_sheet": ANNOTATION_SHEET,
-    "nlp_path": str(NLP_PATH),
+    "nlp_path": _manifest_relpath(NLP_PATH),
     "nlp_sheet": NLP_SHEET,
     "row_counts": {
         "annotation_r3_rows": int(len(df_r3)),
@@ -1505,22 +1613,25 @@ rater_run_manifest = collect_run_manifest(
     WORK_DIR,
     run_id=f"rater_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}",
 )
+
+
 rater_run_manifest["stage"] = "rater"
 rater_run_manifest["inputs"] = {
-    "annotation_path": str(ANNOTATION_PATH),
+    "annotation_path": _manifest_relpath(ANNOTATION_PATH),
     "annotation_sheet": ANNOTATION_SHEET,
-    "nlp_path": str(NLP_PATH),
+    "nlp_path": _manifest_relpath(NLP_PATH),
     "nlp_sheet": NLP_SHEET,
 }
 rater_run_manifest["join_audit"] = join_audit
 rater_run_manifest["outputs"] = {
-    "summary_path": str(NLP_OUTPUT_DIR / "R3_vs_NLP_summary.txt"),
-    "join_audit_path": str(NLP_OUTPUT_DIR / "R3_vs_NLP_join_audit.json"),
-    "key_inventory_path": str(NLP_OUTPUT_DIR / "R3_vs_NLP_key_inventory.csv"),
-    "label_mapping_audit_path": str(NLP_OUTPUT_DIR / "R3_vs_NLP_label_mapping_audit.csv"),
-    "input_manifest_path": str(NLP_OUTPUT_DIR / "R3_vs_NLP_input_manifest.json"),
-    "matched_key_hashes_path": str(NLP_OUTPUT_DIR / "R3_vs_NLP_matched_key_hashes.csv"),
+    "summary_path": _manifest_relpath(NLP_OUTPUT_DIR / "R3_vs_NLP_summary.txt"),
+    "join_audit_path": _manifest_relpath(NLP_OUTPUT_DIR / "R3_vs_NLP_join_audit.json"),
+    "key_inventory_path": _manifest_relpath(NLP_OUTPUT_DIR / "R3_vs_NLP_key_inventory.csv"),
+    "label_mapping_audit_path": _manifest_relpath(NLP_OUTPUT_DIR / "R3_vs_NLP_label_mapping_audit.csv"),
+    "input_manifest_path": _manifest_relpath(NLP_OUTPUT_DIR / "R3_vs_NLP_input_manifest.json"),
+    "matched_key_hashes_path": _manifest_relpath(NLP_OUTPUT_DIR / "R3_vs_NLP_matched_key_hashes.csv"),
 }
+rater_run_manifest = sanitize_manifest_payload(rater_run_manifest, work_dir=WORK_DIR)
 (NLP_OUTPUT_DIR / "R3_vs_NLP_run_manifest.json").write_text(
     json.dumps(rater_run_manifest, indent=2)
 )
@@ -1542,39 +1653,45 @@ print("\nArtifacts written to:", NLP_OUTPUT_DIR.resolve())
 
 ```{python}
 #| label: rater-agreement-analysis-cell-004b
-#| results: asis
+#| include: false
+# Keep manuscript PDF concise: write detailed join/agreement tables to QA artifacts,
+# not inline rendered LaTeX blocks.
 join_audit_table = pd.DataFrame([join_audit])
 pair_summary_table = pair_summary.to_frame(name="value").reset_index().rename(
     columns={"index": "metric"}
 )
 chance_summary_table = chance_summary.reset_index().rename(columns={"index": "metric"})
 
-print(
-    render_latex_longtable(
+qa_tables_dir = NLP_OUTPUT_DIR / "qa_tables"
+qa_tables_dir.mkdir(parents=True, exist_ok=True)
+
+qa_latex_tables = {
+    "R3_vs_NLP_join_audit_table.tex": render_latex_longtable(
         join_audit_table,
         caption="R3 vs NLP join audit summary.",
         label="tab:r3_nlp_join_audit",
         landscape=True,
         index=False,
-    )
-)
-print(
-    render_latex_longtable(
+    ),
+    "R3_vs_NLP_set_summary_table.tex": render_latex_longtable(
         pair_summary_table,
         caption="R3 vs NLP set-level agreement summary.",
         label="tab:r3_nlp_set_summary",
         index=False,
-    )
-)
-print(
-    render_latex_longtable(
+    ),
+    "R3_vs_NLP_chance_summary_table.tex": render_latex_longtable(
         chance_summary_table,
         caption="R3 vs NLP chance-corrected category-level agreement summary.",
         label="tab:r3_nlp_chance_summary",
         landscape=True,
         index=False,
-    )
-)
+    ),
+}
+
+for filename, latex_text in qa_latex_tables.items():
+    out_path = qa_tables_dir / filename
+    out_path.write_text(latex_text)
+    print("Wrote:", out_path.resolve())
 ```
 
 ## Draft text: validation metrics (edit as needed)
@@ -1659,9 +1776,4 @@ assert_expected_columns(
 )
 assert per_cat_r3_nlp["gwet_ac1"].is_monotonic_increasing, "R3 vs NLP table should be sorted by gwet_ac1"
 per_cat_r3_nlp.to_csv(NLP_OUTPUT_DIR / "R3_vs_NLP_binary_stats_by_category.csv", index=False)
-
-# Quick glance: lowest agreement categories
-_display_cols = ["category", "N", "percent_agreement", "cohen_kappa", "gwet_ac1"]
-print("Lowest AC1 categories (R3 vs NLP):")
-print(per_cat_r3_nlp[_display_cols].head(5).to_string(index=False))
 ```

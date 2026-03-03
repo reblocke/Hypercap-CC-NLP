@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -250,12 +251,35 @@ def test_resolve_stage_commands_modes() -> None:
 def test_collect_run_manifest_redacts_secret_env(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("HF_TOKEN", "hf_secret_value")
     monkeypatch.setenv("COHORT_WARN_OTHER_RATE", "0.5")
+    monkeypatch.setenv("WORK_DIR", "/Users/example/somewhere")
     manifest = collect_run_manifest(
         tmp_path,
         run_id="manifest_test",
-        selected_env_vars=("HF_TOKEN", "COHORT_WARN_OTHER_RATE"),
+        selected_env_vars=("HF_TOKEN", "COHORT_WARN_OTHER_RATE", "WORK_DIR"),
     )
 
     assert manifest["run_id"] == "manifest_test"
+    assert manifest["work_dir"] == "."
     assert manifest["env_knobs"]["HF_TOKEN"] == "<set>"
     assert manifest["env_knobs"]["COHORT_WARN_OTHER_RATE"] == "0.5"
+    assert "/Users/" not in manifest["env_knobs"]["WORK_DIR"]
+
+
+def test_collect_run_manifest_archives_dirty_git_diff(tmp_path: Path) -> None:
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=tmp_path, check=True, capture_output=True)
+    tracked = tmp_path / "tracked.txt"
+    tracked.write_text("baseline\n")
+    subprocess.run(["git", "add", "tracked.txt"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=tmp_path, check=True, capture_output=True)
+    tracked.write_text("baseline\nchanged\n")
+
+    manifest = collect_run_manifest(tmp_path, run_id="dirty_test")
+
+    assert manifest["git"]["dirty"] is True
+    dirty_diff_path = manifest["git"]["dirty_diff_path"]
+    assert isinstance(dirty_diff_path, str) and dirty_diff_path.startswith("debug/versioning/")
+    diff_path = tmp_path / dirty_diff_path
+    assert diff_path.exists()
+    assert diff_path.read_text().strip()

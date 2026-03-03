@@ -152,6 +152,44 @@ def _safe_env_value(name: str, value: str | None) -> str:
     return value
 
 
+def _relative_or_sanitized_path(path: Path, *, work_dir: Path) -> str:
+    """Return a manifest-safe relative path string without absolute prefixes."""
+    resolved_work_dir = work_dir.expanduser().resolve()
+    resolved_path = path.expanduser().resolve()
+    try:
+        return str(resolved_path.relative_to(resolved_work_dir))
+    except ValueError:
+        return f"<external>/{resolved_path.name}"
+
+
+def _sanitize_manifest_string(value: str, *, work_dir: Path) -> str:
+    """Convert absolute path-like strings to portable manifest-safe tokens."""
+    if value in {"<unset>", "<set>"}:
+        return value
+    candidate = Path(value).expanduser()
+    if candidate.is_absolute():
+        return _relative_or_sanitized_path(candidate, work_dir=work_dir)
+    return value
+
+
+def sanitize_manifest_payload(payload: Any, *, work_dir: Path) -> Any:
+    """Recursively sanitize manifest payload values for portable path handling."""
+    if isinstance(payload, dict):
+        return {
+            key: sanitize_manifest_payload(value, work_dir=work_dir)
+            for key, value in payload.items()
+        }
+    if isinstance(payload, list):
+        return [sanitize_manifest_payload(value, work_dir=work_dir) for value in payload]
+    if isinstance(payload, tuple):
+        return tuple(
+            sanitize_manifest_payload(value, work_dir=work_dir) for value in payload
+        )
+    if isinstance(payload, str):
+        return _sanitize_manifest_string(payload, work_dir=work_dir)
+    return payload
+
+
 def _run_text_command(command: list[str], cwd: Path | None = None) -> str:
     completed = subprocess.run(
         command,
@@ -203,11 +241,13 @@ def collect_run_manifest(
             text=True,
         )
         if diff_completed.returncode == 0 and diff_completed.stdout:
-            diff_dir = (work_dir / "debug" / "run_manifests").resolve()
+            diff_dir = (work_dir / "debug" / "versioning").resolve()
             diff_dir.mkdir(parents=True, exist_ok=True)
-            diff_file = diff_dir / f"{run_id}_git.diff"
+            diff_file = diff_dir / f"{run_id}_git_diff.patch"
             diff_file.write_text(diff_completed.stdout)
-            dirty_diff_path = str(diff_file)
+            dirty_diff_path = _relative_or_sanitized_path(
+                diff_file, work_dir=work_dir
+            )
             dirty_diff_sha256 = hashlib.sha256(
                 diff_completed.stdout.encode("utf-8")
             ).hexdigest()
@@ -222,7 +262,7 @@ def collect_run_manifest(
     return {
         "run_id": run_id,
         "generated_utc": _utc_now_iso(),
-        "work_dir": str(work_dir),
+        "work_dir": ".",
         "python_version": sys.version,
         "uv_version": _run_text_command(["uv", "--version"], cwd=work_dir),
         "git": {
@@ -237,7 +277,10 @@ def collect_run_manifest(
         "config_hash_sha256": config_fingerprint,
         "package_versions": package_versions,
         "env_knobs": {
-            key: _safe_env_value(key, os.getenv(key))
+            key: _sanitize_manifest_string(
+                _safe_env_value(key, os.getenv(key)),
+                work_dir=work_dir,
+            )
             for key in selected_env_vars
         },
     }

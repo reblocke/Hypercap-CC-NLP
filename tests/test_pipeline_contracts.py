@@ -64,7 +64,7 @@ def test_validate_cohort_contract_accepts_canonical_threshold_any() -> None:
     )
     report = validate_cohort_contract(df)
     codes = {finding["code"] for finding in report["findings"]}
-    assert report["status"] == "warning"
+    assert report["status"] == "pass"
     assert "pco2_threshold_0_24h_fallback_alias" not in codes
 
 
@@ -637,7 +637,7 @@ def test_build_pipeline_contract_report_fails_when_cc_missing_audit_absent(tmp_p
     assert "missing_classifier_cc_missing_audit" in classifier_codes
 
 
-def test_validate_cohort_contract_requires_cleaned_vitals_when_raw_present() -> None:
+def test_validate_cohort_contract_warns_when_cleaned_vitals_helpers_are_qc_only() -> None:
     df = pd.DataFrame(
         {
             "hadm_id": [1],
@@ -658,8 +658,8 @@ def test_validate_cohort_contract_requires_cleaned_vitals_when_raw_present() -> 
 
     report = validate_cohort_contract(df)
     codes = {finding["code"] for finding in report["findings"]}
-    assert report["status"] == "fail"
-    assert "missing_ed_vitals_clean_columns" in codes
+    assert report["status"] == "warning"
+    assert "missing_ed_vitals_clean_columns_qc_only" in codes
 
 
 def test_validate_cohort_contract_flags_invalid_cleaned_vitals_ranges() -> None:
@@ -696,7 +696,7 @@ def test_validate_cohort_contract_flags_invalid_cleaned_vitals_ranges() -> None:
     assert "ed_temp_clean_contains_celsius_band_values" in codes
 
 
-def test_validate_cohort_contract_warns_when_timing_usable_missing() -> None:
+def test_validate_cohort_contract_allows_qc_only_missing_timing_flags() -> None:
     df = pd.DataFrame(
         {
             "hadm_id": [1],
@@ -711,12 +711,12 @@ def test_validate_cohort_contract_warns_when_timing_usable_missing() -> None:
             "gas_source_resolved_rate": [1.0],
             "bmi_closest_pre_ed": [30.0],
             "anthro_source": ["HOSPITAL"],
-            "time_integrity_any": [False],
         }
     )
     report = validate_cohort_contract(df)
     codes = {finding["code"] for finding in report["findings"]}
-    assert "missing_timing_usable_for_model" in codes
+    assert "missing_timing_usable_for_model" not in codes
+    assert "missing_time_integrity_flags" not in codes
 
 
 def test_validate_cohort_contract_flags_timing_usable_mismatch() -> None:

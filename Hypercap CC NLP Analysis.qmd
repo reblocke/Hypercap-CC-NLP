@@ -6,6 +6,9 @@ format:
     toc: true
     number-sections: true
     code-overflow: wrap
+    geometry:
+      - margin=0.75in
+      - landscape
 execute:
   echo: true
   warning: false
@@ -16,6 +19,32 @@ execute:
 # Workbook for MIMIC Hypercapnia Presenting Chief Concern Analysis
 
 This notebook is a deterministic analysis workflow for the NLP-augmented hypercapnia cohort workbook.
+
+## Stage contract (pipeline-facing)
+
+- **Purpose:** Generate analysis tables/figures from the canonical NLP workbook.
+- **Inputs:** `MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx` + `qa_summary.json`.
+- **Canonical outputs:** analysis `.xlsx` summary artifacts + `Ascertainment_Overlap_UpSet.png`.
+- **Run-archived outputs:** `MIMIC tabular data/prior runs/YYYY-MM-DD analysis_run_manifest.json`.
+- **Key env vars:** `WORK_DIR`, `ANALYSIS_INPUT_FILENAME`.
+- **QA artifacts consumed:** `qa_summary.json` and contract-synced QA payload fields.
+
+## Summary of functionality
+
+This stage turns the final NLP workbook into summary tables/figures for interpretation.
+
+Use this reading order:
+
+1. **Environment gate**: checks required packages before analysis starts.
+2. **Load data + helper functions**: standardizes key binary flags and category logic.
+3. **Primary overlap analyses**: compares ICD-based and gas-based ascertainment groups.
+4. **Symptom composition analyses**: shows which complaint categories are common in each overlap stratum.
+5. **QC transparency section**: surfaces data-quality metrics from `qa_summary.json`.
+6. **Export section**: writes reproducible `.xlsx`/figure outputs used for reporting.
+
+Documentation pattern:
+- Helper functions are short and single-purpose.
+- Each major block states what question it answers before calculating outputs.
 
 ## Environment Gate
 
@@ -50,6 +79,9 @@ Use a single canonical workbook path under `MIMIC tabular data`.
 
 ```{python}
 #| label: hypercap-cc-nlp-analysis-cell-002
+# Purpose: Initialize shared imports and filesystem anchors for analysis helpers.
+# Why this matters: keeping path/runtime setup centralized makes helper usage deterministic.
+
 import json
 import os
 import sys
@@ -67,9 +99,23 @@ SRC_DIR = WORK_DIR / "src"
 if SRC_DIR.exists() and str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 CANONICAL_NLP_FILENAME = "MIMICIV all with CC_with_NLP.xlsx"
+OUTPUT_DIR = WORK_DIR
+ANALYSIS_INPUT_FILENAME = os.getenv("ANALYSIS_INPUT_FILENAME")
+```
+
+### 2.1 Path and schema helper functions
+
+```{python}
+#| label: hypercap-cc-nlp-analysis-cell-002a
+# Helper group: filesystem resolution + schema gatekeeping.
 
 
 def resolve_analysis_input_path(work_dir: Path, input_filename: str | None = None) -> Path:
+    """Resolve analysis input workbook path.
+
+    Use this when opening the canonical NLP workbook for analysis. It fails fast
+    with a readable message when the upstream classifier output is missing.
+    """
     filename = input_filename or CANONICAL_NLP_FILENAME
     input_path = (work_dir / "MIMIC tabular data" / filename).expanduser().resolve()
     if not input_path.exists():
@@ -82,23 +128,50 @@ def resolve_analysis_input_path(work_dir: Path, input_filename: str | None = Non
 
 
 def ensure_required_columns(df: pd.DataFrame, required: list[str]) -> None:
+    """Assert required columns exist before running a calculation block.
+
+    Use this at the top of each analysis/helper that expects specific workbook
+    columns so missing-schema failures are explicit and local.
+    """
     missing = sorted(set(required).difference(df.columns))
     if missing:
         raise KeyError(f"Missing required columns: {missing}")
+```
+
+### 2.2 Flag normalization and cohort-classification helpers
+
+```{python}
+#| label: hypercap-cc-nlp-analysis-cell-002b
+# Helper group: convert raw indicator columns to deterministic binary flags and strata.
 
 
 def to_binary_flag(series: pd.Series) -> pd.Series:
+    """Convert mixed-type indicator data into strict {0,1} flags.
+
+    Use this whenever a workbook column may be bool/int/string-like and downstream
+    logic needs deterministic binary semantics.
+    """
     numeric = pd.to_numeric(series, errors="coerce").fillna(0)
     return (numeric > 0).astype(int)
 
 
 def _binary_or_zero(df: pd.DataFrame, column: str) -> pd.Series:
+    """Return `to_binary_flag(df[column])` or all-zero fallback if the column is absent.
+
+    Use this in robust helper logic that supports older/newer schema variants
+    without failing when optional indicator columns are missing.
+    """
     if column in df.columns:
         return to_binary_flag(df[column])
     return pd.Series(0, index=df.index, dtype="int64")
 
 
 def classify_icd_category_vectorized(df: pd.DataFrame) -> pd.Series:
+    """Map ICD indicator columns to one canonical ICD-category label per row.
+
+    Use this for descriptive reporting of ICD-positive rows; it is a display
+    classifier and does not change cohort inclusion.
+    """
     j9602 = _binary_or_zero(df, "ICD10_J9602")
     j9612 = _binary_or_zero(df, "ICD10_J9612")
     j9622 = _binary_or_zero(df, "ICD10_J9622")
@@ -115,10 +188,10 @@ def classify_icd_category_vectorized(df: pd.DataFrame) -> pd.Series:
             e662.eq(1) | icd9_27803.eq(1),
         ],
         [
-            "Acute RF with hypoxia",
-            "Acute RF with hypercapnia",
-            "Acute RF with hypoxia & hypercapnia",
-            "Respiratory failure, unspecified",
+            "Acute respiratory failure with hypercapnia",
+            "Chronic respiratory failure with hypercapnia",
+            "Acute and chronic respiratory failure with hypercapnia",
+            "Respiratory failure, unspecified with hypercapnia",
             "Obesity hypoventilation syndrome",
         ],
         default="Other / None",
@@ -127,6 +200,10 @@ def classify_icd_category_vectorized(df: pd.DataFrame) -> pd.Series:
 
 
 def classify_inclusion_type_vectorized(any_icd: pd.Series, gas_any: pd.Series) -> pd.Series:
+    """Classify each row into inclusion-route strata (`Both`, `ICD_only`, `Gas_only`, `Neither`).
+
+    Use this for overlap tables and route-based descriptive summaries.
+    """
     any_icd_bin = to_binary_flag(any_icd)
     gas_any_bin = to_binary_flag(gas_any)
     labels = np.select(
@@ -141,50 +218,16 @@ def classify_inclusion_type_vectorized(any_icd: pd.Series, gas_any: pd.Series) -
     return pd.Series(labels, index=any_icd.index, name="inclusion_type")
 
 
-def binary_crosstab_yes_no(df: pd.DataFrame, row_col: str, flag_col: str) -> pd.DataFrame:
-    ensure_required_columns(df, [row_col, flag_col])
-    tab = pd.crosstab(df[row_col], to_binary_flag(df[flag_col]), margins=False, dropna=False)
-    tab = tab.reindex(columns=[0, 1], fill_value=0)
-    tab.columns = ["No", "Yes"]
-    row_totals = tab.sum(axis=1).replace(0, np.nan)
-    tab["Percent_yes"] = (tab["Yes"] / row_totals * 100).round(1).fillna(0)
-    return tab
-
-
-def symptom_distribution_by_overlap(
-    df: pd.DataFrame,
-    group_col: str,
-    symptom_col: str,
-    top_k: int = 10,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    ensure_required_columns(df, [group_col, symptom_col])
-    tmp = df.dropna(subset=[group_col, symptom_col]).copy()
-    if tmp.empty:
-        return pd.DataFrame(columns=[group_col, "symptom_group", "N", "Percent"]), pd.DataFrame()
-    top_symptoms = tmp[symptom_col].value_counts(dropna=False).head(top_k).index
-    tmp["symptom_group"] = tmp[symptom_col].where(tmp[symptom_col].isin(top_symptoms), "Other")
-    counts = (
-        tmp.groupby([group_col, "symptom_group"], dropna=False)
-        .size()
-        .reset_index(name="N")
-    )
-    counts["Percent"] = (
-        counts.groupby(group_col)["N"].transform(lambda x: x / x.sum() * 100).round(1)
-    )
-    pivot = counts.pivot_table(
-        index="symptom_group",
-        columns=group_col,
-        values="Percent",
-        fill_value=0,
-    ).round(1)
-    return counts, pivot
-
-
 def classify_gas_source_overlap(
     abg_series: pd.Series,
     vbg_series: pd.Series,
     other_series: pd.Series,
 ) -> pd.Series:
+    """Create ABG/VBG/UNKNOWN overlap strata labels from binary threshold flags.
+
+    Use this for gas-source overlap reports where a row may satisfy multiple gas
+    source types.
+    """
     abg = to_binary_flag(abg_series)
     vbg = to_binary_flag(vbg_series)
     other = to_binary_flag(other_series)
@@ -210,6 +253,60 @@ def classify_gas_source_overlap(
         default="No-gas",
     )
     return pd.Series(labels, index=abg_series.index, name="gas_source_overlap")
+```
+
+### 2.3 Summary-table and rendering helpers
+
+```{python}
+#| label: hypercap-cc-nlp-analysis-cell-002c
+# Helper group: compact reusable utilities for tabulation and report rendering.
+
+
+def binary_crosstab_yes_no(df: pd.DataFrame, row_col: str, flag_col: str) -> pd.DataFrame:
+    """Build a No/Yes crosstab with percent-yes by row group.
+
+    Use this for quick binary prevalence summaries (e.g., by inclusion route).
+    """
+    ensure_required_columns(df, [row_col, flag_col])
+    tab = pd.crosstab(df[row_col], to_binary_flag(df[flag_col]), margins=False, dropna=False)
+    tab = tab.reindex(columns=[0, 1], fill_value=0)
+    tab.columns = ["No", "Yes"]
+    row_totals = tab.sum(axis=1).replace(0, np.nan)
+    tab["Percent_yes"] = (tab["Yes"] / row_totals * 100).round(1).fillna(0)
+    return tab
+
+
+def symptom_distribution_by_overlap(
+    df: pd.DataFrame,
+    group_col: str,
+    symptom_col: str,
+    top_k: int = 10,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Summarize symptom composition by overlap group (top-k + `Other` collapse).
+
+    Use this for workbook-ready symptom composition tables by any grouping column.
+    """
+    ensure_required_columns(df, [group_col, symptom_col])
+    tmp = df.dropna(subset=[group_col, symptom_col]).copy()
+    if tmp.empty:
+        return pd.DataFrame(columns=[group_col, "symptom_group", "N", "Percent"]), pd.DataFrame()
+    top_symptoms = tmp[symptom_col].value_counts(dropna=False).head(top_k).index
+    tmp["symptom_group"] = tmp[symptom_col].where(tmp[symptom_col].isin(top_symptoms), "Other")
+    counts = (
+        tmp.groupby([group_col, "symptom_group"], dropna=False)
+        .size()
+        .reset_index(name="N")
+    )
+    counts["Percent"] = (
+        counts.groupby(group_col)["N"].transform(lambda x: x / x.sum() * 100).round(1)
+    )
+    pivot = counts.pivot_table(
+        index="symptom_group",
+        columns=group_col,
+        values="Percent",
+        fill_value=0,
+    ).round(1)
+    return counts, pivot
 
 
 def select_preferred_vital_column(
@@ -218,7 +315,11 @@ def select_preferred_vital_column(
     clean_column: str,
     fallback_model_column: str,
 ) -> str | None:
-    """Select cleaned vital column when available, otherwise fall back to model alias."""
+    """Pick the preferred vital column name for analysis code.
+
+    Use this when column names differ between runs (e.g., clean helper column
+    removed from export and only model-safe alias remains).
+    """
     if clean_column in df.columns:
         return clean_column
     if fallback_model_column in df.columns:
@@ -234,26 +335,78 @@ def render_latex_longtable(
     landscape: bool = False,
     index: bool = True,
 ) -> str:
+    """Render DataFrame to LaTeX longtable text for appendix/report embedding.
+
+    Use this for deterministic longtable output in Quarto/PDF appendix sections.
+    """
+    safe_caption = caption.replace("%", r"\%")
+    safe_label = label.replace("_", "-")
     latex_text = table_df.to_latex(
         index=index,
-        escape=False,
+        escape=True,
         longtable=True,
-        caption=caption,
-        label=label,
+        caption=safe_caption,
+        label=safe_label,
     )
     if landscape:
-        latex_text = "\\begin{landscape}\\n" + latex_text + "\\n\\end{landscape}\\n"
+        latex_text = "\\begin{landscape}\n" + latex_text + "\n\\end{landscape}\n"
     return latex_text
+```
+
+### 2.4 Export-registry helpers and workbook load
+
+```{python}
+#| label: hypercap-cc-nlp-analysis-cell-002d
+# Helper group: deterministic export writing + run-level input initialization.
 
 
-from hypercap_cc_nlp.pipeline_audit import collect_run_manifest
+from hypercap_cc_nlp.pipeline_audit import collect_run_manifest, sanitize_manifest_payload
 
-ANALYSIS_INPUT_FILENAME = os.getenv("ANALYSIS_INPUT_FILENAME")
 ANALYSIS_INPUT_PATH = resolve_analysis_input_path(
     WORK_DIR,
     ANALYSIS_INPUT_FILENAME if ANALYSIS_INPUT_FILENAME else None,
 )
 OUTPUT_DIR = WORK_DIR
+
+# Central export registry for deterministic output writing and manifesting.
+# Each entry captures filename + builder provenance + sheet contract.
+analysis_export_registry: dict[str, dict[str, object]] = {}
+
+
+def write_excel_export(
+    *,
+    key: str,
+    filename: str,
+    builder: str,
+    sheets: list[dict[str, object]],
+) -> Path:
+    """Write a multi-sheet Excel artifact and register export metadata.
+
+    Use this for every analysis workbook output so file-level provenance and
+    sheet contracts are captured in one registry.
+    """
+    output_path = OUTPUT_DIR / filename
+    with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
+        for spec in sheets:
+            frame = spec["df"]
+            if not isinstance(frame, pd.DataFrame):
+                raise TypeError(f"Export sheet '{spec['sheet_name']}' is not a DataFrame.")
+            frame.to_excel(
+                writer,
+                sheet_name=str(spec["sheet_name"]),
+                index=bool(spec.get("index", False)),
+            )
+
+    analysis_export_registry[key] = {
+        "filename": filename,
+        "builder": builder,
+        "sheets": [
+            {"sheet_name": str(spec["sheet_name"]), "index": bool(spec.get("index", False))}
+            for spec in sheets
+        ],
+        "path": str(output_path),
+    }
+    return output_path
 
 HYPERCAP_CRITERIA = [
     "any_hypercap_icd",
@@ -342,23 +495,23 @@ display(age_summary.to_frame())
 display(hypercap_prevalence)
 ```
 
-## ED Vitals Data Quality (cleaned-column preference)
+## ED Vitals Data Quality (canonical-column preference)
 
-Use cleaned ED-vitals columns when available (`*_clean`), falling back to `*_model` aliases only when needed.
+Use canonical ED-vitals columns in the final workbook (raw names overwritten with cleaned/model-safe values during cohort export when changes are <=5%).
 
 ```{python}
 #| label: hypercap-cc-nlp-analysis-cell-003b
 vital_preference_specs = {
-    "triage_temp_f": ("ed_triage_temp_f_clean", "ed_triage_temp_model"),
-    "first_temp_f": ("ed_first_temp_f_clean", "ed_first_temp_model"),
-    "triage_pain": ("ed_triage_pain_clean", "ed_triage_pain_model"),
-    "first_pain": ("ed_first_pain_clean", "ed_first_pain_model"),
-    "triage_sbp": ("ed_triage_sbp_clean", "ed_triage_sbp_model"),
-    "first_sbp": ("ed_first_sbp_clean", "ed_first_sbp_model"),
-    "triage_dbp": ("ed_triage_dbp_clean", "ed_triage_dbp_model"),
-    "first_dbp": ("ed_first_dbp_clean", "ed_first_dbp_model"),
-    "triage_o2sat": ("ed_triage_o2sat_clean", "ed_triage_o2sat_model"),
-    "first_o2sat": ("ed_first_o2sat_clean", "ed_first_o2sat_model"),
+    "triage_temp_f": ("ed_triage_temp_f_clean", "ed_triage_temp"),
+    "first_temp_f": ("ed_first_temp_f_clean", "ed_first_temp"),
+    "triage_pain": ("ed_triage_pain_clean", "ed_triage_pain"),
+    "first_pain": ("ed_first_pain_clean", "ed_first_pain"),
+    "triage_sbp": ("ed_triage_sbp_clean", "ed_triage_sbp"),
+    "first_sbp": ("ed_first_sbp_clean", "ed_first_sbp"),
+    "triage_dbp": ("ed_triage_dbp_clean", "ed_triage_dbp"),
+    "first_dbp": ("ed_first_dbp_clean", "ed_first_dbp"),
+    "triage_o2sat": ("ed_triage_o2sat_clean", "ed_triage_o2sat"),
+    "first_o2sat": ("ed_first_o2sat_clean", "ed_first_o2sat"),
 }
 
 selected_vital_columns: dict[str, str | None] = {}
@@ -420,7 +573,34 @@ if qa_summary_path.exists():
         if "dt_qualifying_hypercapnia_hours" in df.columns
         else None
     )
+    timing_rows_total = pd.to_numeric(
+        pd.Series([timing_row.get("rows_total")]),
+        errors="coerce",
+    ).iloc[0]
+    timing_usable_n = pd.to_numeric(
+        pd.Series([timing_row.get("timing_usable_for_model_n")]),
+        errors="coerce",
+    ).iloc[0]
+    timing_usable_for_model_rate = (
+        float(timing_usable_n / timing_rows_total)
+        if pd.notna(timing_rows_total)
+        and timing_rows_total > 0
+        and pd.notna(timing_usable_n)
+        else (
+            float(pd.to_numeric(df.get("timing_usable_for_model"), errors="coerce").fillna(0).mean())
+            if "timing_usable_for_model" in df.columns
+            else None
+        )
+    )
     qc_rows = [
+        {
+            "metric": "qa_scope_name",
+            "value": qa_summary_payload.get("scope_name"),
+        },
+        {
+            "metric": "qa_scope_n_rows",
+            "value": qa_summary_payload.get("n_rows"),
+        },
         {
             "metric": "UNKNOWN semantics",
             "value": "LAB blood-gas unknown specimen only (POC UNKNOWN quarantined).",
@@ -472,11 +652,7 @@ if qa_summary_path.exists():
         },
         {
             "metric": "timing_usable_for_model_rate",
-            "value": (
-                float(pd.to_numeric(df.get("timing_usable_for_model"), errors="coerce").fillna(0).mean())
-                if "timing_usable_for_model" in df.columns
-                else None
-            ),
+            "value": timing_usable_for_model_rate,
         },
         {
             "metric": "hospital_los_negative_n",
@@ -499,6 +675,10 @@ if qa_summary_path.exists():
             "value": qa_summary_payload.get("poc_itemid_qc_status"),
         },
         {
+            "metric": "poc_itemid_qc_reason",
+            "value": qa_summary_payload.get("poc_itemid_qc_reason"),
+        },
+        {
             "metric": "poc_itemid_qc_failed_itemids_n",
             "value": qa_summary_payload.get("poc_itemid_qc_failed_itemids_n"),
         },
@@ -513,18 +693,6 @@ if qa_summary_path.exists():
         {
             "metric": "poc_qualifying_any_type_0_24h_hadm_n",
             "value": qa_summary_payload.get("poc_qualifying_any_type_0_24h_hadm_n"),
-        },
-        {
-            "metric": "poc_itemid_qc_passed_deprecated_alias",
-            "value": qa_summary_payload.get("poc_itemid_qc_passed"),
-        },
-        {
-            "metric": "poc_itemid_qc_reason_deprecated_alias",
-            "value": qa_summary_payload.get("poc_itemid_qc_reason"),
-        },
-        {
-            "metric": "poc_hypercap_0_24h_deprecated_alias_of",
-            "value": qa_summary_payload.get("poc_hypercap_0_24h_alias_of"),
         },
         {
             "metric": "pco2_source_distribution_audit_path",
@@ -633,8 +801,6 @@ for definition in HYPERCAP_CRITERIA:
     definition_table = binary_crosstab_yes_no(symptom_work_df, "symptom_group", definition)
     crosstab_tables[definition] = definition_table.sort_values("Percent_yes", ascending=False)
 
-display(crosstab_tables["pco2_threshold_any"].head(10))
-
 symptom_non_null = symptom_work_df.loc[~symptom_work_df["symptom_missing_flag"]].copy()
 ```
 
@@ -679,12 +845,23 @@ definition_pivot_df = definition_counts_df.pivot_table(
     fill_value=0,
 ).round(2)
 
-definition_output_path = OUTPUT_DIR / "Symptom_Composition_by_Hypercapnia_Definition.xlsx"
-pivot_output_path = OUTPUT_DIR / "Symptom_Composition_Pivot_ChartReady.xlsx"
-definition_counts_df.to_excel(definition_output_path, index=False)
-definition_pivot_df.to_excel(pivot_output_path)
+definition_output_path = write_excel_export(
+    key="symptom_composition_by_hypercap_definition",
+    filename="Symptom_Composition_by_Hypercapnia_Definition.xlsx",
+    builder="build_definition_counts_df",
+    sheets=[
+        {"sheet_name": "Sheet1", "df": definition_counts_df, "index": False},
+    ],
+)
+pivot_output_path = write_excel_export(
+    key="symptom_composition_pivot_chartready",
+    filename="Symptom_Composition_Pivot_ChartReady.xlsx",
+    builder="build_definition_pivot_df",
+    sheets=[
+        {"sheet_name": "Sheet1", "df": definition_pivot_df, "index": True},
+    ],
+)
 
-display(definition_counts_df.head(12))
 print(f"Exported: {definition_output_path}")
 print(f"Exported: {pivot_output_path}")
 ```
@@ -759,6 +936,151 @@ plt.tight_layout()
 plt.show()
 ```
 
+## Symptom Composition By Blood-Gas Hypercapnia Timing
+
+Create timing-stratified symptom summaries for gas-positive encounters only.
+Timing strata are non-overlapping:
+- `<6h` from ED presentation,
+- `6–24h`,
+- `>24h`.
+
+```{python}
+#| label: hypercap-cc-nlp-analysis-cell-008b
+timing_required = ["pco2_threshold_any", "dt_qualifying_hypercapnia_hours", "symptom_group"]
+ensure_required_columns(symptom_work_df, timing_required)
+
+timing_df = symptom_work_df.loc[
+    symptom_work_df["pco2_threshold_any"].eq(1) & ~symptom_work_df["symptom_missing_flag"]
+].copy()
+timing_df["dt_qualifying_hypercapnia_hours"] = pd.to_numeric(
+    timing_df["dt_qualifying_hypercapnia_hours"],
+    errors="coerce",
+)
+timing_df = timing_df.loc[timing_df["dt_qualifying_hypercapnia_hours"].notna()].copy()
+
+timing_df["gas_timing_stratum"] = np.select(
+    [
+        timing_df["dt_qualifying_hypercapnia_hours"].lt(6),
+        timing_df["dt_qualifying_hypercapnia_hours"].between(6, 24, inclusive="both"),
+        timing_df["dt_qualifying_hypercapnia_hours"].gt(24),
+    ],
+    ["<6h", "6-24h", ">24h"],
+    default="UNCLASSIFIED",
+)
+timing_df = timing_df.loc[~timing_df["gas_timing_stratum"].eq("UNCLASSIFIED")].copy()
+timing_order = ["<6h", "6-24h", ">24h"]
+
+timing_counts_df = (
+    timing_df.groupby(["gas_timing_stratum", "symptom_group"], dropna=False)
+    .size()
+    .reset_index(name="Count")
+)
+timing_counts_df["Total"] = timing_counts_df.groupby("gas_timing_stratum")["Count"].transform("sum")
+timing_counts_df["Percent"] = timing_counts_df["Count"] / timing_counts_df["Total"] * 100
+
+timing_p_hat = (timing_counts_df["Percent"] / 100).clip(0, 1)
+timing_n = timing_counts_df["Total"].replace(0, np.nan)
+timing_se = np.sqrt((timing_p_hat * (1 - timing_p_hat)) / timing_n).fillna(0)
+timing_counts_df["CI_lower"] = ((timing_p_hat - 1.96 * timing_se).clip(0, 1) * 100).round(2)
+timing_counts_df["CI_upper"] = ((timing_p_hat + 1.96 * timing_se).clip(0, 1) * 100).round(2)
+timing_counts_df["Percent"] = timing_counts_df["Percent"].round(2)
+timing_counts_df = timing_counts_df.sort_values(
+    ["gas_timing_stratum", "Count"],
+    ascending=[True, False],
+)
+timing_counts_df["gas_timing_stratum"] = pd.Categorical(
+    timing_counts_df["gas_timing_stratum"],
+    categories=timing_order,
+    ordered=True,
+)
+timing_counts_df = timing_counts_df.sort_values(["gas_timing_stratum", "Count"], ascending=[True, False])
+
+timing_pivot_df = timing_counts_df.pivot_table(
+    index="symptom_group",
+    columns="gas_timing_stratum",
+    values="Percent",
+    fill_value=0,
+    observed=False,
+).round(2)
+
+timing_output_path = write_excel_export(
+    key="symptom_composition_by_gas_timing",
+    filename="Symptom_Composition_by_Gas_Timing.xlsx",
+    builder="build_timing_counts_df",
+    sheets=[
+        {"sheet_name": "Sheet1", "df": timing_counts_df, "index": False},
+    ],
+)
+print(f"Exported: {timing_output_path}")
+
+timing_plot_df = timing_pivot_df.T.reindex(timing_order)
+ax = timing_plot_df.plot(
+    kind="bar",
+    stacked=True,
+    figsize=(10, 6),
+    width=0.8,
+    edgecolor="black",
+)
+ax.set_title("Symptom Composition within Gas-Timing Strata (%)")
+ax.set_xlabel("Gas Timing Stratum from ED Presentation")
+ax.set_ylabel("Percent of Patients")
+ax.tick_params(axis="x", labelrotation=15)
+ax.legend(title="Symptom Group", bbox_to_anchor=(1.05, 1), loc="upper left")
+timing_stacked_plot_path = OUTPUT_DIR / "Symptom_Composition_by_Gas_Timing_Stacked.png"
+plt.tight_layout()
+plt.savefig(timing_stacked_plot_path, dpi=300, bbox_inches="tight")
+plt.show()
+print(f"Exported: {timing_stacked_plot_path}")
+
+timing_top_for_ci = (
+    timing_counts_df.groupby("symptom_group")["Count"]
+    .sum()
+    .sort_values(ascending=False)
+    .head(5)
+    .index
+)
+timing_ci_plot_df = timing_counts_df.loc[timing_counts_df["symptom_group"].isin(timing_top_for_ci)].copy()
+timing_symptom_order = list(timing_top_for_ci)
+
+x = np.arange(len(timing_symptom_order))
+width = 0.22
+
+fig, ax = plt.subplots(figsize=(11, 6))
+for idx, timing_label in enumerate(timing_order):
+    subset = (
+        timing_ci_plot_df.loc[timing_ci_plot_df["gas_timing_stratum"].eq(timing_label)]
+        .set_index("symptom_group")
+        .reindex(timing_symptom_order)
+    )
+    x_pos = x + (idx - (len(timing_order) - 1) / 2) * width
+    y = subset["Percent"].fillna(0).to_numpy()
+    lower = subset["CI_lower"].fillna(0).to_numpy()
+    upper = subset["CI_upper"].fillna(0).to_numpy()
+
+    ax.bar(x_pos, y, width=width, label=timing_label, alpha=0.85)
+    ax.errorbar(
+        x_pos,
+        y,
+        yerr=[y - lower, upper - y],
+        fmt="none",
+        ecolor="black",
+        elinewidth=1,
+        capsize=2,
+    )
+
+ax.set_xticks(x)
+ax.set_xticklabels(timing_symptom_order, rotation=25, ha="right")
+ax.set_ylabel("Percent of Patients")
+ax.set_xlabel("Symptom Group")
+ax.set_title("Top Symptom Group Percentages by Gas-Timing Stratum (95% CI)")
+ax.legend(title="Timing from ED", bbox_to_anchor=(1.05, 1), loc="upper left")
+timing_ci_plot_path = OUTPUT_DIR / "Top_Symptom_Group_Percentages_by_Gas_Timing_95CI.png"
+plt.tight_layout()
+plt.savefig(timing_ci_plot_path, dpi=300, bbox_inches="tight")
+plt.show()
+print(f"Exported: {timing_ci_plot_path}")
+```
+
 ## Symptom Distribution By Ascertainment Overlap
 
 ```{python}
@@ -827,19 +1149,31 @@ icd_gas_counts_df, icd_gas_pivot_df = symptom_distribution_by_overlap(
     top_k=10,
 )
 
-gas_source_output_path = OUTPUT_DIR / "Symptom_Composition_by_ABG_VBG_Overlap.xlsx"
-gas_source_expanded_output_path = OUTPUT_DIR / "Symptom_Composition_by_Gas_Source_Overlap.xlsx"
-icd_gas_output_path = OUTPUT_DIR / "Symptom_Composition_by_ICD_Gas_Overlap.xlsx"
-abg_vbg_pivot_df.to_excel(gas_source_output_path)
-gas_source_pivot_df.to_excel(gas_source_expanded_output_path)
-icd_gas_pivot_df.to_excel(icd_gas_output_path)
+gas_source_output_path = write_excel_export(
+    key="symptom_composition_by_abg_vbg_overlap",
+    filename="Symptom_Composition_by_ABG_VBG_Overlap.xlsx",
+    builder="build_abg_vbg_pivot_df",
+    sheets=[
+        {"sheet_name": "Sheet1", "df": abg_vbg_pivot_df, "index": True},
+    ],
+)
+gas_source_expanded_output_path = write_excel_export(
+    key="symptom_composition_by_gas_source_overlap",
+    filename="Symptom_Composition_by_Gas_Source_Overlap.xlsx",
+    builder="build_gas_source_pivot_df",
+    sheets=[
+        {"sheet_name": "Sheet1", "df": gas_source_pivot_df, "index": True},
+    ],
+)
+icd_gas_output_path = write_excel_export(
+    key="symptom_composition_by_icd_gas_overlap",
+    filename="Symptom_Composition_by_ICD_Gas_Overlap.xlsx",
+    builder="build_icd_gas_pivot_df",
+    sheets=[
+        {"sheet_name": "Sheet1", "df": icd_gas_pivot_df, "index": True},
+    ],
+)
 
-print("Symptom distribution by ABG/VBG overlap (legacy output):")
-display(abg_vbg_pivot_df.head(15))
-print("Symptom distribution by ABG/VBG/UNKNOWN overlap (expanded output):")
-display(gas_source_pivot_df.head(15))
-print("Symptom distribution by ICD/Gas overlap:")
-display(icd_gas_pivot_df.head(15))
 print(f"Exported: {gas_source_output_path}")
 print(f"Exported: {gas_source_expanded_output_path}")
 print(f"Exported: {icd_gas_output_path}")
@@ -914,14 +1248,27 @@ icd_performance_df[[
     "PPV_CI_Upper",
 ]].clip(lower=0.0, upper=1.0)
 
-icd_subset_output_path = OUTPUT_DIR / "ICD_Positive_Subset_Breakdown.xlsx"
-icd_performance_output_path = OUTPUT_DIR / "ICD_vs_Gas_Performance.xlsx"
-with pd.ExcelWriter(icd_subset_output_path, engine="openpyxl") as writer:
-    icd_positive_breakdown.to_excel(writer, index=False, sheet_name="Gas_criteria")
-    icd_positive_category_summary.reset_index().to_excel(
-        writer, index=False, sheet_name="ICD_categories"
-    )
-icd_performance_df.to_excel(icd_performance_output_path, index=False)
+icd_subset_output_path = write_excel_export(
+    key="icd_positive_subset_breakdown",
+    filename="ICD_Positive_Subset_Breakdown.xlsx",
+    builder="build_icd_positive_subset_tables",
+    sheets=[
+        {"sheet_name": "Gas_criteria", "df": icd_positive_breakdown, "index": False},
+        {
+            "sheet_name": "ICD_categories",
+            "df": icd_positive_category_summary.reset_index(),
+            "index": False,
+        },
+    ],
+)
+icd_performance_output_path = write_excel_export(
+    key="icd_vs_gas_performance",
+    filename="ICD_vs_Gas_Performance.xlsx",
+    builder="build_icd_performance_df",
+    sheets=[
+        {"sheet_name": "Sheet1", "df": icd_performance_df, "index": False},
+    ],
+)
 
 display(icd_positive_breakdown)
 display(icd_performance_df)
@@ -965,19 +1312,308 @@ intersection_counts = (
     .sort_values("Count", ascending=False)
     .reset_index(drop=True)
 )
-intersection_output_path = OUTPUT_DIR / "Ascertainment_Overlap_Intersections.xlsx"
-intersection_counts.to_excel(intersection_output_path, index=False)
+intersection_output_path = write_excel_export(
+    key="ascertainment_overlap_intersections",
+    filename="Ascertainment_Overlap_Intersections.xlsx",
+    builder="build_ascertainment_overlap_intersections",
+    sheets=[
+        {"sheet_name": "Sheet1", "df": intersection_counts, "index": False},
+    ],
+)
 
-display(intersection_counts.head(20))
 print(f"Exported: {upset_output_path}")
 print(f"Exported: {intersection_output_path}")
+```
+
+## RFV category overlap UpSet (whole cohort)
+
+```{python}
+#| label: hypercap-cc-nlp-analysis-cell-009c2
+rfv_name_cols = [column for column in (f"RFV{i}_name" for i in range(1, 6)) if column in df.columns]
+if not rfv_name_cols:
+    raise KeyError("RFV category columns are missing (expected RFV1_name..RFV5_name).")
+
+rfv_long = (
+    df[rfv_name_cols]
+    .reset_index(names="row_id")
+    .melt(id_vars="row_id", value_name="rfv_category")
+)
+rfv_long["rfv_category"] = rfv_long["rfv_category"].astype("string").str.strip()
+rfv_long = rfv_long.loc[
+    rfv_long["rfv_category"].notna()
+    & ~rfv_long["rfv_category"].eq("")
+].copy()
+
+if rfv_long.empty:
+    raise ValueError("No non-missing RFV categories found for whole-cohort UpSet plot.")
+
+rfv_flags = (
+    rfv_long.assign(flag=True)
+    .pivot_table(
+        index="row_id",
+        columns="rfv_category",
+        values="flag",
+        aggfunc="max",
+        fill_value=False,
+        observed=False,
+    )
+    .astype(bool)
+)
+rfv_flags = rfv_flags.reindex(df.index, fill_value=False)
+rfv_category_order = rfv_flags.sum(axis=0).sort_values(ascending=False).index.tolist()
+rfv_flags = rfv_flags[rfv_category_order]
+
+rfv_upset_series = from_indicators(rfv_category_order, rfv_flags)
+plt.figure(figsize=(16, 9))
+rfv_upset_plot = UpSet(
+    rfv_upset_series,
+    subset_size="count",
+    show_counts=True,
+    sort_by="cardinality",
+    sort_categories_by="cardinality",
+    intersection_plot_elements=25,
+    min_subset_size=10,
+)
+rfv_upset_plot.plot()
+plt.suptitle("RFV Category Overlap (Whole Cohort)")
+plt.tight_layout()
+
+rfv_upset_output_path = OUTPUT_DIR / "RFV_Category_Overlap_UpSet.png"
+plt.savefig(rfv_upset_output_path, dpi=300, bbox_inches="tight")
+plt.show()
+
+rfv_intersection_counts = (
+    rfv_flags.groupby(rfv_category_order, dropna=False)
+    .size()
+    .reset_index(name="Count")
+    .sort_values("Count", ascending=False)
+    .reset_index(drop=True)
+)
+rfv_intersection_counts["RFV_Category_Combination"] = rfv_intersection_counts.apply(
+    lambda row: " + ".join([category for category in rfv_category_order if bool(row[category])]) or "None",
+    axis=1,
+)
+rfv_intersection_output_path = write_excel_export(
+    key="rfv_category_overlap_intersections",
+    filename="RFV_Category_Overlap_Intersections.xlsx",
+    builder="build_rfv_category_overlap_intersections",
+    sheets=[
+        {"sheet_name": "Sheet1", "df": rfv_intersection_counts, "index": False},
+    ],
+)
+
+print(f"Exported: {rfv_upset_output_path}")
+print(f"Exported: {rfv_intersection_output_path}")
+```
+
+## CONSORT enrollment flow diagram (cohort construction counts)
+
+```{python}
+#| label: hypercap-cc-nlp-analysis-cell-009c3
+#| echo: false
+# Render a CONSORT-style enrollment flow focused on cohort requirements.
+# This logic is embedded directly in this notebook (no external script dependency).
+import subprocess
+import textwrap
+from IPython.display import Image, display
+
+if "enrollment_route" not in df.columns:
+    raise KeyError("Missing required column for CONSORT flow: enrollment_route")
+
+flow_lookup = {
+    str(key): int(value)
+    for key, value in qa_summary_payload.get("cohort_flow_counts_lookup", {}).items()
+}
+if not flow_lookup and qa_summary_payload.get("cohort_flow_counts"):
+    flow_lookup = {
+        str(row.get("step")): int(row.get("count", 0))
+        for row in qa_summary_payload.get("cohort_flow_counts", [])
+        if row.get("step") is not None
+    }
+
+total_ed_encounters = int(
+    flow_lookup.get(
+        "Total ED encounters (edstays)",
+        qa_summary_payload.get("ed_spine_rows", len(df)),
+    )
+)
+ed_encounters_with_hadm = int(
+    flow_lookup.get(
+        "ED encounters with hadm_id",
+        qa_summary_payload.get("ed_spine_rows", len(df)),
+    )
+)
+hypercap_evidence_rows = int(
+    flow_lookup.get(
+        "Cohort admissions (union ICD ∪ thresholds)",
+        qa_summary_payload.get("enrolled_any_n", len(df)),
+    )
+)
+chief_complaint_present_rows = int(
+    flow_lookup.get(
+        "Cohort with ED chief complaint present",
+        qa_summary_payload.get("ed_cc_rows", len(df)),
+    )
+)
+final_study_rows = int(len(df))
+
+consort_counts = {
+    "total_ed_encounters": total_ed_encounters,
+    "ed_encounters_with_hadm": ed_encounters_with_hadm,
+    "excluded_no_hadm": max(total_ed_encounters - ed_encounters_with_hadm, 0),
+    "hypercap_evidence_rows": hypercap_evidence_rows,
+    "excluded_no_hypercap_evidence": max(
+        ed_encounters_with_hadm - hypercap_evidence_rows,
+        0,
+    ),
+    "chief_complaint_present_rows": chief_complaint_present_rows,
+    "excluded_missing_or_pseudomissing_cc": max(
+        hypercap_evidence_rows - chief_complaint_present_rows,
+        0,
+    ),
+    "final_study_rows": final_study_rows,
+}
+consort_counts["excluded_after_cc_to_export"] = max(
+    chief_complaint_present_rows - final_study_rows,
+    0,
+)
+
+consort_artifact_dir = OUTPUT_DIR / "artifacts" / "consort"
+consort_artifact_dir.mkdir(parents=True, exist_ok=True)
+consort_png_path = consort_artifact_dir / "CONSORT_Enrollment_Flow.png"
+consort_counts_path = consort_artifact_dir / "CONSORT_Enrollment_Flow_Counts.csv"
+
+r_code = textwrap.dedent(
+    f"""
+    required_pkgs <- c("consort")
+    missing_pkgs <- required_pkgs[!vapply(required_pkgs, requireNamespace, logical(1), quietly = TRUE)]
+    if (length(missing_pkgs) > 0) {{
+      stop(
+        paste0(
+          "Missing required R packages: ",
+          paste(missing_pkgs, collapse = ", "),
+          ". Install with install.packages(c(",
+          paste(shQuote(missing_pkgs), collapse = ", "),
+          ")) and rerun analysis."
+        )
+      )
+    }}
+
+    library(consort)
+    fmt_n <- function(x) format(as.integer(x), big.mark = ",", scientific = FALSE, trim = TRUE)
+
+    counts <- data.frame(
+      metric = c(
+        "total_ed_encounters",
+        "ed_encounters_with_hadm",
+        "excluded_no_hadm",
+        "hypercap_evidence_rows",
+        "excluded_no_hypercap_evidence",
+        "chief_complaint_present_rows",
+        "excluded_missing_or_pseudomissing_cc",
+        "final_study_rows",
+        "excluded_after_cc_to_export"
+      ),
+      count = c(
+        {consort_counts["total_ed_encounters"]},
+        {consort_counts["ed_encounters_with_hadm"]},
+        {consort_counts["excluded_no_hadm"]},
+        {consort_counts["hypercap_evidence_rows"]},
+        {consort_counts["excluded_no_hypercap_evidence"]},
+        {consort_counts["chief_complaint_present_rows"]},
+        {consort_counts["excluded_missing_or_pseudomissing_cc"]},
+        {consort_counts["final_study_rows"]},
+        {consort_counts["excluded_after_cc_to_export"]}
+      )
+    )
+
+    utils::write.csv(counts, "{consort_counts_path.as_posix()}", row.names = FALSE)
+
+    entry_txt <- sprintf("MIMIC-IV ED encounters (all edstays)\\n(n=%s)", fmt_n({consort_counts["total_ed_encounters"]}))
+    hadm_txt <- sprintf(
+      "ED encounters linked to hospital admission (hadm_id present)\\n(n=%s)",
+      fmt_n({consort_counts["ed_encounters_with_hadm"]})
+    )
+    ex_hadm_txt <- sprintf(
+      "Excluded (n=%s): no linked hadm_id",
+      fmt_n({consort_counts["excluded_no_hadm"]})
+    )
+    hypercap_txt <- sprintf(
+      "Meets hypercapnia evidence (ICD OR definitive blood-gas PCO2)\\n(n=%s)",
+      fmt_n({consort_counts["hypercap_evidence_rows"]})
+    )
+    ex_hypercap_txt <- sprintf(
+      "Excluded (n=%s): no qualifying ICD or blood-gas hypercapnia evidence",
+      fmt_n({consort_counts["excluded_no_hypercap_evidence"]})
+    )
+    cc_txt <- sprintf(
+      "ED chief complaint present (non-missing, non-pseudomissing)\\n(n=%s)",
+      fmt_n({consort_counts["chief_complaint_present_rows"]})
+    )
+    ex_cc_txt <- sprintf(
+      "Excluded (n=%s): missing/pseudo-missing ED chief complaint",
+      fmt_n({consort_counts["excluded_missing_or_pseudomissing_cc"]})
+    )
+    final_txt <- sprintf(
+      "Final study cohort exported (MIMICIV all with CC_with_NLP.xlsx)\\n(n=%s)",
+      fmt_n({consort_counts["final_study_rows"]})
+    )
+
+    options(txt_gp = grid::gpar(cex = 0.85))
+    consort_graph <- add_box(txt = entry_txt) |>
+      add_box(txt = hadm_txt) |>
+      add_side_box(txt = ex_hadm_txt) |>
+      add_box(txt = hypercap_txt) |>
+      add_side_box(txt = ex_hypercap_txt) |>
+      add_box(txt = cc_txt) |>
+      add_side_box(txt = ex_cc_txt) |>
+      add_box(txt = final_txt) |>
+      add_label_box(txt = c(
+        "1" = "Base MIMIC-IV ED population",
+        "3" = "Hypercapnia evidence requirement",
+        "5" = "Chief-complaint requirement and final cohort"
+      ))
+
+    grDevices::png("{consort_png_path.as_posix()}", width = 34, height = 22, units = "cm", res = 300, type = "cairo")
+    plot(consort_graph)
+    invisible(grDevices::dev.off())
+    """
+).strip()
+
+consort_render = subprocess.run(
+    ["Rscript", "-e", r_code],
+    capture_output=True,
+    text=True,
+)
+if consort_render.returncode != 0:
+    raise RuntimeError(
+        "CONSORT diagram rendering failed via Rscript.\n"
+        f"STDOUT:\n{consort_render.stdout}\n\nSTDERR:\n{consort_render.stderr}"
+    )
+
+print(f"Exported: {consort_png_path}")
+print(f"Exported: {consort_counts_path}")
+display(Image(filename=str(consort_png_path)))
+
+# R may emit a default graphics side artifact (Rplots.pdf) in the working
+# directory during scripted plotting. It is not part of pipeline outputs.
+rplots_seen: set[Path] = set()
+for rplots_path in (WORK_DIR / "Rplots.pdf", OUTPUT_DIR / "Rplots.pdf"):
+    resolved_path = rplots_path.expanduser().resolve()
+    if resolved_path in rplots_seen:
+        continue
+    rplots_seen.add(resolved_path)
+    if resolved_path.exists():
+        resolved_path.unlink()
+        print(f"Removed transient artifact: {resolved_path}")
 ```
 
 ## PDF-ready long tables
 
 ```{python}
 #| label: hypercap-cc-nlp-analysis-cell-009d
-#| results: asis
+#| output: asis
+#| echo: false
 print(
     render_latex_longtable(
         hypercap_prevalence.reset_index(),
@@ -1114,16 +1750,13 @@ else:
 
 ```{python}
 #| label: hypercap-cc-nlp-analysis-cell-012
+registered_excel_paths = [
+    Path(spec["path"])
+    for spec in analysis_export_registry.values()
+]
 expected_outputs = [
-    definition_output_path,
-    pivot_output_path,
-    gas_source_output_path,
-    gas_source_expanded_output_path,
-    icd_gas_output_path,
-    icd_subset_output_path,
-    icd_performance_output_path,
+    *registered_excel_paths,
     upset_output_path,
-    intersection_output_path,
 ]
 
 verification_rows = []
@@ -1138,6 +1771,7 @@ for output_path in expected_outputs:
 
 output_verification = pd.DataFrame(verification_rows)
 display(output_verification)
+display(pd.DataFrame(analysis_export_registry).T.reset_index(names="export_key"))
 ```
 
 ```{python}
@@ -1152,20 +1786,28 @@ analysis_manifest = collect_run_manifest(
     WORK_DIR,
     run_id=f"analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
 )
+
+
+def _manifest_relpath(path_value: object) -> str | None:
+    if path_value is None:
+        return None
+    path_obj = Path(path_value).expanduser()
+    if path_obj.is_absolute():
+        try:
+            return str(path_obj.resolve().relative_to(WORK_DIR.resolve()))
+        except ValueError:
+            return f"<external>/{path_obj.name}"
+    return str(path_obj)
+
+
 analysis_manifest["stage"] = "analysis"
-analysis_manifest["analysis_input_path"] = str(ANALYSIS_INPUT_PATH)
+analysis_manifest["analysis_input_path"] = _manifest_relpath(ANALYSIS_INPUT_PATH)
 analysis_manifest["outputs"] = {
-    "definition_output_path": str(definition_output_path),
-    "pivot_output_path": str(pivot_output_path),
-    "abg_vbg_overlap_output_path": str(gas_source_output_path),
-    "gas_source_overlap_output_path": str(gas_source_expanded_output_path),
-    "icd_gas_overlap_output_path": str(icd_gas_output_path),
-    "icd_subset_output_path": str(icd_subset_output_path),
-    "icd_performance_output_path": str(icd_performance_output_path),
-    "upset_output_path": str(upset_output_path),
-    "intersection_output_path": str(intersection_output_path),
+    "registered_excel_exports": analysis_export_registry,
+    "upset_output_path": _manifest_relpath(upset_output_path),
 }
 analysis_manifest["output_verification"] = verification_rows
+analysis_manifest = sanitize_manifest_payload(analysis_manifest, work_dir=WORK_DIR)
 analysis_manifest_path = prior_runs_dir / f"{run_date} analysis_run_manifest.json"
 analysis_manifest_path.write_text(json.dumps(analysis_manifest, indent=2))
 print(f"Wrote: {analysis_manifest_path}")

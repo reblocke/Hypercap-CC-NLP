@@ -33,6 +33,15 @@ def test_annotate_cc_missingness_labels_pseudo_and_true_missing() -> None:
         "true_missing",
     ]
     assert out["cc_missing_flag"].tolist() == [True, True, True, True, False, True, True]
+    assert out["chief_complaint_raw"].astype("string").fillna("<NA>").tolist() == [
+        "-",
+        "___",
+        "N",
+        "??",
+        "shortness of breath",
+        "",
+        "<NA>",
+    ]
     assert out["cc_text_for_nlp"].isna().tolist() == [True, True, True, True, False, True, True]
 
 

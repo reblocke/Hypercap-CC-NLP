@@ -1,4 +1,8 @@
-/Legacy Code
+/Legacy Code/*
+!/Legacy Code/MIMICIV_hypercap_EXT_cohort.ipynb
+!/Legacy Code/Hypercap CC NLP Classifier.ipynb
+!/Legacy Code/Rater Agreement Analysis.ipynb
+!/Legacy Code/Hypercap CC NLP Analysis.ipynb
 *.parquet
 /Annotation/Full Annotations
 /Annotation/Test Annotations
@@ -11,6 +15,12 @@ __pycache__/
 /.quarto/
 **/*.quarto_ipynb
 artifacts/reports/
+artifacts/archived_root_outputs/
 debug/pipeline_audit/
 debug/pipeline_parity/
 debug/contracts/
+debug/run_manifests/
+debug/versioning/
+debug/model_compare/
+hypercap_outputs_bundle_*/
+outputs*.zip

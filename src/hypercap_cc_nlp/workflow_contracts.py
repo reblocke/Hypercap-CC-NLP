@@ -15,7 +15,6 @@ CANONICAL_COHORT_FILENAME = "MIMICIV all with CC.xlsx"
 CANONICAL_NLP_FILENAME = "MIMICIV all with CC_with_NLP.xlsx"
 
 CLASSIFIER_TRANSITIONAL_ALIASES: dict[str, tuple[str, ...]] = {
-    "age": ("age_at_admit",),
     "hr": ("ed_first_hr_model", "ed_first_hr", "ed_triage_hr_model", "ed_triage_hr"),
     "rr": ("ed_first_rr_model", "ed_first_rr", "ed_triage_rr_model", "ed_triage_rr"),
     "sbp": ("ed_first_sbp_model", "ed_first_sbp", "ed_triage_sbp_model", "ed_triage_sbp"),
@@ -27,7 +26,6 @@ CLASSIFIER_TRANSITIONAL_ALIASES: dict[str, tuple[str, ...]] = {
         "ed_triage_o2sat_model",
         "ed_triage_o2sat",
     ),
-    "race": ("ed_race", "race_ed_raw", "hosp_race", "race_hosp_raw"),
 }
 
 

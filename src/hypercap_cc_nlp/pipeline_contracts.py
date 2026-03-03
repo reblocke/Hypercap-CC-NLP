@@ -557,77 +557,48 @@ def validate_cohort_contract(
                 }
             )
 
-    integrity_flag_columns = {
-        "time_integrity_any",
-        "hospital_los_negative_flag",
-        "admittime_before_ed_intime_flag",
-        "dischtime_before_admittime_flag",
-    }
-    missing_integrity_flags = sorted(integrity_flag_columns.difference(df.columns))
-    if missing_integrity_flags:
-        findings.append(
-            {
-                "severity": "warning",
-                "code": "missing_time_integrity_flags",
-                "message": (
-                    "Missing time-integrity diagnostic flags: "
-                    f"{missing_integrity_flags}"
-                ),
-            }
+    if {"time_integrity_any", "timing_usable_for_model"}.issubset(df.columns):
+        time_integrity_any = (
+            df["time_integrity_any"].fillna(False).astype(bool)
         )
-    if "time_integrity_any" in df.columns:
-        if "timing_usable_for_model" not in df.columns:
+        timing_usable = (
+            pd.to_numeric(df["timing_usable_for_model"], errors="coerce")
+            .fillna(0)
+            .astype(int)
+            .eq(1)
+        )
+        mismatch_n = int((timing_usable != (~time_integrity_any)).sum())
+        if mismatch_n > 0:
             findings.append(
                 {
-                    "severity": "warning",
-                    "code": "missing_timing_usable_for_model",
-                    "message": "time_integrity_any is present but timing_usable_for_model is missing.",
+                    "severity": "error",
+                    "code": "timing_usable_for_model_inconsistent",
+                    "message": (
+                        "timing_usable_for_model is inconsistent with time_integrity_any in "
+                        f"{mismatch_n} rows."
+                    ),
                 }
             )
-        else:
-            time_integrity_any = (
-                df["time_integrity_any"].fillna(False).astype(bool)
-            )
-            timing_usable = (
-                pd.to_numeric(df["timing_usable_for_model"], errors="coerce")
-                .fillna(0)
-                .astype(int)
-                .eq(1)
-            )
-            mismatch_n = int((timing_usable != (~time_integrity_any)).sum())
-            if mismatch_n > 0:
-                findings.append(
-                    {
-                        "severity": "error",
-                        "code": "timing_usable_for_model_inconsistent",
-                        "message": (
-                            "timing_usable_for_model is inconsistent with time_integrity_any in "
-                            f"{mismatch_n} rows."
-                        ),
-                    }
-                )
 
-    for model_col, raw_col, flag_col, code in (
+    for model_col, raw_col, code in (
         (
             "dt_first_imv_hours_model",
             "dt_first_imv_hours",
-            "imv_time_outside_window_flag",
             "dt_first_imv_hours_model_invalid",
         ),
         (
             "dt_first_niv_hours_model",
             "dt_first_niv_hours",
-            "niv_time_outside_window_flag",
             "dt_first_niv_hours_model_invalid",
         ),
     ):
-        if raw_col in df.columns and (model_col not in df.columns or flag_col not in df.columns):
+        if raw_col in df.columns and model_col not in df.columns:
             findings.append(
                 {
                     "severity": "error",
                     "code": "missing_vent_timing_model_columns",
                     "message": (
-                        f"{raw_col} is present but {model_col} or {flag_col} is missing."
+                        f"{raw_col} is present but {model_col} is missing."
                     ),
                 }
             )
@@ -704,11 +675,11 @@ def validate_cohort_contract(
         if missing_clean_columns:
             findings.append(
                 {
-                    "severity": "error",
-                    "code": "missing_ed_vitals_clean_columns",
+                    "severity": "warning",
+                    "code": "missing_ed_vitals_clean_columns_qc_only",
                     "message": (
-                        f"Raw ED vitals column '{raw_column}' is present but required cleaned columns are missing: "
-                        f"{missing_clean_columns}"
+                        f"Raw ED vitals column '{raw_column}' is present but cleaned helper columns are missing "
+                        f"(expected when QC-only export slimming is enabled): {missing_clean_columns}"
                     ),
                 }
             )
@@ -1098,7 +1069,6 @@ def validate_cohort_contract(
         ("lab_other_ph", "lab_other_ph_uom"),
         ("poc_abg_ph", "poc_abg_ph_uom"),
         ("poc_vbg_ph", "poc_vbg_ph_uom"),
-        ("poc_other_ph", "poc_other_ph_uom"),
     )
     for ph_column, ph_uom_column in ph_uom_pairs:
         if ph_column not in df.columns or ph_uom_column not in df.columns:

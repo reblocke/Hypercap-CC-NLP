@@ -1,10 +1,11 @@
 Goal (incl. success criteria):
-- Implement residual hardening ticket items 2A/2B/2D/2E after the any-time-gas refactor.
+- Fix post-refactor hardening issues (excluding gas-source ambiguity) from `outputs20260301_165841.zip`.
 - Success criteria:
-  - 2A: rendered docs no longer claim enrollment is limited to 24h; 24h is only a timing marker.
-  - 2B: gas-source diagnostics are exported as a keyed artifact and contracts validate artifact presence/shape (not main workbook columns).
-  - 2D: `hco3_band` is null whenever `first_hco3_qc_flag` is false, with contract enforcement.
-  - 2E: POC pCO2 QC uses broad plausibility + contamination heuristics so plausible itemids pass while clear contamination fails.
+  - `ed_first_*` vitals are cleaned to analysis-ready ranges (temp unit harmonization, pain parsing, strict bounds).
+  - Pseudo-missing ED chief complaints are excluded from CC export subset.
+  - QA summaries are scope-explicit (`ed_spine` vs `ed_cc`), with `qa_summary.json` aligned to exported CC workbook row count.
+  - Scope-specific pre/post-clean vitals outlier audits are emitted and post-clean `ed_cc` audit aligns with exported workbook.
+  - Run manifests avoid absolute paths and include dirty git patch metadata when repo is dirty.
 
 Constraints/Assumptions:
 - Core phase logic remains in the 4 `.qmd` notebooks.
@@ -20,16 +21,273 @@ Key decisions:
 - For 2B, keep main export lean; place gas-source diagnostic rates in separate artifact keyed by `ed_stay_id`.
 - For 2D, do not add extra cohort columns; QC-aware banding only.
 - For 2E, implement preferred recalibration (broad plausibility, PO2 contamination heuristic, sentinel/out-of-range tiered thresholds).
+- Do not broaden to heuristic/regex-only POC unknown classification; use manifest-driven deterministic itemids only.
+- Keep gas-source inference logic/thresholds unchanged for this ticket.
+- Standardize ED vitals for exports by mandatory overwrite of raw vitals with cleaned/model values (gas fields remain conditional overwrite policy).
 
 State:
 - Done: baseline any-time gas refactor and full pipeline run completed.
 - Done: mapped code locations for new ticket items 2A/2B/2D/2E.
 - Done: implemented 2A/2B/2D/2E in cohort notebook, contract checks, tests, and README.
 - Done: validation checks passed (`make lint`, `make test`, targeted pytest, `make quarto-cohort`, `make contracts-check STAGE=all`).
-- Now: prepare user handoff summary.
-- Next: optional full `make quarto-pipeline` rerun if requested.
+- Done: implemented POC UNKNOWN mirroring scaffolding and validation updates.
+- Done: targeted checks completed (`make lint`, targeted pytest, `make test`, `make quarto-cohort`, `make contracts-check STAGE=cohort`).
+- Done: structure/dependency audit confirmed Quarto pipeline is canonical and `src/` is required.
+- Done: timing/vent flags are QC-only in canonical exports, with QA artifacts intact and contract expectations aligned.
+- Done: safe-to-archive cleanup script added and executed; root generated outputs moved under `artifacts/archived_root_outputs/` while keeping `Chart Review Sample Calc.qmd`.
+- Done: dormant classifier fallback aliases removed and tests updated.
+- Done: implemented cohort vitals cleaner hardening (temp 25–45°C conversion, 50–115°F bounds, O2Sat 0–100, HR up to 300, robust pain parsing).
+- Done: implemented pseudo-missing CC exclusion helper and switched cohort CC inclusion masks to use it.
+- Done: added scope-specific pre/post vitals audits:
+  - `debug/audits/ed_spine/vitals_outlier_audit_raw_pre_clean.csv`
+  - `debug/audits/ed_spine/vitals_outlier_audit_clean_post_clean.csv`
+  - `debug/audits/ed_cc/vitals_outlier_audit_raw_pre_clean.csv`
+  - `debug/audits/ed_cc/vitals_outlier_audit_clean_post_clean.csv`
+- Done: added scoped QA summaries (`debug/qa/qa_summary_ed_spine.json`, `debug/qa/qa_summary_ed_cc.json`) and set canonical `qa_summary.json` to `ed_cc` scope.
+- Done: updated manifests for path portability:
+  - `collect_run_manifest` now stores `work_dir="."`, sanitizes absolute env path-like values, writes dirty diff patch under `debug/versioning/<run_id>_git_diff.patch`, and stores relative diff path/hash.
+  - stage run manifests are sanitized recursively before write.
+- Done: updated README and tests for new scope/audit behavior and path-sanitization expectations.
+- Done: expanded classifier core preprocessing helper comments/docstrings for non-coder readability and audited helper usage/duplication status.
+- Done: reorganized classifier `2B) Local helper functions` into domain-specific code blocks:
+  - path/schema helpers,
+  - chief-complaint missingness helpers,
+  - QA phrase/regression helpers,
+  - resource/contract helpers.
+- Done: removed non-production classifier probe/smoke cells used for design-time sanity previews:
+  - removed normalization smoke-test execution chunk,
+  - removed rule-coverage preview chunk,
+  - removed scoring sanity-check chunk,
+  - renumbered downstream section headers/chunk flow.
+- Done: updated notebook-contract tests to stop requiring removed probe/smoke marker strings.
+- Done: fixed rater set-similarity formula rendering in markdown table by removing pipe-delimited absolute-value syntax and using LaTeX-safe forms (`\lvert \cdot \rvert` with `$...$` delimiters).
+- Done: verified rater render succeeds after formula fix (`make quarto-rater`) and notebook contracts remain green.
+- Done: expanded comments/docstrings in `rater-agreement-analysis-cell-002` so each helper block and major helper function explains its purpose (join-key policy, I/O validation, label normalization, set metrics, binary metrics, and fail-fast assertions).
+- Done: validated helper-comment pass (`make lint`, `make test`, `make quarto-rater`).
+- Done: split `rater-agreement-analysis-cell-002` into domain-organized helper chunks (`002a`..`002g`) so helpers are grouped by purpose (shared constants, joins, validation, label processing, set metrics, binary/chance-corrected metrics, assertions).
+- Done: validated helper-chunk split (`make quarto-rater`, `make lint`, `make test`).
+- Done: updated rater notebook framing/title to explicitly reflect the two primary goals:
+  1) human inter-rater/adjudication agreement, and
+  2) adjudicated-human vs NLP benchmarking.
+- Done: validated title/rationale update by rerendering rater report (`make quarto-rater`).
+- Done: fixed rater join-audit LaTeX rendering defect in `render_latex_longtable` by using actual newlines in landscape wrappers (instead of escaped `\\n` literals).
+- Done: moved join/set/chance LaTeX table emission out of inline PDF rendering and into QA artifacts:
+  - `annotation_agreement_outputs_nlp/qa_tables/R3_vs_NLP_join_audit_table.tex`
+  - `annotation_agreement_outputs_nlp/qa_tables/R3_vs_NLP_set_summary_table.tex`
+  - `annotation_agreement_outputs_nlp/qa_tables/R3_vs_NLP_chance_summary_table.tex`
+- Done: validated rater changes with `make quarto-rater` and `uv run pytest -q tests/test_notebook_output_contracts.py` (12 passed).
+- Done: set `rater-agreement-analysis-cell-004b` to `include: false` so QA LaTeX table generation runs but does not print raw code/text into the rendered PDF.
+- Done: standardized stage-orientation section title across all 4 canonical pipeline notebooks by renaming to `Summary of functionality`.
+- Done: analysis stage now includes blood-gas timing-stratified symptom composition outputs for gas-positive encounters only, using non-overlapping timing strata from ED presentation:
+  - `<6h`, `6–24h`, `>24h`.
+- Done: new analysis artifacts added:
+  - `Symptom_Composition_by_Gas_Timing.xlsx`
+  - `Symptom_Composition_by_Gas_Timing_Stacked.png`
+  - `Top_Symptom_Group_Percentages_by_Gas_Timing_95CI.png`
+- Done: validated timing-stratified analysis addition:
+  - `make quarto-analysis` passed (`artifacts/reports/20260302_163644/Hypercap-CC-NLP-Analysis.pdf`),
+  - `uv run pytest -q tests/test_notebook_output_contracts.py` passed (`12 passed`).
+- Done: switched analysis PDF layout to landscape via Quarto `format.pdf.geometry` and verified render:
+  - output: `artifacts/reports/20260302_163840/Hypercap CC NLP Analysis.pdf`,
+  - page size now `792 x 612 pts (letter, landscape)`.
+- Done: added RFV-category overlap UpSet analysis for the whole cohort in `Hypercap CC NLP Analysis.qmd`:
+  - figure output: `RFV_Category_Overlap_UpSet.png`,
+  - intersections export: `RFV_Category_Overlap_Intersections.xlsx`.
+- Done: validated RFV UpSet addition:
+  - `make quarto-analysis` passed (`artifacts/reports/20260302_164049/Hypercap-CC-NLP-Analysis.pdf`),
+  - `uv run pytest -q tests/test_notebook_output_contracts.py` passed (`12 passed`).
+- Done: fixed analysis long-table rendering in section `1.15 PDF-ready long tables`:
+  - corrected notebook chunk option from `results: asis` to `output: asis`,
+  - set long-table chunk to `echo: false`,
+  - fixed landscape wrapper newlines in `render_latex_longtable`,
+  - sanitized LaTeX caption/label inputs (`%` and `_`) before `to_latex`.
+- Done: verified corrected table rendering with:
+  - `make quarto-analysis` passed (`artifacts/reports/20260302_164637/Hypercap-CC-NLP-Analysis.pdf`),
+  - copied latest render to canonical root PDF `Hypercap CC NLP Analysis.pdf`,
+  - `uv run pytest -q tests/test_notebook_output_contracts.py` passed (`12 passed`).
+- Done: updated `Chart Review Sample Calc.qmd` to estimate expected 95% CI width with `n=60` annotations using simulation under planning assumptions (`kappa_target` scenarios 0.70/0.75/0.80).
+- Validation:
+  - `make lint` passed.
+  - `quarto render "Chart Review Sample Calc.qmd"` currently fails at the notebook's package preflight due missing R packages (`presize`, `kappaSize`, `irr`) in local R environment.
+- Done: refactored `hypercap-cc-nlp-analysis-cell-002` into domain-organized helper chunks (`002a`..`002d`) with explicit usage-oriented helper docstrings/comments.
+- Done: screened analysis-helper definitions for usage after refactor; no definition-only unused helpers found.
+- Done: validated analysis helper refactor (`make lint`, `make test`, `make quarto-analysis`).
+- Done: strict dead-helper cleanup pass in cohort notebook removed definition-only unused helpers:
+  - removed `require_cols(...)`,
+  - removed `safe_merge(...)`.
+- Done: re-ran validation + pipeline after cleanup:
+  - `make lint`,
+  - `make test`,
+  - `COHORT_OTHER_RELATIVE_REDUCTION_MIN=0 make quarto-pipeline`,
+  - `make contracts-check STAGE=all` (warning-only status; no new failures).
+- Done: audited helper usage in the other pipeline notebooks (classifier/rater/analysis + chart-review) and found no definition-only unused helpers.
+- Validation:
+  - `make lint` passed.
+  - `make test` passed (`110 passed`).
+  - `COHORT_OTHER_RELATIVE_REDUCTION_MIN=0 make quarto-cohort` passed (render + export complete).
+  - `make contracts-check STAGE=cohort` passed with warning status (expected QC-only export warnings).
+- Now: analysis helper block is organized by function with per-helper usage guidance and no dead helpers.
+- Next: optional equivalent helper-organization pass for remaining monolithic helper blocks in other notebooks.
 
 Done:
+- Output packaging + diff cleanup (2026-03-01):
+  - Created fresh output bundle `outputs20260301_165841.zip` containing canonical workbooks, stage PDFs, analysis exports, dated prior-run diagnostics (`2026-03-01*`), latest contract report (`debug/contracts/20260302_014548/`), QA summary, and gas-source diagnostics artifact.
+  - Verified archive integrity (`unzip -t` passed).
+  - Reverted generated/report artifact diffs so source changes are isolated.
+  - Current git working set is code/docs/tests/ledger only plus the new zip artifact.
+- Quarto pipeline refactor hardening (2026-03-01 → 2026-03-02):
+  - Added stage-contract header blocks to all 4 canonical pipeline notebooks.
+  - `MIMICIV_hypercap_EXT_cohort.qmd`:
+    - centralized run-date/run-timestamp/archive path config at notebook bootstrap,
+    - removed major branchy "reuse globals/in-memory" ED extraction path in favor of deterministic SQL/chunked ED first-vitals pulls,
+    - standardized prior-run artifact writes to `PRIOR_RUNS_DIR`,
+    - reduced globals-based branching in key hadm assembly and QA blocks.
+  - `Hypercap CC NLP Analysis.qmd`:
+    - fixed ICD category labeling strings to align with hypercapnia ICD code semantics,
+    - introduced explicit `analysis_export_registry` + `write_excel_export(...)` for centralized export contract writing/manifesting.
+  - `Chart Review Sample Calc.qmd`:
+    - removed runtime `install.packages(...)`,
+    - added fail-fast `requireNamespace` preflight with explicit install guidance.
+  - README/tests updated:
+    - documented `COHORT_DEBUG_INVENTORY` env behavior and chart-review package policy,
+    - expanded notebook contract tests for analysis export registry and chart-review install guard.
+  - Validation:
+    - `make lint` passed.
+    - `make test` passed (`109 passed`).
+    - `COHORT_OTHER_RELATIVE_REDUCTION_MIN=0 make quarto-cohort` passed.
+    - `COHORT_OTHER_RELATIVE_REDUCTION_MIN=0 make quarto-pipeline` passed.
+    - `make contracts-check STAGE=all` passed with warning status only (expected QC-only vitals-clean-column warnings).
+    - `make quarto-pipeline-audit BASELINE=latest` was started but terminated (SIGTERM) after a long-running audit subprocess.
+- Classifier scoring simplification (2026-03-01):
+  - Removed optional LME/LSE pooling configuration and branches from `Hypercap CC NLP Classifier.qmd`.
+  - Restored parsimonious max-only prototype scoring:
+    - `ClassifierConfig` now uses `scoring_method=\"max\"` + `abstain_threshold`.
+    - `group_scores_from_proto_row(...)` now computes max cosine only.
+    - `classify_segments_cached(...)` uses max score directly for abstention and exported `sim`.
+  - Removed now-superfluous LME-specific sanity assertions; retained max-scoring smoke check.
+  - Updated run-time scoring print and run-manifest `scoring_config` payload to max-only fields.
+  - Updated notebook output contract expectations in `tests/test_notebook_output_contracts.py` to max-only scoring markers.
+  - Validation:
+    - `make lint` passed.
+    - `uv run pytest -q tests/test_notebook_output_contracts.py tests/test_classifier_quality.py` passed (`19 passed`).
+    - `make quarto-classifier` passed and rendered `artifacts/reports/20260301_130947/Hypercap-CC-NLP-Classifier.pdf`.
+- MAX vs LME A/B comparison execution (2026-03-01):
+  - Created comparison workspace: `debug/model_compare/20260301_124613/` with `run_context.json`.
+  - Ran MAX branch:
+    - `WRITE_ARCHIVE_XLSX_EXPORTS=1 REPORT_RUN_ID=cmp_20260301_124613_max make quarto-classifier`
+    - `REPORT_RUN_ID=cmp_20260301_124613_max make quarto-rater`
+    - Snapshotted outputs to `debug/model_compare/20260301_124613/max/`.
+  - Ran LME branch:
+    - temporarily set `GROUP_SCORE_METHOD=\"lme\"` in classifier notebook
+    - `WRITE_ARCHIVE_XLSX_EXPORTS=1 REPORT_RUN_ID=cmp_20260301_124613_lme make quarto-classifier`
+    - `REPORT_RUN_ID=cmp_20260301_124613_lme make quarto-rater`
+    - Snapshotted outputs to `debug/model_compare/20260301_124613/lme/`.
+  - Built comparison + review artifacts:
+    - `debug/model_compare/20260301_124613/lme_vs_max_metrics.csv`
+    - `debug/model_compare/20260301_124613/lme_vs_max_summary.md`
+    - `debug/model_compare/20260301_124613/manual_review_sample_80.csv`
+    - `debug/model_compare/20260301_124613/manual_review_summary.md`
+    - `debug/model_compare/20260301_124613/promotion_decision.json`
+    - `debug/model_compare/20260301_124613/promotion_rationale.md`
+  - Promotion result: `promote_lme=false`; key deltas favored MAX (`micro_f1_set 0.853801 > 0.842105`, `mean_f1_set 0.835363 > 0.827166`).
+  - Restored classifier default to `GROUP_SCORE_METHOD=\"max\"`.
+  - Final validation rerun completed:
+    - `make lint`
+    - `make test` (`108 passed`)
+    - `REPORT_RUN_ID=cmp_20260301_124613_final make quarto-classifier`
+    - `REPORT_RUN_ID=cmp_20260301_124613_final make quarto-rater`
+- Prototype scoring pooling upgrade (2026-03-01):
+  - Added explicit scoring constants in `Hypercap CC NLP Classifier.qmd`:
+    - `GROUP_SCORE_METHOD`, `LME_TAU`, `LME_TOP_K`, `ABSTAIN_METRIC`, `ABSTAIN_THRESHOLD`.
+  - Updated `ClassifierConfig` to carry the new scoring controls (`group_score_method`, `lme_tau`, `lme_top_k`, `abstain_metric`, `abstain_threshold`).
+  - Implemented `score_prototype_group(...)` helper with:
+    - legacy `max` pooling,
+    - `lme` pooling (`tau * [logsumexp(sims/tau) - log(n)]`),
+    - `lse` alias behavior,
+    - optional `top_k` restriction.
+  - Refactored segment scoring path:
+    - group ranking now uses configurable pooled score,
+    - `SegPred.sim` remains max cosine for interpretability/backward compatibility,
+    - abstention now uses `ABSTAIN_METRIC` (`max` default).
+  - Added deterministic synthetic QA cell `_scoring_sanity_check()` in classifier notebook.
+  - Added scoring config print at runtime and recorded `scoring_config` in classifier run manifest JSON.
+  - Updated notebook contract checks in `tests/test_notebook_output_contracts.py` for new scoring config/helper markers.
+  - Caching note: classifier segment cache is runtime/in-memory only; no persistent cache key changes were required.
+  - Validation:
+    - `make lint` passed.
+    - `make test` passed (`108 passed`).
+    - `make quarto-classifier` passed and rendered `artifacts/reports/20260301_123450/Hypercap-CC-NLP-Classifier.pdf`.
+- Guarded spell-correction + phrase-protection hardening (2026-03-01):
+  - Updated classifier normalization constants in `Hypercap CC NLP Classifier.qmd`:
+    - `SymSpell(max_dictionary_edit_distance=1)` for strict, conservative correction.
+    - Added denylist pair `("black", "back")`.
+    - Added `TOK_OVR` token-level expansions for `trach`, `mvc`, `mva`.
+    - Expanded `SPELL_PROTECT_PHRASES` and added `LEMMA_PROTECT_PHRASES`.
+  - Updated `normalize_cc(...)` flow to use separate `skip_spellfix` and `skip_lemma` guards by phrase set.
+  - Added regression smoke-test chunk `_normalization_guardrail_smoke_tests()` in classifier notebook.
+  - Updated notebook output contract test expectations in `tests/test_notebook_output_contracts.py` (including SymSpell distance and new guardrail markers).
+  - Validation:
+    - `make lint` passed.
+    - `uv run pytest -q tests/test_notebook_output_contracts.py tests/test_classifier_quality.py` passed (`19 passed`).
+    - `make quarto-classifier` passed and rendered `artifacts/reports/20260301_105544/Hypercap-CC-NLP-Classifier.pdf`.
+    - `make test` passed (`108 passed`).
+- Chief-complaint raw text naming clarification + export update (2026-02-28):
+  - Confirmed current export behavior:
+    - Canonical cohort workbook does not export ED chief complaint text.
+    - NLP workbook exports `cc_text_for_nlp` (NLP-input field with pseudo/true-missing rows nulled).
+  - Implemented explicit raw-text export column `chief_complaint_raw` in classifier stage while preserving `cc_text_for_nlp`.
+  - Updated both classifier implementations (`Hypercap CC NLP Classifier.qmd` and `src/hypercap_cc_nlp/classifier_quality.py`) so `annotate_cc_missingness(...)` emits both fields.
+  - Updated README classifier missingness policy text to document `chief_complaint_raw`.
+  - Added/updated test coverage in `tests/test_classifier_quality.py` for `chief_complaint_raw`.
+  - Validation passed:
+    - `make lint`
+    - `uv run pytest -q tests/test_classifier_quality.py`
+    - `make quarto-classifier`
+  - Post-render verification:
+    - `MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx` now contains both `chief_complaint_raw` and `cc_text_for_nlp`.
+- Repository structure audit:
+  - Confirmed canonical workflow entrypoint is `make quarto-pipeline` (4 stage `.qmd` notebooks) and that notebook compatibility targets are separate.
+  - Confirmed all 4 main `.qmd` notebooks import `hypercap_cc_nlp` modules from `src/` for contracts/manifests/audit functions; `src/` is therefore required for current recommended workflow.
+  - Collected top-level root file inventory and categorized generated artifacts vs execution-critical files.
+- Documentation improvements (pipeline `.qmd`):
+  - Added plain-language “non-coder guide” sections to:
+    - `MIMICIV_hypercap_EXT_cohort.qmd`
+    - `Hypercap CC NLP Classifier.qmd`
+    - `Rater Agreement Analysis.qmd`
+    - `Hypercap CC NLP Analysis.qmd`
+  - Added explanatory docstrings/comments to key helper functions in `Hypercap CC NLP Analysis.qmd`.
+- Legacy `.ipynb` relocation:
+  - Moved stage notebooks from repo root to `Legacy Code/`:
+    - `MIMICIV_hypercap_EXT_cohort.ipynb`
+    - `Hypercap CC NLP Classifier.ipynb`
+    - `Rater Agreement Analysis.ipynb`
+    - `Hypercap CC NLP Analysis.ipynb`
+  - Updated `Makefile` `notebook-*` targets to execute notebooks from `Legacy Code/`.
+  - Updated `.gitignore` to keep `Legacy Code/` generally ignored but explicitly allow tracking the 4 stage `.ipynb` files.
+  - Updated `README.md` compatibility note and repository tree to reflect new notebook location.
+  - Updated run metadata field in `MIMICIV_hypercap_EXT_cohort.qmd` from `.ipynb` to `.qmd`.
+  - Updated `scripts/convert_ipynb_to_qmd.py` source paths to `Legacy Code/...`.
+  - Validation: `make lint` passed; `uv run pytest -q tests/test_notebook_output_contracts.py` passed.
+- Legacy notebook workflow verification:
+  - `Makefile` still defines `make notebook-*` compatibility targets that execute root-level `.ipynb` files.
+  - `README.md` explicitly states root-level `.ipynb` files are intentionally preserved for compatibility.
+  - `src/hypercap_cc_nlp/pipeline_audit.py` invokes `make notebook-*` targets (indirect dependency, not hardcoded paths).
+- Installation-instructions consistency check:
+  - Compared notebook header prerequisites in `MIMICIV_hypercap_EXT_cohort.qmd` with `README.md` quick-start/setup sections.
+  - Result: cohort notebook setup is broadly consistent with README for BigQuery cohort execution; README intentionally includes additional global requirements (spaCy model, Quarto/TinyTeX, full 4-stage pipeline) not required to execute cohort logic interactively.
+- Follow-up investigation (POC unknown columns):
+  - Canonical workbook confirms `poc_other_*` are all-null while `poc_abg_*` and `poc_vbg_*` are populated.
+  - Latest `icu_poc_itemid_map.csv` / `icu_poc_itemid_usage.csv` include only typed POC pCO2 itemids (`220235` arterial, `226062` venous).
+  - Manifest config has `icu.specimen_type_itemids=[]` and `allow_pattern_fallback=false`, so there is no active alternate path to classify POC pCO2 as unknown.
+  - Interpretation: under current configuration, POC unknown-site fields are structurally empty; this does not prove MIMIC has zero possible unknown-site POC rows globally.
+- POC UNKNOWN mirroring implementation:
+  - Added manifest key `icu.pco2_unknown_itemids` (default empty) and bumped manifest version to `2026-02-27.1`.
+  - Updated manifest loader to parse/validate unknown itemids as subset of ICU pCO2 allowlist and disjoint from ABG/VBG lists.
+  - Added explicit unknown-itemid branches in ICU SQL (`co2_thresholds_sql`) and panel-level site assignment.
+  - Updated POC QC sample-type hinting to label unknown itemids as `UNKNOWN`.
+  - README and notebook-output contract test updated for the new manifest key/semantics.
+- External data check:
+  - Queried `physionet-data.mimiciv_3_1_icu.d_items` for pCO2-like labels; only typed measurement itemids (`220235`, `226062`) plus non-measurement Apache item (`227036`) were found.
 - 2A docs alignment:
   - Cohort notebook goal text now states enrollment is any-time definitive blood-gas hypercapnia with a separate ≤24h marker.
 - 2B preferred fix (separate diagnostics artifact):
@@ -79,27 +337,309 @@ Done:
 - Output packaging:
   - Created `outputs20260226_152416.zip` with PDFs, canonical workbooks, analysis exports, `annotation_agreement_outputs_nlp/`, dated `prior runs` artifacts, contract reports, and run-manifest diffs.
   - Archive integrity check passed (`unzip -t` no errors).
+- Setup drift remediation (doc-only):
+  - Updated `MIMICIV_hypercap_EXT_cohort.qmd` environment bootstrap section to:
+    - explicitly reference `README.md` as setup source of truth for Quarto-first workflow,
+    - include explicit `uv sync`,
+    - replace direct `.env` creation phrasing with `.env.example` copy workflow,
+    - remove macOS-specific `brew install` guidance from quickstart and use platform-neutral gcloud install note.
+  - Validation:
+    - `make lint` passed.
+    - `uv run pytest -q tests/test_notebook_output_contracts.py` passed (`11 passed`).
+- Duplicate-column consolidation:
+  - Updated cohort export canonicalization in `MIMICIV_hypercap_EXT_cohort.qmd`:
+    - Added canonical demographic coalescing in final export stage (`gender`, `age`, `race`).
+    - Removed duplicate aliases from final export: `ed_gender`, `ed_race`, `ed_intime_first`, `age_at_admit`, `first_gas_time`, `dt_first_qualifying_gas_hours`, `lab_other_*`, `hospital_expire_flag`.
+    - Removed generation of `dt_first_qualifying_gas_hours` alias; retained canonical `dt_qualifying_hypercapnia_hours`.
+    - Updated target field registry and metadata derivations to canonical names.
+  - Downstream dependency audit across `.qmd` files:
+    - No active downstream dependence on removed duplicate columns.
+    - Classifier keeps backward-compat alias mapping, but canonical cohort output now already supplies `age` and `race`, so duplicate-creating fallbacks are not exercised in normal pipeline flow.
+  - Validation:
+    - `make lint` passed.
+    - `make test` passed (`108 passed`).
+    - `COHORT_OTHER_RELATIVE_REDUCTION_MIN=0 make quarto-cohort` passed.
+    - `make quarto-classifier` passed.
+    - `make quarto-analysis` passed.
+    - Post-run workbook checks confirm canonical columns present and duplicate aliases absent in both:
+      - `MIMIC tabular data/MIMICIV all with CC.xlsx`
+      - `MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx`
+  - Contract test hardening:
+    - Updated `tests/test_notebook_output_contracts.py` to assert duplicate alias columns are explicitly listed in `cohort_export_drop_columns`.
+    - Re-ran `make lint`, `uv run pytest -q tests/test_notebook_output_contracts.py`, and `make test` after test updates; all passed.
+- Timing/vent QC-only export cleanup:
+  - Added the following columns to cohort export drop list so they are QC-only:
+    - `hospital_los_negative_flag`
+    - `admittime_before_ed_intime_flag`
+    - `dischtime_before_admittime_flag`
+    - `time_integrity_any`
+    - `timing_usable_for_model`
+    - `imv_time_outside_window_flag`
+    - `niv_time_outside_window_flag`
+  - Updated analysis QC metric fallback in `Hypercap CC NLP Analysis.qmd` to compute `timing_usable_for_model_rate` from `qa_summary`/`timing_integrity_audit` first, with dataframe fallback only if needed.
+  - Relaxed contract requirements in `src/hypercap_cc_nlp/pipeline_contracts.py`:
+    - no warning when timing integrity flags are absent from main export,
+    - consistency check runs only when both `time_integrity_any` and `timing_usable_for_model` are present,
+    - vent timing model columns are required only when raw dt columns are present (outside-window flags now optional for main export).
+  - Updated tests/docs:
+    - `tests/test_pipeline_contracts.py` updated for QC-only missing timing flags behavior.
+    - `tests/test_notebook_output_contracts.py` now emphasizes timing/vent audit artifacts.
+    - `README.md` updated to document timing/vent row-level flags as QC-only.
+  - Verification:
+    - `make lint` passed.
+    - `make test` passed (`108 passed`).
+    - `COHORT_OTHER_RELATIVE_REDUCTION_MIN=0 make quarto-cohort` passed.
+    - `make contracts-check STAGE=all` passed.
+    - Canonical workbooks no longer contain the 7 timing/vent columns; QA artifacts retain counts/paths.
+- Requested cleanup pass (top-level + dormant aliases):
+  - Added `scripts/archive_root_generated_outputs.py` and executed it to move non-input root-level generated outputs (stage PDFs and analysis spreadsheets/charts) into `artifacts/archived_root_outputs/<timestamp>/`.
+  - Updated `.gitignore` to ignore `artifacts/archived_root_outputs/`.
+  - Kept `Chart Review Sample Calc.qmd` in repo root as requested.
+  - Removed dormant classifier alias fallbacks in both canonical locations:
+    - `Hypercap CC NLP Classifier.qmd`
+    - `src/hypercap_cc_nlp/workflow_contracts.py`
+    - Removed `age_at_admit` and legacy race-source fallbacks from `CLASSIFIER_TRANSITIONAL_ALIASES` (vital-sign alias fallbacks retained).
+  - Updated `tests/test_workflow_contracts.py` and README alias note accordingly.
+  - Verification:
+    - `make lint` passed.
+    - `make test` passed (`108 passed`).
+    - `make quarto-classifier` passed.
+- Re-verification after reconnect request:
+  - Confirmed both canonical workbooks do not include the 7 QC-only timing/vent columns.
+  - Confirmed `qa_summary.json` still includes `timing_integrity_audit` and `ventilation_timing_audit` payloads/paths.
+  - Confirmed root generated outputs are archived under `artifacts/archived_root_outputs/` and `Chart Review Sample Calc.qmd` remains at repo root.
+- Full pipeline rerun + packaging (2026-02-27):
+  - Ran `make quarto-pipeline` start-to-finish successfully (`artifacts/reports/20260227_125531/`).
+  - Created `outputs20260227_131856.zip` containing 78 run outputs (canonical datasets, stage PDFs, analysis workbooks/figure, QA summary, dated prior-run diagnostics, run manifests, contract reports, and rater artifacts).
+  - Verified required files exist inside zip (`MIMIC tabular data/MIMICIV all with CC.xlsx`, `MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx`, all 4 stage PDFs, `qa_summary.json`).
+- Column simplification pass (2026-02-27):
+  - Added model-overwrite logic in `MIMICIV_hypercap_EXT_cohort.qmd`:
+    - overwrite canonical columns with `*_model` when changed-rate <=5%,
+    - emit `MIMIC tabular data/prior runs/YYYY-MM-DD model_overwrite_audit.csv`.
+  - Moved requested vitals/gas helper and outlier/model columns to QC-only export drop list.
+  - Updated analysis vitals-quality fallback in `Hypercap CC NLP Analysis.qmd` to use canonical columns.
+  - Updated contract behavior to treat missing cleaned helper columns as QC-only warning (`missing_ed_vitals_clean_columns_qc_only`) rather than hard failure.
+  - Updated tests (`tests/test_notebook_output_contracts.py`, `tests/test_pipeline_contracts.py`) for new semantics.
+  - Validation:
+    - `make lint` passed.
+    - `uv run pytest -q tests/test_pipeline_contracts.py tests/test_notebook_output_contracts.py` passed (`42 passed`).
+    - `COHORT_OTHER_RELATIVE_REDUCTION_MIN=0 make quarto-cohort` passed.
+    - `make quarto-classifier && make quarto-analysis` passed.
+    - `make contracts-check STAGE=all` passed with warning status (expected QC-only missing-clean-columns warnings).
+  - Post-run verification:
+    - all 66 user-listed columns are absent from both canonical workbooks.
+    - overwrite audit shows max changed-rate 4.70% (`ed_triage_pain`), all overwrite-eligible under 5% rule.
+- OSA/OHS ED-vs-hospital flag investigation (2026-02-27):
+  - Confirmed OSA/OHS ICD matching logic in both ED and hospital paths is ICD10-prefix only:
+    - `STARTS_WITH(code_norm, "G473") OR STARTS_WITH(code_norm, "E662")`
+    - `code_norm` = uppercase ICD code with periods removed.
+  - Verified latest workbook counts:
+    - `flag_osa_ohs_ed = 0`
+    - `flag_osa_ohs_hosp = 1454`
+    - `flag_osa_ohs = 1454` (all positives originate from hospital coding).
+  - Verified ED ICD extraction is otherwise working (other ED flags non-zero, e.g., COPD/CHF/pneumonia).
+- `hospital_expire_flag` vs `in_hospital_death` clarification (2026-02-27):
+  - `hospital_expire_flag` is sourced from `hosp.admissions`.
+  - Exported `in_hospital_death` is derived as robust OR:
+    - `(hospital_expire_flag == 1) OR (deathtime is not null)`.
+  - `hospital_expire_flag` is intentionally dropped from final workbooks; `in_hospital_death` is the canonical retained field.
+  - Current canonical workbook check confirms:
+    - `hospital_expire_flag` absent,
+    - `in_hospital_death` present.
+- Install instruction consistency check (2026-02-27):
+  - Re-reviewed cohort notebook bootstrap instructions against README quick-start/setup.
+  - Confirmed guidance is consistent for intended Quarto-first use.
+  - Applied one wording fix in cohort notebook assumptions to reference `README.md` + `.env.example` workflow instead of “previous notebook”.
+  - Re-check confirmed no remaining material drift between cohort notebook header setup and README quick-start.
+- Classifier hardening fixes 1–4 finalized (2026-02-28):
+  - Fixed phrase guardrail helper to use `normalize_cc` tuple API correctly.
+  - Expanded digestive rule regex to capture `upper gi bleed` / `gi bleed` phrases.
+  - Added/retained neuro-bleed deterministic routing, femer guardrails, and bleed-truncation safety checks.
+  - Added phrase guardrail artifact output and validated all sentinel phrase cases pass.
+  - Validation passed:
+    - `make lint`
+    - `uv run pytest -q tests/test_notebook_output_contracts.py tests/test_classifier_quality.py`
+    - `make quarto-classifier`
+- Superfluous-code cleanup pass implemented across Quarto pipeline (2026-03-01):
+  - Cohort notebook:
+    - Removed deprecated POC QA alias fields/variables from canonical QA payload and audits (`poc_itemid_qc_passed`, `poc_hypercap_0_24h_edstay_*`, alias metadata).
+    - Kept canonical POC QC and contribution metrics only (`poc_itemid_qc_status`, `poc_itemid_qc_reason`, `poc_itemid_qc_blocking_passed`, `poc_qualifying_*`).
+  - Classifier notebook:
+    - Removed transitional schema-alias scaffolding from canonical Quarto stage (no in-notebook alias backfills).
+  - Analysis notebook:
+    - Removed deprecated POC alias rows from QC summary table.
+  - Documentation/tests:
+    - Updated README to reflect canonical-only POC QA semantics and removed transitional-alias note.
+    - Updated notebook output contract tests for canonical keys.
+  - Validation passed:
+    - `make lint`
+    - `make test`
+    - `COHORT_OTHER_RELATIVE_REDUCTION_MIN=0 make quarto-cohort`
+    - `make quarto-classifier` (one transient HF model download client error on first attempt; rerun succeeded)
+    - `make quarto-analysis`
+    - `make quarto-rater`
+    - `make contracts-check STAGE=all` (warning-only status; expected QC-only vitals-clean-column warnings)
+  - Post-disconnect continuation completed:
+    - resumed interrupted render and completed all stage renders successfully.
+    - re-ran tests after final `poc_itemid_qc_reason` canonical-key restoration.
+- Full pipeline rerun + packaging completed (2026-03-01):
+  - Ran full Quarto pipeline end-to-end with current cleanup state:
+    - `COHORT_OTHER_RELATIVE_REDUCTION_MIN=0 make quarto-pipeline`
+  - Re-ran contracts:
+    - `make contracts-check STAGE=all`
+    - latest report: `debug/contracts/20260301_063355/contract_report.json` (status `warning`, expected QC-only vitals-clean-column warnings).
+  - Created output bundle:
+    - `outputs20260228_203426.zip`
+    - includes canonical workbooks, all 4 stage PDFs, analysis exports, dated `prior runs` diagnostics (2026-02-28*), rater outputs, gas-source diagnostics artifact, and latest contract report.
+  - Zip integrity verified with `unzip -t` (no errors).
+- POC unknown-site null-column cleanup (2026-03-02):
+  - Confirmed canonical cohort workbook had all-null `poc_other_*` detail columns and `first_other_src` values were `LAB_BG_UNKNOWN` only (no `POC_BG_UNKNOWN` rows).
+  - Root cause confirmed in manifest/config: `specs/blood_gas_itemids.json` currently has `icu.pco2_unknown_itemids=[]`, so no POC unknown-site itemids are configured.
+  - Implemented export/schema cleanup:
+    - dropped `poc_other_ph`, `poc_other_ph_uom`, `poc_other_paco2`, `poc_other_paco2_uom`, `poc_other_time` (and `poc_other_po2`) from canonical export surface.
+    - added notebook guard to drop POC unknown detail columns immediately after BG pair flattening when ICU unknown itemids are not configured.
+    - removed now-superfluous POC unknown pCO2/uom and pH structural-null checks from `src/hypercap_cc_nlp/cohort_quality.py` and matching tests.
+    - removed `poc_other_ph`/`poc_other_ph_uom` pair from contract pH-uom checks.
+    - updated README blood-gas manifest section to state POC unknown detail columns are omitted when unknown itemids are empty.
+  - Validation:
+    - `make lint` passed.
+    - `make test` passed (`110 passed`).
+    - `COHORT_OTHER_RELATIVE_REDUCTION_MIN=0 make quarto-cohort` passed.
+    - `make contracts-check STAGE=cohort` passed with warning status (expected QC-only vitals-clean-column warnings).
+    - Post-run workbook check: all `poc_other_*` columns absent from `MIMIC tabular data/MIMICIV all with CC.xlsx`; `first_other_src` remains `LAB_BG_UNKNOWN`/null only.
+- Full pipeline rerun completed (2026-03-02):
+  - Executed `COHORT_OTHER_RELATIVE_REDUCTION_MIN=0 make quarto-pipeline`.
+  - All 4 stage renders completed successfully and wrote fresh PDFs to:
+    - `artifacts/reports/20260302_130409/`.
+  - Canonical root PDFs refreshed:
+    - `MIMICIV_hypercap_EXT_cohort.pdf`
+    - `Hypercap CC NLP Classifier.pdf`
+    - `Rater Agreement Analysis.pdf`
+    - `Hypercap CC NLP Analysis.pdf`
+  - Canonical workbooks refreshed:
+    - `MIMIC tabular data/MIMICIV all with CC.xlsx`
+    - `MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx`
+- Cohort bootstrap comment pass (2026-03-02):
+  - Added inline/grouped explanatory comments for environment/path constants, anthropometric configuration constants, regex helpers, blood-gas manifest parsing/validation blocks, and SQL-array/QC constants in `MIMICIV_hypercap_EXT_cohort.qmd` cell `mimiciv-hypercap-ext-cohort-cell-002`.
+  - Validation:
+    - `make lint` passed.
+    - `uv run pytest -q tests/test_notebook_output_contracts.py` passed (`12 passed`).
+- Workflow clarification (2026-03-02):
+  - Confirmed `Create Annotation Dataset` section is optional archive/export logic for manual annotation subsets (`df_cc`, `df_cc_sample`) and does not control core pipeline inclusion.
+  - Confirmed main production path continues into ED-stay expansion (`ed_df`) and then builds canonical workbook via `final_cc = df_cc.merge(ed_first, ...)`.
+- Removed non-core annotation export block + equivalence verification (2026-03-02):
+  - Deleted `Create Annotation Dataset` section (cell `mimiciv-hypercap-ext-cohort-cell-023`) from `MIMICIV_hypercap_EXT_cohort.qmd`, including optional archive outputs:
+    - `mimic_hypercap_EXT_EDcc_only_bq_abg_vbg`
+    - `mimic_hypercap_EXT_EDcc_sample{n}_bq_abg_vbg`
+  - Reran full pipeline:
+    - `COHORT_OTHER_RELATIVE_REDUCTION_MIN=0 make quarto-pipeline`
+    - reports output dir: `artifacts/reports/20260302_151353/`
+  - Verified post-change equivalence using deterministic DataFrame fingerprints and shape checks:
+    - `MIMIC tabular data/MIMICIV all with CC.xlsx`: unchanged
+    - `MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx`: unchanged
+  - Verified ED fields preserved in final NLP export (`ed_triage_cc`, `ed_first_hr`, `ed_first_temp`, `ed_first_o2sat`, `ed_outtime`, `ed_intime`, `disposition_ed`) with unchanged non-null counts.
+  - Verified ED-only qualifiers remain included with unchanged counts:
+    - `ed_gas_only_first_qualifying_in_ed_n = 1142`
+    - `ed_icd_only_n = 6`
+  - Comparison artifacts written:
+    - `debug/pipeline_compare/pre_remove_annotation_block_snapshot.json`
+    - `debug/pipeline_compare/post_remove_annotation_block_comparison.json`
+- Classifier preprocessing documentation pass (2026-03-02):
+  - Added explanatory docstrings/inline comments in `Hypercap CC NLP Classifier.qmd` under `# --- Core text preprocessing helpers. ---` for:
+    - token cleaning, spell guardrails, spell candidate lookup/mode dispatch,
+    - clinical split heuristics, duration expansion, safe lemmatization,
+    - staged normalization flow (expand -> guarded spellfix -> lemma).
+  - No behavior changes.
+  - Validation:
+    - `make lint` passed.
+    - `uv run pytest -q tests/test_notebook_output_contracts.py` passed (`12 passed`).
 
 Now:
-- Summarize implementation and verification for user.
+- Post-refactor hardening ticket (issues #1, #2, #3, #4, #6; excluding gas-source ambiguity) plus POC unknown null-column cleanup are implemented and validated.
+- Applied schema rename request: `disposition` -> `disposition_ed` in cohort extraction/registry.
+- Re-rendered cohort stage and confirmed canonical workbook now contains `disposition_ed` and no `disposition`.
+- Production-only pruning pass completed across the other three pipeline notebooks (cohort, rater, analysis):
+  - removed probe/preview-only `head()/display()/print()` blocks that do not feed exports/contracts,
+  - retained report tables and required artifact writers.
+- Post-pruning validation completed:
+  - `make lint` passed,
+  - `make test` passed (`110 passed`),
+  - `COHORT_OTHER_RELATIVE_REDUCTION_MIN=0 make quarto-pipeline` passed,
+  - `make contracts-check STAGE=all` passed with warning-only status (expected QC-only export slimming warnings).
+- CONSORT enrollment flow generation is now embedded directly in `Hypercap CC NLP Analysis.qmd` (no external script dependency):
+  - new chunk: `hypercap-cc-nlp-analysis-cell-009c3`,
+  - outputs:
+    - `artifacts/consort/CONSORT_Enrollment_Flow.png`,
+    - `artifacts/consort/CONSORT_Enrollment_Flow_Counts.csv`.
+- Removed standalone script `scripts/render_consort_enrollment_flow.R` to satisfy notebook-embedded core logic policy.
+- Validation:
+  - `make lint` passed,
+  - `make quarto-analysis` passed (`artifacts/reports/20260302_165543/Hypercap-CC-NLP-Analysis.pdf`),
+  - `uv run pytest -q tests/test_notebook_output_contracts.py` passed (`12 passed`).
+- Full pipeline rerun completed for trainee-share packaging:
+  - `COHORT_OTHER_RELATIVE_REDUCTION_MIN=0 REPORT_RUN_ID=share_20260302_165739 make quarto-pipeline`
+  - reports output dir: `artifacts/reports/20260302_165739/`
+- Full contracts check completed post-rerun:
+  - `make contracts-check STAGE=all`
+  - latest report: `debug/contracts/20260303_031446/contract_report.json` (warning-only; expected QC-only export slimming warnings).
+- Trainee-share bundle created and integrity-verified:
+  - `outputs20260302_171622.zip`
+  - includes canonical workbooks, stage PDFs, latest report-dir PDFs, analysis exports, rater artifacts, dated `prior runs` diagnostics (`2026-03-02*`), latest contract report, scoped QA/audit folders, and consort outputs.
+  - verified via `unzip -t outputs20260302_171622.zip` (`ZIP_OK=1`).
+- Render-failure verification pass on latest PDFs (`artifacts/reports/20260302_165739/`) completed:
+  - PASS: rater section `1.3 Set-similarity metrics` formulas now render correctly (no truncated raw formula placeholders).
+  - PASS: rater join-audit LaTeX table chunk no longer leaks raw code/LaTeX into PDF.
+  - PASS: analysis section `1.16 PDF-ready long tables` now renders as tables (no raw `render_latex_longtable`/LaTeX blocks).
+  - PARTIAL: analysis `Table 17` remains horizontally clipped on page 54 (right-side columns extend past page width).
+- New request in progress: revise CONSORT diagram to show enrollment requirements from base MIMIC population down to final study cohort (ED linkage, chief-complaint requirement, hypercapnia evidence by ICD or blood gas), rather than subgroup-route splits.
+- CONSORT enrollment flow revised to requirement-filter design (base MIMIC ED population -> linked hadm_id -> hypercapnia evidence ICD OR definitive blood-gas -> chief complaint present -> final exported cohort).
+- Cohort notebook now persists flow counts for downstream reporting:
+  - `MIMIC tabular data/prior runs/2026-03-02 cohort_flow_counts.csv`
+  - `qa_summary.json` now includes `cohort_flow_counts`, `cohort_flow_counts_lookup`, and `cohort_flow_counts_path`.
+- Analysis notebook CONSORT chunk now consumes flow-count metrics and renders the revised requirement-filter diagram.
+- Analysis PDF now embeds the revised CONSORT figure directly (code hidden in report for that chunk).
+- Validation completed:
+  - `make lint` passed.
+  - `make test` passed (`110 passed`).
+  - `COHORT_OTHER_RELATIVE_REDUCTION_MIN=0 make quarto-cohort` passed.
+  - `make quarto-analysis` passed (`artifacts/reports/20260302_173723/Hypercap CC NLP Analysis.pdf`).
+  - `uv run pytest -q tests/test_notebook_output_contracts.py` passed (`12 passed`).
+- Investigated `Rplots.pdf` in repo root:
+  - it is an R default graphics-device side artifact (`Title: R Graphics Output`, blank page) created during R plotting calls in analysis-stage CONSORT rendering via `Rscript`;
+  - it is not consumed by pipeline outputs and is safe to delete/ignore.
+- New request in progress:
+  - patch pipeline to remove transient `Rplots.pdf`,
+  - rerun pipeline,
+  - create one more timestamped output zip excluding `Rplots.pdf`.
+- Implemented `Rplots.pdf` cleanup in analysis CONSORT chunk:
+  - after rendering and displaying the CONSORT artifact, the notebook now deletes transient `Rplots.pdf` from `WORK_DIR`/`OUTPUT_DIR` when present.
+- Full pipeline rerun completed:
+  - `COHORT_OTHER_RELATIVE_REDUCTION_MIN=0 make quarto-pipeline`
+  - latest report dir: `artifacts/reports/20260302_174957/`
+- Contracts rerun completed:
+  - `make contracts-check STAGE=all`
+  - latest report: `debug/contracts/20260303_040501/contract_report.json` (warning-only expected QC-only export warnings).
+- Verified `Rplots.pdf` is not present after rerun (`RPLOTS_PRESENT=0`).
+- New trainee-share bundle created (excluding `Rplots.pdf`) and integrity-verified:
+  - `outputs20260302_180525.zip`
+  - `unzip -t` passed (`ZIP_OK=1`, `Rplots_FOUND=0`).
+- Updated `Chart Review Sample Calc.qmd` cell `chart-review-sample-calc-cell-002` to directly estimate expected κ CI width for `n=60` annotations using `presize::prec_kappa(n=60, ...)`, while retaining the target-width planning output.
+- Validation:
+  - `quarto render "Chart Review Sample Calc.qmd"` passed.
+  - rendered output confirms `expected_ci_width_with_n60` (`conf.width ≈ 0.282` for κ=0.70 under planning proportions).
+  - `make lint` passed.
 
 Next:
-- Await next instruction.
+- Await next request; refreshed outputs zip and `Rplots.pdf` suppression are complete.
 
 Open questions (UNCONFIRMED if needed):
 - None.
 
 Working set (files/ids/commands):
 - Files:
-  - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/MIMICIV_hypercap_EXT_cohort.qmd`
-  - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/src/hypercap_cc_nlp/pipeline_contracts.py`
-  - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/tests/test_pipeline_contracts.py`
-  - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/tests/test_notebook_output_contracts.py`
-  - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/README.md`
-  - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/artifacts/gas_source_diagnostics_by_ed_stay.csv`
+  - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/outputs20260228_203426.zip`
+  - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/artifacts/reports/20260228_201017/`
+  - `/Users/blocke/Box Sync/Residency Personal Files/Scholarly Work/Locke Research Projects/Hypercap-CC-NLP/debug/contracts/20260301_063355/contract_report.json`
 - Commands:
-  - `make lint`
-  - `uv run pytest -q tests/test_pipeline_contracts.py tests/test_notebook_output_contracts.py`
-  - `COHORT_OTHER_RELATIVE_REDUCTION_MIN=0 make quarto-cohort`
-  - `make test`
+  - `COHORT_OTHER_RELATIVE_REDUCTION_MIN=0 REPORT_RUN_ID=share_20260302_165739 make quarto-pipeline`
   - `make contracts-check STAGE=all`

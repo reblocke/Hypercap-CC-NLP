@@ -88,14 +88,12 @@ def test_resolve_classifier_output_paths_returns_canonical_and_archive(
 def test_normalize_classifier_input_schema_adds_aliases_without_dropping_source() -> None:
     df = pd.DataFrame(
         {
-            "age_at_admit": [65.0],
             "ed_first_hr": [90],
             "ed_first_rr": [18],
             "ed_first_sbp": [120],
             "ed_first_dbp": [70],
             "ed_first_temp": [37.0],
             "ed_first_o2sat": [98],
-            "race_ed_raw": ["White"],
         }
     )
     normalized = normalize_classifier_input_schema(df)
@@ -106,9 +104,9 @@ def test_normalize_classifier_input_schema_adds_aliases_without_dropping_source(
 
 
 def test_normalize_classifier_input_schema_preserves_existing_destination() -> None:
-    df = pd.DataFrame({"age_at_admit": [65.0], "age": [99.0]})
+    df = pd.DataFrame({"ed_first_hr": [65.0], "hr": [99.0]})
     normalized = normalize_classifier_input_schema(df)
-    assert normalized["age"].tolist() == [99.0]
+    assert normalized["hr"].tolist() == [99.0]
 
 
 def test_normalize_classifier_input_schema_prefers_model_fields() -> None:

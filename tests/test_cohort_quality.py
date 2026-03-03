@@ -152,13 +152,10 @@ def test_evaluate_uom_expectations_flags_mismatch_patterns() -> None:
         {
             "poc_abg_ph_uom": [pd.NA, pd.NA],
             "poc_vbg_ph_uom": [pd.NA, pd.NA],
-            "poc_other_ph_uom": [pd.NA, pd.NA],
             "poc_abg_paco2": [50.0, pd.NA],
             "poc_abg_paco2_uom": ["mmhg", pd.NA],
             "poc_vbg_paco2": [55.0, 60.0],
             "poc_vbg_paco2_uom": ["kpa", "mmhg"],
-            "poc_other_paco2": [pd.NA, 70.0],
-            "poc_other_paco2_uom": [pd.NA, pd.NA],
         }
     )
 
@@ -171,10 +168,6 @@ def test_evaluate_uom_expectations_flags_mismatch_patterns() -> None:
     )
     assert (
         result["paco2_uom_checks"]["poc_vbg_paco2_uom"]["non_mmhg_uom_when_value_present"]
-        == 1
-    )
-    assert (
-        result["paco2_uom_checks"]["poc_other_paco2_uom"]["missing_uom_when_value_present"]
         == 1
     )
 

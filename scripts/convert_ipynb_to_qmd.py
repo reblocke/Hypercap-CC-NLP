@@ -10,10 +10,10 @@ from pathlib import Path
 import nbformat
 
 NOTEBOOK_MAP: dict[str, str] = {
-    "MIMICIV_hypercap_EXT_cohort.ipynb": "MIMICIV_hypercap_EXT_cohort.qmd",
-    "Hypercap CC NLP Classifier.ipynb": "Hypercap CC NLP Classifier.qmd",
-    "Rater Agreement Analysis.ipynb": "Rater Agreement Analysis.qmd",
-    "Hypercap CC NLP Analysis.ipynb": "Hypercap CC NLP Analysis.qmd",
+    "Legacy Code/MIMICIV_hypercap_EXT_cohort.ipynb": "MIMICIV_hypercap_EXT_cohort.qmd",
+    "Legacy Code/Hypercap CC NLP Classifier.ipynb": "Hypercap CC NLP Classifier.qmd",
+    "Legacy Code/Rater Agreement Analysis.ipynb": "Rater Agreement Analysis.qmd",
+    "Legacy Code/Hypercap CC NLP Analysis.ipynb": "Hypercap CC NLP Analysis.qmd",
 }
 
 

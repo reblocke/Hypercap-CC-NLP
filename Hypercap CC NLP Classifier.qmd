@@ -11,19 +11,61 @@ execute:
   warning: false
   message: false
   error: false
+editor: 
+  markdown: 
+    wrap: 72
 ---
 
-# Workbook for MIMIC Hypercapnia Presenting Chief Concern Analysis
+# Workbook for MIMIC Hypercapnia Presenting Chief Concern NLP Classifier
 
-This notebook is intentionally self-contained and deterministic.
-It performs NLP-based mapping from free-text ED chief complaints to NHAMCS top-level RVC categories,
-with strict compatibility outputs for downstream analysis notebooks.
+This notebook is intentionally self-contained and deterministic. It
+performs NLP-based mapping from free-text ED chief complaints to NHAMCS
+top-level RVC categories, with strict compatibility outputs for
+downstream analysis notebooks.
+
+## Stage contract (pipeline-facing)
+
+-   **Purpose:** Add NLP-derived RFV category outputs to the canonical
+    cohort workbook.
+-   **Inputs:** `MIMIC tabular data/MIMICIV all with CC.xlsx`.
+-   **Canonical outputs:**
+    `MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx`.
+-   **Run-archived outputs:** dated classifier audits/manifests under
+    `MIMIC tabular data/prior runs/`.
+-   **Key env vars:** `WORK_DIR`, `CLASSIFIER_INPUT_FILENAME`,
+    `CC_SPELL_CORRECTION_MODE`, `HF_TOKEN`.
+-   **QA artifacts emitted:** spellfix guardrail audit, spell-mode
+    comparison audit, classifier run manifest.
+
+## Summary of functionality
+
+This stage takes the cohort workbook from the previous notebook and adds
+NLP-derived complaint categories.
+
+Use this reading order:
+
+1.  **Runtime contract/imports**: confirms all required tools are
+    installed before any processing starts.
+2.  **Config/constants**: defines the vocabulary, labels, and model
+    settings used everywhere else.
+3.  **Text normalization**: cleans complaint text while preserving
+    clinical meaning with safety guardrails.
+4.  **Embedding + scoring**: compares complaint segments to curated
+    category prototypes.
+5.  **Visit-level aggregation**: combines segment predictions into final
+    RFV outputs (`RFV1` ... `RFV5`).
+6.  **Schema + export checks**: verifies required columns and writes the
+    canonical NLP workbook (`MIMICIV all with CC_with_NLP.xlsx`).
+
+Documentation pattern used throughout: - Chunk headers explain why each
+block exists. - Helper functions prefer explicit names and deterministic
+behavior so outputs are reproducible run-to-run.
 
 ## 1) Runtime contract and imports
 
-- No runtime package installation.
-- Fail fast if required dependencies are missing.
-- Keep environment deterministic and explicit.
+-   No runtime package installation.
+-   Fail fast if required dependencies are missing.
+-   Keep environment deterministic and explicit.
 
 ```{python}
 #| label: hypercap-cc-nlp-classifier-cell-001
@@ -67,7 +109,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 import ftfy
 import matplotlib.pyplot as plt
@@ -113,21 +155,24 @@ print("spaCy pipeline: pending config-driven load")
 ## 2) Config and constants
 
 ### Core API (single-cell contract)
-This cell defines the notebook's public in-notebook interfaces:
-- `ClassifierConfig`
-- `get_cc_column`
-- `normalize_cc`
-- `build_prototype_resources`
-- `build_segment_cache`
-- `classify_segments_cached`
-- `assign_rvc_per_segment_and_visit_cached`
-- `validate_output_schema`
-- `save_with_suffix`
+
+This cell defines the notebook's public in-notebook interfaces: -
+`ClassifierConfig` - `get_cc_column` - `normalize_cc` -
+`build_prototype_resources` - `build_segment_cache` -
+`classify_segments_cached` - `assign_rvc_per_segment_and_visit_cached` -
+`validate_output_schema` - `save_with_suffix`
 
 ```{python}
 #| label: hypercap-cc-nlp-classifier-cell-002
 # Purpose: centralize the notebook's core API (config, constants, data structures, and reusable functions).
 # Why this matters: keeping definitions in one place makes behavior predictable and easier for new contributors to trace.
+
+# ---------------------------------------------------------------------
+# Prototype-group scoring configuration
+# ---------------------------------------------------------------------
+# Score each category as max cosine across its prototypes.
+# This keeps classifier behavior parsimonious and interpretable.
+ABSTAIN_THRESHOLD = 0.40
 
 @dataclass(frozen=True)
 class ClassifierConfig:
@@ -144,9 +189,8 @@ class ClassifierConfig:
     model_trust_remote_code: bool = True
     model_batch_size: int = 256
     segment_batch_size: int = 512
-    scoring_method: str = "max"  # {"max", "lse"}
-    alpha: float = 12.0
-    abstain_threshold: float = 0.40
+    scoring_method: str = "max"
+    abstain_threshold: float = ABSTAIN_THRESHOLD
     max_rfv: int = 5
     max_segments_per_visit: int = 5
     prototype_dedup_sim_thresh: float = 0.92
@@ -235,6 +279,18 @@ CC_CANDIDATES: tuple[str, ...] = (
 PROTECT = ("n/v", "n/v/d", "s/p", "w/", "w/o", "h/o", "c/o", "h/a", "f/c", "c/p", "lab", "labs")
 SPELL_PROTECT_PHRASES = {
     "found down",
+    "medical clearance",
+    "med clearance",
+    "transfer",
+    "etoh",
+    "suicidal ideation",
+    "homicidal ideation",
+    "motor vehicle accident",
+    "motor vehicle collision",
+}
+# Lemmatization can alter idiom meaning in a small number of cases.
+LEMMA_PROTECT_PHRASES = {
+    "found down",
 }
 SPELL_PROTECT_TOKENS = {
     "lab",
@@ -259,11 +315,15 @@ SPELL_PROTECT_TOKENS = {
     "trach",
     "dental",
     "black",
+    "femur",
 }
 SPELL_DENYLIST_SUBSTITUTIONS = {
+    # Known high-risk semantic flips that must never be accepted.
     ("found", "wound"),
     ("trach", "tract"),
     ("dental", "mental"),
+    ("black", "back"),
+    ("femer", "fever"),
 }
 STRICT_SPELL_MIN_TOKEN_LEN = 5
 STRICT_SPELL_MAX_EDIT_DISTANCE = 1
@@ -365,6 +425,7 @@ TOK_OVR: dict[str, str] = {
     "vag": "vaginal",
     "vb": "vaginal bleeding",
     "hg": "hyperemesis gravidarum",
+    "femer": "femur",
     "s/p": "status post",
     "w/": "with",
     "w/o": "without",
@@ -373,6 +434,14 @@ TOK_OVR: dict[str, str] = {
     "n/v": "nausea vomiting",
     "n/v/d": "nausea vomiting diarrhea",
 }
+# Token-level expansions for high-impact abbreviations so they fire inside longer segments.
+TOK_OVR.update(
+    {
+        "trach": "tracheostomy",
+        "mvc": "motor vehicle collision",
+        "mva": "motor vehicle accident",
+    }
+)
 
 CTX_OVR: dict[str, tuple[Any, str, str | None]] = {
     "od": (
@@ -483,10 +552,26 @@ RX_FOCAL_WEAK = re.compile(
     r"\b(focal|left|right|arm|leg|hand|face|hemiparesis|hemiplegia).*\bweakness\b|\bweakness\b.*\b(focal|left|right|arm|leg|hand|face)\b",
     re.I,
 )
+RX_NEURO_BLEED = re.compile(
+    r"\b("
+    r"(?:head|brain|intracranial|cerebral)\s+(?:bleed(?:ing)?|hemorrhag(?:e|ic)|haemorrhag(?:e|ic))"
+    r"|(?:subdural|subarachnoid|epidural|intracerebral)\s+(?:hematoma|haematoma|hemorrhag(?:e|ic)|haemorrhag(?:e|ic))"
+    r"|(?:ich|sah|sdh|edh|ivh)\b"
+    r")\b",
+    re.I,
+)
+RX_NEURO_BLEED_TRAUMA_CONTEXT = re.compile(
+    r"\b(fall|fell|mvc|mva|collision|assault|trauma|injur(?:y|ies)|fracture|laceration|gsw|gunshot|stab)\b",
+    re.I,
+)
+RX_NEURO_BLEED_DIAGNOSIS_CONTEXT = re.compile(
+    r"\b(intracranial hemorrhage|subarachnoid hemorrhage|subdural hematoma|epidural hematoma|intracerebral hemorrhage|ich|sah|sdh|edh|ivh)\b",
+    re.I,
+)
 
 RULE_RX: dict[str, re.Pattern[str]] = {
     "RVC-INJ": re.compile(
-        r"\b(mvc|mva|collision|ped(\s|)vs(\s|)auto|assault|fell|fall|gsw|gunshot|stab|laceration|fracture|burn|foreign body|poison(ing)?|overdose|od\b|adverse (drug|medication) reaction)\b",
+        r"\b(mvc|mva|collision|ped(\s|)vs(\s|)auto|assault|fell|fall|gsw|gunshot|stab|laceration|fracture|fx\b|burn|foreign body|poison(ing)?|overdose|od\b|adverse (drug|medication) reaction)\b",
         re.I,
     ),
     "RVC-SYM-RESP": re.compile(
@@ -502,7 +587,7 @@ RULE_RX: dict[str, re.Pattern[str]] = {
         re.I,
     ),
     "RVC-SYM-DIG": re.compile(
-        r"\b(abd(ominal)? pain|abdo pain|nausea|vomit(ting)?|diarrhea|rectal bleeding|hematemesis|dysphagia|jaundice|gastrointestinal bleeding|gi bleeding)\b",
+        r"\b(abd(ominal)? pain|abdo pain|nausea|vomit(ting)?|diarrhea|rectal bleeding|hematemesis|dysphagia|jaundice|gastrointestinal bleeding|upper gi bleed|gi bleeding|gi bleed)\b",
         re.I,
     ),
     "RVC-SYM-GU": re.compile(
@@ -715,7 +800,9 @@ LABEL2CODE = {
     for code, value in RVC_NAME.items()
 }
 
-sym = SymSpell(max_dictionary_edit_distance=2, prefix_length=7)
+# Spell correction is intentionally conservative for short triage text.
+# We only allow edit distance ≤ 1 in strict mode.
+sym = SymSpell(max_dictionary_edit_distance=1, prefix_length=7)
 
 
 # --- Lightweight data containers passed between pipeline stages. ---
@@ -762,10 +849,12 @@ def get_cc_column(df: pd.DataFrame) -> str:
 
 
 def _clean_tok(token: str) -> str:
+    """Trim punctuation at token edges while preserving interior separators like '/'."""
     return _PUNCT_EDGE.sub("", token)
 
 
 def _violates_spell_guard(original: str, candidate: str) -> bool:
+    """Block high-risk spell changes (polarity/laterality flips) even if edit distance is small."""
     original_norm = original.strip().lower()
     candidate_norm = candidate.strip().lower()
     if not original_norm or not candidate_norm:
@@ -781,6 +870,7 @@ def _violates_spell_guard(original: str, candidate: str) -> bool:
 
 
 def _spell_candidate(token: str, *, max_edit_distance: int) -> tuple[str, int | None]:
+    """Return closest SymSpell candidate and edit distance, or the token unchanged."""
     candidates = sym.lookup(token, Verbosity.CLOSEST, max_edit_distance=max_edit_distance)
     if not candidates:
         return token, None
@@ -789,6 +879,7 @@ def _spell_candidate(token: str, *, max_edit_distance: int) -> tuple[str, int | 
 
 
 def _spell_strict(token: str) -> tuple[str, dict[str, Any] | None]:
+    """Conservative spell correction for clinical text (alpha-only, min length, guardrails)."""
     normalized = token.strip().lower()
     if (
         not normalized
@@ -815,6 +906,7 @@ def _spell_strict(token: str) -> tuple[str, dict[str, Any] | None]:
 
 
 def _spell_token(token: str, *, mode: str) -> tuple[str, dict[str, Any] | None]:
+    """Dispatch spell correction by configured mode."""
     if mode == "disabled":
         return token, None
     if mode == "strict":
@@ -849,11 +941,13 @@ def _expand_tokens(segment: str) -> str:
 
 
 def _looks_clinical(text: str) -> bool:
+    """Heuristic: text contains a clinical keyword and at least one alphabetic character."""
     lowered = text.lower()
     return any(key in lowered for key in CLINICAL_KEYS) and bool(re.search(r"[a-z]", lowered))
 
 
 def _split_on_and_if_clinical(segment: str) -> list[str]:
+    """Split on 'and' only when both sides look clinically meaningful."""
     parts = [part.strip() for part in re.split(r"\band\b", segment, flags=re.I)]
     if len(parts) == 1:
         return parts
@@ -883,6 +977,7 @@ def _normalize_absence_symptom(segment: str) -> str | None:
 
 
 def _expand_duration(segment: str) -> str:
+    """Normalize shorthand durations (e.g., 'sob x 3d' -> 'sob for 3 days')."""
     def repl(match: re.Match[str]) -> str:
         base = match.group(1)
         count = match.group(2)
@@ -893,13 +988,28 @@ def _expand_duration(segment: str) -> str:
     return _DUR_RE.sub(repl, segment)
 
 
+def _safe_lemma(token_text: str, lemma_text: str) -> str:
+    """Protect against specific lemmatizer over-stemming artifacts."""
+    token_norm = token_text.strip().lower()
+    lemma_norm = lemma_text.strip().lower()
+    if (
+        token_norm.endswith("eed")
+        and lemma_norm == token_norm[:-1]
+    ):
+        return token_text
+    return lemma_text
+
+
 def _lemmatize_segment(segment: str) -> str:
+    """Lemmatize one segment with light safety checks."""
     doc = NLP(segment)
     lemmas: list[str] = []
     for token in doc:
         lemma = token.lemma_.strip() if token.lemma_ else ""
         if not lemma or lemma == "-PRON-":
             lemma = token.text
+        else:
+            lemma = _safe_lemma(token.text, lemma)
         lemmas.append(lemma)
     return " ".join(lemmas).strip()
 
@@ -911,7 +1021,7 @@ def segment_cc(raw: str, keep_negated: bool = False) -> list[str]:
 
     text = ftfy.fix_text(raw).lower().strip()
 
-    for protected in PROTECT:
+    for protected in PROTECT:  # Preserve slash-delimited abbreviations before generic slash splitting.
         text = text.replace(protected, protected.replace("/", "§"))
 
     text = re.sub(r"\bn\s*[,/&+]\s*v\s*[,/&+]\s*d\b", "n§v§d", text)
@@ -924,7 +1034,7 @@ def segment_cc(raw: str, keep_negated: bool = False) -> list[str]:
     text = re.sub(r"\bh\s*/\s*o\b", "h§o", text)
     text = re.sub(r"\bc\s*/\s*o\b", "c§o", text)
 
-    text = text.replace("/", "; ")
+    text = text.replace("/", "; ")  # Treat remaining slashes as segment separators.
 
     segments: list[str] = []
     for block in SEP_SPLIT_RE.split(text):
@@ -969,6 +1079,7 @@ def normalize_cc(
     spellfix_log: list[dict[str, Any]] = []
 
     for segment_index, segment in enumerate(segment_cc(raw, keep_negated=keep_negated)):
+        # Stage 1: deterministic abbreviation/context expansions.
         if segment in SEG_OVR:
             segment = SEG_OVR[segment]
         else:
@@ -982,11 +1093,13 @@ def normalize_cc(
 
         segment = _expand_duration(segment)
         segment = _expand_tokens(segment)
+        # Stage 2: guarded spell correction (optional skip for protected phrases).
         segment_lower = segment.strip().lower()
-        phrase_locked = any(phrase in segment_lower for phrase in SPELL_PROTECT_PHRASES)
+        skip_spellfix = any(phrase in segment_lower for phrase in SPELL_PROTECT_PHRASES)
+        skip_lemma = any(phrase in segment_lower for phrase in LEMMA_PROTECT_PHRASES)
         corrected_tokens: list[str] = []
         for token_index, token in enumerate(segment.split()):
-            if phrase_locked:
+            if skip_spellfix:
                 corrected, correction = _clean_tok(token), None
             else:
                 corrected, correction = _spell_token(token, mode=spell_mode)
@@ -1001,7 +1114,8 @@ def normalize_cc(
                     }
                 )
         corrected_segment = " ".join(token for token in corrected_tokens if token)
-        segment = corrected_segment if phrase_locked else _lemmatize_segment(corrected_segment)
+        # Stage 3: lemmatize unless phrase-level protection disables it.
+        segment = corrected_segment if skip_lemma else _lemmatize_segment(corrected_segment)
 
         if segment and segment not in seen:
             output.append(segment)
@@ -1016,6 +1130,7 @@ def _run_normalization_mode(
     spell_mode: str,
     keep_negated: bool = False,
 ) -> dict[str, Any]:
+    """Run normalization for one spell mode and return row-level outputs + mode summary."""
     cleaned_segments: list[list[str]] = []
     spellfix_logs: list[list[dict[str, Any]]] = []
     for raw in cc_series.tolist():
@@ -1061,6 +1176,7 @@ def _score_normalization_integrity(
     raw_series: pd.Series,
     cleaned_str_series: pd.Series,
 ) -> dict[str, int]:
+    """Count known dangerous normalization error patterns for mode selection."""
     raw = raw_series.fillna("").astype("string").str.lower()
     clean = cleaned_str_series.fillna("").astype("string").str.lower()
     rules = {
@@ -1095,6 +1211,12 @@ def _score_normalization_integrity(
         "black_to_block": raw.str.contains(r"\bblack\b", na=False)
         & ~raw.str.contains(r"\bblock\b", na=False)
         & clean.str.contains(r"\bblock\b", na=False),
+        "bleed_token_truncation": raw.str.contains(r"\bbleed\b", na=False)
+        & ~clean.str.contains(r"\bbleed\b", na=False)
+        & clean.str.contains(r"\bblee\b", na=False),
+        "femer_to_fever": raw.str.contains(r"\bfemer\b", na=False)
+        & ~clean.str.contains(r"\bfemur\b", na=False)
+        & clean.str.contains(r"\bfever\b", na=False),
     }
     return {name: int(mask.sum()) for name, mask in rules.items()}
 
@@ -1105,7 +1227,14 @@ def choose_spell_mode(
     cc_source_column: str,
     requested_mode: str = "auto",
 ) -> tuple[dict[str, Any], pd.DataFrame]:
-    """Run disabled/strict normalization and select a mode by integrity score."""
+    """Run disabled/strict normalization and choose the safer mode for this run.
+
+    Selection priority:
+    1) fewer integrity violations,
+    2) more non-empty normalized segments,
+    3) more accepted spell fixes (tie-break),
+    4) stable lexical ordering of mode name.
+    """
     requested = requested_mode.strip().lower()
     if requested not in SPELL_CORRECTION_MODES:
         raise ValueError(
@@ -1164,12 +1293,24 @@ def canonize_cc_segments(segments: list[str]) -> list[str]:
 
 
 def rule_gate(segment: str) -> tuple[str | None, list[str]]:
-    """Apply deterministic rule overrides for high-confidence pattern matches."""
+    """Apply deterministic rule overrides for high-confidence pattern matches.
+
+    Returns:
+        (code, hits)
+        - code: selected RVC override or None
+        - hits: matched rule labels for audit/debug visibility
+    """
     text = f" {segment.lower()} "
     if re.search(r"\babnormal\s+labs?\b", text):
         return "RVC-TEST", ["abnormal labs"]
     if "weakness" in text and RX_FOCAL_WEAK.search(text):
         return "RVC-SYM-NERV", ["focal weakness"]
+    if RX_NEURO_BLEED.search(text):
+        if RX_NEURO_BLEED_TRAUMA_CONTEXT.search(text):
+            return "RVC-INJ", ["neuro_bleed_trauma_context"]
+        if RX_NEURO_BLEED_DIAGNOSIS_CONTEXT.search(text):
+            return "RVC-DIS", ["neuro_bleed_diagnosis_context"]
+        return "RVC-SYM-NERV", ["neuro_bleed_symptom_context"]
 
     hits: list[str] = []
     for code, regex in RULE_RX.items():
@@ -1419,7 +1560,10 @@ def build_segment_cache(
     resources: dict[str, Any],
     batch_size: int = 512,
 ) -> SegmentEmbedCache:
-    """Encode unique complaint segments once and cache similarity to all prototypes."""
+    """Encode unique complaint segments once and cache similarity to all prototypes.
+
+    Note: this cache is in-memory for the current run only (no persisted cache key reuse).
+    """
     unique_segments: list[str] = []
     seen: set[str] = set()
 
@@ -1474,33 +1618,22 @@ def group_scores_from_proto_row(
     proto_row: torch.Tensor | np.ndarray,
     resources: dict[str, Any],
     method: str = "max",
-    alpha: float = 12.0,
 ) -> dict[str, float]:
-    """Aggregate prototype-level similarities to group-level scores."""
-    vector = proto_row.detach().cpu().numpy() if isinstance(proto_row, torch.Tensor) else np.asarray(proto_row)
+    """Aggregate prototype-level similarities to max-cosine group scores."""
+    if method != "max":
+        raise ValueError("scoring_method must be 'max'.")
+
+    if isinstance(proto_row, torch.Tensor):
+        vector = proto_row.detach().cpu().numpy()
+    else:
+        vector = np.asarray(proto_row)
 
     scores: dict[str, float] = {}
     code_to_proto = resources["code_to_proto_indices"]
-    proto_weight = resources["proto_weight"]
 
     for group_code, indices in code_to_proto.items():
         values = vector[indices]
-        if method == "max":
-            score = float(values.max(initial=-1.0))
-        elif method == "lse":
-            weights = proto_weight[indices]
-            logits = alpha * values + np.log(weights)
-            max_logit = logits.max()
-            score = float(max_logit + np.log(np.exp(logits - max_logit).sum()))
-        else:
-            raise ValueError("method must be one of {'max', 'lse'}")
-        scores[group_code] = score
-
-    if method == "lse" and scores:
-        max_score = max(scores.values())
-        min_score = min(scores.values())
-        denom = (max_score - min_score) if max_score > min_score else 1.0
-        scores = {group: (score - min_score) / denom for group, score in scores.items()}
+        scores[group_code] = float(np.max(values)) if len(values) else -1.0
 
     return scores
 
@@ -1509,9 +1642,8 @@ def score_one_segment_soft(
     segment: str,
     resources: dict[str, Any],
     method: str = "max",
-    alpha: float = 12.0,
 ) -> dict[str, float]:
-    """Score a single segment directly against prototype embeddings."""
+    """Score one segment directly against prototype embeddings."""
     if not isinstance(segment, str) or not segment.strip():
         return {group: -1.0 for group in RVC_NAME}
 
@@ -1527,7 +1659,7 @@ def score_one_segment_soft(
         )
         similarities = util.cos_sim(segment_emb, proto_emb).squeeze(0)
 
-    return group_scores_from_proto_row(similarities, resources=resources, method=method, alpha=alpha)
+    return group_scores_from_proto_row(similarities, resources=resources, method=method)
 
 
 def classify_segments_cached(
@@ -1536,7 +1668,6 @@ def classify_segments_cached(
     resources: dict[str, Any],
     abstain: float = 0.40,
     method: str = "max",
-    alpha: float = 12.0,
 ) -> list[SegPred]:
     """Classify all segments for one visit using cache + rule-gate overrides."""
     predictions: list[SegPred] = []
@@ -1550,18 +1681,15 @@ def classify_segments_cached(
 
         if cleaned in cache.seg2idx:
             row_idx = cache.seg2idx[cleaned]
-            score_map = group_scores_from_proto_row(
-                cache.sim_proto[row_idx], resources=resources, method=method, alpha=alpha
-            )
+            score_map = group_scores_from_proto_row(cache.sim_proto[row_idx], resources=resources, method=method)
         else:
-            score_map = score_one_segment_soft(
-                cleaned, resources=resources, method=method, alpha=alpha
-            )
+            score_map = score_one_segment_soft(cleaned, resources=resources, method=method)
 
         best_code, best_score = max(score_map.items(), key=lambda kv: kv[1])
 
         if override_code is not None:
             best_code = override_code
+            best_score = float(score_map.get(best_code, best_score))
 
         if best_score < abstain and override_code is None:
             best_code = "RVC-UNCL"
@@ -1645,7 +1773,6 @@ def assign_rvc_per_segment_and_visit_cached(
             resources=resources,
             abstain=active_cfg.abstain_threshold,
             method=active_cfg.scoring_method,
-            alpha=active_cfg.alpha,
         )
         visit_rfv = rfv_from_segment_preds(segment_predictions, max_rfv=max_rfv)
 
@@ -1939,31 +2066,18 @@ def top_cc_plot(
 
 ## 2B) Local helper functions (embedded core notebook logic)
 
+This section now groups helpers by domain so each block maps to one concern (I/O paths, missingness policy, QA audits, and contracts).
+
 ```{python}
-#| label: hypercap-cc-nlp-classifier-cell-002b
-# Core stage helpers are embedded in this notebook by project policy.
+#| label: hypercap-cc-nlp-classifier-cell-002b-paths
+# Domain: workbook path and schema helpers.
+# Core stage helpers remain embedded in this notebook by project policy.
 
 DATA_DIRNAME = "MIMIC tabular data"
 PRIOR_RUNS_DIRNAME = "prior runs"
 
 CANONICAL_COHORT_FILENAME = "MIMICIV all with CC.xlsx"
 CANONICAL_NLP_FILENAME = "MIMICIV all with CC_with_NLP.xlsx"
-
-CLASSIFIER_TRANSITIONAL_ALIASES: dict[str, tuple[str, ...]] = {
-    "age": ("age_at_admit",),
-    "hr": ("ed_first_hr_model", "ed_first_hr", "ed_triage_hr_model", "ed_triage_hr"),
-    "rr": ("ed_first_rr_model", "ed_first_rr", "ed_triage_rr_model", "ed_triage_rr"),
-    "sbp": ("ed_first_sbp_model", "ed_first_sbp", "ed_triage_sbp_model", "ed_triage_sbp"),
-    "dbp": ("ed_first_dbp_model", "ed_first_dbp", "ed_triage_dbp_model", "ed_triage_dbp"),
-    "temp": ("ed_first_temp_model", "ed_first_temp", "ed_triage_temp_model", "ed_triage_temp"),
-    "spo2": (
-        "ed_first_o2sat_model",
-        "ed_first_o2sat",
-        "ed_triage_o2sat_model",
-        "ed_triage_o2sat",
-    ),
-    "race": ("ed_race", "race_ed_raw", "hosp_race", "race_hosp_raw"),
-}
 
 
 def data_dir(work_dir: Path) -> Path:
@@ -2028,30 +2142,6 @@ def resolve_classifier_output_paths(
     return canonical_path, archive_path
 
 
-def normalize_classifier_input_schema(
-    df: pd.DataFrame,
-    alias_map: Mapping[str, str | Sequence[str]] | None = None,
-) -> pd.DataFrame:
-    """Add transitional alias columns for classifier compatibility.
-
-    Existing destination columns are preserved. Source columns are never removed.
-    """
-    resolved_alias_map = alias_map or CLASSIFIER_TRANSITIONAL_ALIASES
-    normalized = df.copy()
-    for destination, source_spec in resolved_alias_map.items():
-        if destination in normalized.columns:
-            continue
-        if isinstance(source_spec, str):
-            candidate_sources = (source_spec,)
-        else:
-            candidate_sources = tuple(source_spec)
-        for source_name in candidate_sources:
-            if source_name in normalized.columns:
-                normalized[destination] = normalized[source_name]
-                break
-    return normalized
-
-
 def ensure_required_columns(
     df: pd.DataFrame,
     required: list[str],
@@ -2062,6 +2152,13 @@ def ensure_required_columns(
     missing = sorted(set(required).difference(df.columns))
     if missing:
         raise KeyError(f"{context}: missing required columns: {missing}")
+```
+
+### 2B.1) Chief-complaint missingness policy helpers
+
+```{python}
+#| label: hypercap-cc-nlp-classifier-cell-002b-missingness
+# Domain: chief-complaint missingness detection and deterministic uncodable policy.
 
 PSEUDO_MISSING_EXACT_TOKENS = {
     "-",
@@ -2089,12 +2186,13 @@ def annotate_cc_missingness(
     df: pd.DataFrame,
     *,
     cc_column: str,
+    raw_output_column: str = "chief_complaint_raw",
     nlp_input_column: str = "cc_text_for_nlp",
     missing_flag_column: str = "cc_missing_flag",
     pseudo_flag_column: str = "cc_pseudomissing_flag",
     missing_reason_column: str = "cc_missing_reason",
 ) -> pd.DataFrame:
-    """Annotate true-vs-pseudo missing CCs and derive deterministic NLP input text."""
+    """Annotate true-vs-pseudo missing CCs and derive raw/NLP chief-complaint text columns."""
     if cc_column not in df.columns:
         raise KeyError(f"Chief complaint column not found: {cc_column}")
 
@@ -2114,7 +2212,8 @@ def annotate_cc_missingness(
     out[missing_flag_column] = (is_true_missing | is_pseudo_missing).astype("boolean")
     out[pseudo_flag_column] = is_pseudo_missing.astype("boolean")
     out[missing_reason_column] = reason
-    out[nlp_input_column] = out[cc_column].astype("string")
+    out[raw_output_column] = out[cc_column].astype("string")
+    out[nlp_input_column] = out[raw_output_column]
     out.loc[is_true_missing | is_pseudo_missing, nlp_input_column] = pd.NA
     return out
 
@@ -2254,24 +2353,35 @@ def build_cc_missing_audit(
             }
         )
     return pd.DataFrame(rows).sort_values("cc_missing_reason").reset_index(drop=True)
+```
+
+### 2B.2) QA phrase/regression helpers
+
+```{python}
+#| label: hypercap-cc-nlp-classifier-cell-002b-qa
+# Domain: phrase-level QA audits and guardrail checks.
 
 
 def build_phrase_regression_audit(
     df: pd.DataFrame,
     *,
     cc_column: str,
+    cleaned_column: str = "cc_cleaned_str",
     segment_preds_column: str = "segment_preds",
     rfv_column: str = "RFV1_name",
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Audit phrase-level normalization regressions for abnormal-lab complaints."""
+    """Audit phrase-level normalization regressions for high-risk sentinel complaints."""
     if cc_column not in df.columns:
         raise KeyError(f"Chief complaint column not found: {cc_column}")
+    if cleaned_column not in df.columns:
+        raise KeyError(f"Cleaned complaint column not found: {cleaned_column}")
     if segment_preds_column not in df.columns:
         raise KeyError(f"segment prediction column not found: {segment_preds_column}")
     if rfv_column not in df.columns:
         raise KeyError(f"RFV column not found: {rfv_column}")
 
     raw_cc = df[cc_column].fillna("").astype(str)
+    cleaned_cc = df[cleaned_column].fillna("").astype(str)
     abnormal_lab_mask = raw_cc.str.contains(r"\babnormal\s+labs?\b", case=False, regex=True)
     subset = df.loc[abnormal_lab_mask, [cc_column, segment_preds_column, rfv_column]].copy()
 
@@ -2303,6 +2413,56 @@ def build_phrase_regression_audit(
     if not rfv_counts.empty:
         rfv_counts["row_rate"] = rfv_counts["row_count"] / max(len(subset), 1)
 
+    head_bleed_mask = raw_cc.str.contains(r"\bhead\s+bleed\b", case=False, regex=True)
+    head_bleed_expected_mask = (
+        df[rfv_column]
+        .fillna("")
+        .astype(str)
+        .str.contains(
+            r"Symptom\s+–\s+Nervous|Injuries\s+&\s+adverse\s+effects|Diseases\s+\(patient-stated\)",
+            case=False,
+            regex=True,
+        )
+    )
+    head_bleed_misclassified_rows = int((head_bleed_mask & ~head_bleed_expected_mask).sum())
+
+    upper_gi_bleed_mask = raw_cc.str.contains(r"\bupper\s+gi\s+bleed\b", case=False, regex=True)
+    upper_gi_digestive_mask = (
+        df[rfv_column]
+        .fillna("")
+        .astype(str)
+        .str.contains(r"Symptom\s+–\s+Digestive", case=False, regex=True)
+    )
+    upper_gi_bleed_nondigestive_rows = int((upper_gi_bleed_mask & ~upper_gi_digestive_mask).sum())
+
+    femur_variant_mask = raw_cc.str.contains(r"\b(?:femur|femer)\b", case=False, regex=True) & raw_cc.str.contains(
+        r"\b(fx|fracture)\b",
+        case=False,
+        regex=True,
+    )
+    femur_injury_mask = (
+        df[rfv_column]
+        .fillna("")
+        .astype(str)
+        .str.contains(r"Injuries\s+&\s+adverse\s+effects", case=False, regex=True)
+    )
+    femur_variant_noninjury_rows = int((femur_variant_mask & ~femur_injury_mask).sum())
+
+    bleed_token_truncation_rows = int(
+        (
+            raw_cc.str.contains(r"\bbleed\b", case=False, regex=True)
+            & ~cleaned_cc.str.contains(r"\bbleed\b", case=False, regex=True)
+            & cleaned_cc.str.contains(r"\bblee\b", case=False, regex=True)
+        ).sum()
+    )
+    femer_to_fever_rows = int(
+        (
+            raw_cc.str.contains(r"\bfemer\b", case=False, regex=True)
+            & ~cleaned_cc.str.contains(r"\bfemur\b", case=False, regex=True)
+            & cleaned_cc.str.contains(r"\bfever\b", case=False, regex=True)
+        ).sum()
+    )
+
     summary = pd.DataFrame(
         [
             {"metric": "abnormal_lab_rows", "value": int(len(subset))},
@@ -2327,9 +2487,77 @@ def build_phrase_regression_audit(
                     .sum()
                 ),
             },
+            {"metric": "head_bleed_rows", "value": int(head_bleed_mask.sum())},
+            {
+                "metric": "head_bleed_misclassified_rows",
+                "value": head_bleed_misclassified_rows,
+            },
+            {"metric": "upper_gi_bleed_rows", "value": int(upper_gi_bleed_mask.sum())},
+            {
+                "metric": "upper_gi_bleed_nondigestive_rows",
+                "value": upper_gi_bleed_nondigestive_rows,
+            },
+            {"metric": "femur_variant_rows", "value": int(femur_variant_mask.sum())},
+            {
+                "metric": "femur_variant_noninjury_rows",
+                "value": femur_variant_noninjury_rows,
+            },
+            {"metric": "bleed_token_truncation_rows", "value": bleed_token_truncation_rows},
+            {"metric": "femer_to_fever_rows", "value": femer_to_fever_rows},
         ]
     )
     return summary, rfv_counts
+
+
+def _phrase_primary_rule_code(phrase: str) -> tuple[str | None, list[str]]:
+    normalized_segments, _ = normalize_cc(
+        phrase,
+        spell_mode="strict",
+    )
+    if not normalized_segments:
+        return None, []
+    matched_codes: list[str] = []
+    for segment in normalized_segments:
+        matched_code, _ = rule_gate(str(segment))
+        if matched_code is not None:
+            matched_codes.append(matched_code)
+    if not matched_codes:
+        return None, normalized_segments
+    for preferred_code in PRECEDENCE_RVC:
+        if preferred_code in matched_codes:
+            return preferred_code, normalized_segments
+    return matched_codes[0], normalized_segments
+
+
+def run_phrase_guardrail_suite() -> pd.DataFrame:
+    """Evaluate sentinel phrase regressions and expected deterministic rule outputs."""
+    cases: list[dict[str, str]] = [
+        {"phrase": "HEAD BLEED", "expected_code": "RVC-SYM-NERV"},
+        {"phrase": "Upper GI bleed", "expected_code": "RVC-SYM-DIG"},
+        {"phrase": "FEMER FX", "expected_code": "RVC-INJ"},
+        {"phrase": "s/p Fall, FEMER FX", "expected_code": "RVC-INJ"},
+        {"phrase": "Femur fracture", "expected_code": "RVC-INJ"},
+    ]
+    rows: list[dict[str, Any]] = []
+    for case in cases:
+        predicted_code, normalized_segments = _phrase_primary_rule_code(case["phrase"])
+        rows.append(
+            {
+                "phrase": case["phrase"],
+                "expected_code": case["expected_code"],
+                "predicted_code": predicted_code,
+                "normalized_segments": "; ".join(normalized_segments),
+                "passed": bool(predicted_code == case["expected_code"]),
+            }
+        )
+    return pd.DataFrame(rows)
+```
+
+### 2B.3) Resource + contract helpers
+
+```{python}
+#| label: hypercap-cc-nlp-classifier-cell-002b-contract
+# Domain: resource integrity checks and classifier output contracts.
 
 
 def classifier_resource_paths(
@@ -2609,6 +2837,13 @@ def render_latex_longtable(
 # Why this matters: stable setup reduces run-to-run variability and catches input issues before expensive model steps.
 
 cfg = ClassifierConfig()
+print(
+    "Scoring configuration:",
+    {
+        "scoring_method": cfg.scoring_method,
+        "abstain_threshold": cfg.abstain_threshold,
+    },
+)
 
 try:
     NLP = spacy.load("en_core_web_sm", disable=["ner", "parser", "textcat", "senter"])
@@ -2636,7 +2871,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from hypercap_cc_nlp.pipeline_contracts import write_contract_report
-from hypercap_cc_nlp.pipeline_audit import collect_run_manifest
+from hypercap_cc_nlp.pipeline_audit import collect_run_manifest, sanitize_manifest_payload
 ensure_required_workflow_columns = ensure_required_columns
 
 classifier_input_filename = os.getenv(cfg.input_filename_env_var, cfg.input_filename)
@@ -2661,9 +2896,6 @@ if resource_report["warnings"]:
 
 df = pd.read_excel(file_path, sheet_name=0, engine="openpyxl")
 df.columns = df.columns.str.strip()
-pre_alias_columns = set(df.columns)
-df = normalize_classifier_input_schema(df)
-added_aliases = sorted(set(df.columns).difference(pre_alias_columns))
 
 ensure_required_workflow_columns(
     df,
@@ -2673,7 +2905,6 @@ ensure_required_workflow_columns(
 
 print(f"Loaded input rows={len(df):,}, cols={df.shape[1]:,}")
 print(f"Input path: {file_path}")
-print(f"Added transitional aliases: {added_aliases if added_aliases else 'None'}")
 cc_column = get_cc_column(df)
 print(f"Detected chief complaint column: {cc_column}")
 ```
@@ -2710,6 +2941,7 @@ print(
     df[
         [
             cc_column,
+            "chief_complaint_raw",
             "cc_missing_flag",
             "cc_missing_reason",
             "cc_pseudomissing_flag",
@@ -2724,29 +2956,7 @@ print(
 )
 ```
 
-## 5) Rule system and ontology mappings
-
-```{python}
-#| label: hypercap-cc-nlp-classifier-cell-005
-# Purpose: run a quick rule-coverage spot check on representative phrases.
-# Why this matters: confirms deterministic override logic is wired correctly before full inference.
-
-print("Rule coverage preview:")
-probe_texts = [
-    "shortness of breath",
-    "bradycardia",
-    "positive blood culture",
-    "alter mental status",
-    "abdominal pain",
-    "right eye redness / pain",
-    "paperwork clearance",
-]
-for text in probe_texts:
-    override, _ = rule_gate(text)
-    print(f"{text!r} -> {override}")
-```
-
-## 6) Prototype loading, deduplication, and embedding preparation
+## 5) Prototype loading, deduplication, and embedding preparation
 
 ```{python}
 #| label: hypercap-cc-nlp-classifier-cell-006
@@ -2767,7 +2977,7 @@ print("- prototype_count_by_group:")
 print(metadata["prototype_count_by_group"])
 ```
 
-## 7) Segment cache build and classification
+## 6) Segment cache build and classification
 
 ```{python}
 #| label: hypercap-cc-nlp-classifier-cell-007
@@ -2804,14 +3014,11 @@ print(f"Cache emb shape: {tuple(cache.emb.shape)}")
 print(f"Cache sim shape: {tuple(cache.sim_proto.shape)}")
 ```
 
-## 8) Output shaping and compatibility mapping
+## 7) Output shaping and compatibility mapping
 
-Standardized output columns:
-- `RFV1..RFV5` (legacy short-code compatibility)
-- `RFV1_name..RFV5_name`
-- `RFV1_support..RFV5_support`
-- `RFV1_sim..RFV5_sim`
-- `segment_preds`
+Standardized output columns: - `RFV1..RFV5` (legacy short-code
+compatibility) - `RFV1_name..RFV5_name` - `RFV1_support..RFV5_support` -
+`RFV1_sim..RFV5_sim` - `segment_preds`
 
 ```{python}
 #| label: hypercap-cc-nlp-classifier-cell-008
@@ -2838,7 +3045,7 @@ for slot in range(1, cfg.max_rfv + 1):
 print(df_out[display_cols].head(10).to_string())
 ```
 
-## 9) Diagnostics and QA checks
+## 8) Diagnostics and QA checks
 
 ```{python}
 #| label: hypercap-cc-nlp-classifier-cell-009
@@ -2869,6 +3076,7 @@ print(f"Row override rate: {override_summary['row_override_rate']:.4f}")
 phrase_audit_summary, phrase_audit_rfv = build_phrase_regression_audit(
     df_out,
     cc_column=cc_column,
+    cleaned_column="cc_cleaned_str",
 )
 print("\nAbnormal-labs phrase audit:")
 print(phrase_audit_summary.to_string(index=False))
@@ -2884,6 +3092,40 @@ if abnormal_loss_rows > 0:
     raise AssertionError(
         "Detected abnormal-labs normalization regression: "
         f"{abnormal_loss_rows} rows still contain 'abnormal loss' segments."
+    )
+
+bleed_token_truncation_rows = int(
+    phrase_audit_summary.loc[
+        phrase_audit_summary["metric"].eq("bleed_token_truncation_rows"), "value"
+    ].iloc[0]
+)
+if bleed_token_truncation_rows > 0:
+    raise AssertionError(
+        "Detected bleed-token truncation regression: "
+        f"{bleed_token_truncation_rows} rows replaced 'bleed' with truncated forms."
+    )
+
+femer_to_fever_rows = int(
+    phrase_audit_summary.loc[
+        phrase_audit_summary["metric"].eq("femer_to_fever_rows"), "value"
+    ].iloc[0]
+)
+if femer_to_fever_rows > 0:
+    raise AssertionError(
+        "Detected femur typo normalization regression: "
+        f"{femer_to_fever_rows} rows mapped 'femer' to 'fever'."
+    )
+
+phrase_guardrail_suite = run_phrase_guardrail_suite()
+print("\nPhrase guardrail suite:")
+print(phrase_guardrail_suite.to_string(index=False))
+if not bool(phrase_guardrail_suite["passed"].fillna(False).all()):
+    failed_phrase_suite = phrase_guardrail_suite.loc[
+        ~phrase_guardrail_suite["passed"].fillna(False)
+    ]
+    raise AssertionError(
+        "Phrase guardrail suite failed. "
+        f"Unexpected codes for sentinel phrases: {failed_phrase_suite.to_dict(orient='records')}"
     )
 
 normalization_integrity = _score_normalization_integrity(
@@ -2984,7 +3226,7 @@ print(
 )
 ```
 
-## 10) Export
+## 9) Export
 
 ```{python}
 #| label: hypercap-cc-nlp-classifier-cell-010
@@ -3034,6 +3276,8 @@ if not phrase_audit_rfv.empty:
     phrase_detail["audit_type"] = "rfv_distribution"
     phrase_audit = pd.concat([phrase_audit, phrase_detail], ignore_index=True, sort=False)
 phrase_audit.to_csv(phrase_audit_path, index=False)
+phrase_guardrail_path = archive_output_path.parent / f"{run_date} classifier_phrase_guardrail_cases.csv"
+phrase_guardrail_suite.to_csv(phrase_guardrail_path, index=False)
 spellfix_guardrail_audit_path = archive_output_path.parent / f"{run_date} classifier_spellfix_guardrail_audit.csv"
 normalization_guardrail_audit.to_csv(spellfix_guardrail_audit_path, index=False)
 
@@ -3042,7 +3286,15 @@ spell_mode_scores.to_csv(spell_mode_comparison_path, index=False)
 spellfix_log_rows = (
     df_out.loc[
         df_out["cc_spellfix_any"].fillna(False).astype(bool),
-        ["hadm_id", "subject_id", "cc_text_for_nlp", "cc_cleaned_str", "cc_spell_mode_selected", "cc_spellfix_log"],
+        [
+            "hadm_id",
+            "subject_id",
+            "chief_complaint_raw",
+            "cc_text_for_nlp",
+            "cc_cleaned_str",
+            "cc_spell_mode_selected",
+            "cc_spellfix_log",
+        ],
     ]
     .copy()
 )
@@ -3100,6 +3352,20 @@ stage_manifest = collect_run_manifest(
     WORK_DIR,
     run_id=f"classifier_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}",
 )
+
+
+def _manifest_relpath(path_value: object) -> str | None:
+    if path_value is None:
+        return None
+    path_obj = Path(path_value).expanduser()
+    if path_obj.is_absolute():
+        try:
+            return str(path_obj.resolve().relative_to(WORK_DIR.resolve()))
+        except ValueError:
+            return f"<external>/{path_obj.name}"
+    return str(path_obj)
+
+
 stage_manifest["stage"] = "classifier"
 stage_manifest["model_metadata"] = {
     "model_name": metadata.get("model_name"),
@@ -3108,20 +3374,26 @@ stage_manifest["model_metadata"] = {
     "appendix_rows_used": metadata.get("appendix_rows_used"),
     "prototype_total": metadata.get("prototype_total"),
 }
+stage_manifest["scoring_config"] = {
+    "scoring_method": cfg.scoring_method,
+    "abstain_threshold": cfg.abstain_threshold,
+}
 stage_manifest["resource_verification"] = resource_report
 stage_manifest["outputs"] = {
-    "canonical_output_path": str(canonical_output_path),
+    "canonical_output_path": _manifest_relpath(canonical_output_path),
     "canonical_output_sha256": canonical_output_sha256,
-    "archive_output_path": str(archive_output_path) if write_archive_xlsx else None,
+    "archive_output_path": _manifest_relpath(archive_output_path) if write_archive_xlsx else None,
     "archive_output_sha256": archive_output_sha256,
-    "cc_missing_audit_path": str(cc_missing_audit_path),
-    "phrase_audit_path": str(phrase_audit_path),
-    "spellfix_guardrail_audit_path": str(spellfix_guardrail_audit_path),
-    "spell_mode_comparison_path": str(spell_mode_comparison_path),
-    "spellfix_log_path": str(spellfix_log_path),
-    "hypercap_flags_audit_path": str(hypercap_flags_audit_path),
-    "classifier_contract_report_path": str(contract_report_path),
+    "cc_missing_audit_path": _manifest_relpath(cc_missing_audit_path),
+    "phrase_audit_path": _manifest_relpath(phrase_audit_path),
+    "phrase_guardrail_path": _manifest_relpath(phrase_guardrail_path),
+    "spellfix_guardrail_audit_path": _manifest_relpath(spellfix_guardrail_audit_path),
+    "spell_mode_comparison_path": _manifest_relpath(spell_mode_comparison_path),
+    "spellfix_log_path": _manifest_relpath(spellfix_log_path),
+    "hypercap_flags_audit_path": _manifest_relpath(hypercap_flags_audit_path),
+    "classifier_contract_report_path": _manifest_relpath(contract_report_path),
 }
+stage_manifest = sanitize_manifest_payload(stage_manifest, work_dir=WORK_DIR)
 stage_manifest_path = archive_output_path.parent / f"{run_date} classifier_run_manifest.json"
 stage_manifest_path.write_text(json.dumps(stage_manifest, indent=2))
 
@@ -3141,6 +3413,7 @@ else:
     print("Skipped archive workbook export (WRITE_ARCHIVE_XLSX_EXPORTS!=1).")
 print(f"Wrote CC missingness audit: {cc_missing_audit_path}")
 print(f"Wrote phrase regression audit: {phrase_audit_path}")
+print(f"Wrote phrase guardrail suite: {phrase_guardrail_path}")
 print(f"Wrote spellfix guardrail audit: {spellfix_guardrail_audit_path}")
 print(f"Wrote spell-mode comparison audit: {spell_mode_comparison_path}")
 print(f"Wrote spellfix log audit: {spellfix_log_path}")

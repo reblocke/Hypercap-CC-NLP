@@ -126,6 +126,7 @@ RATER_ANNOTATION_PATH="Annotation/Final 2025-10-14 Annotation Sample.xlsx"  # op
 ANALYSIS_INPUT_FILENAME="MIMICIV all with CC_with_NLP.xlsx"  # optional override for analysis input
 BQ_QUERY_TIMEOUT_SECS=1800  # optional BigQuery timeout for cohort query execution
 WRITE_ARCHIVE_XLSX_EXPORTS=0  # set 1 to write additional legacy/timestamped XLSX archive exports
+COHORT_DEBUG_INVENTORY=0  # set 1 to run extra inventory snapshots/debug exports (default pipeline path keeps this off)
 COHORT_FAIL_ON_ALL_OTHER_SOURCE=1  # fail cohort run if gas source attribution collapses to all other/unknown
 COHORT_WARN_OTHER_RATE=0.50  # warn when mean gas_source_other_rate is high
 COHORT_FAIL_OTHER_RATE=      # optional hard fail threshold for gas_source_other_rate (unset = disabled)
@@ -154,6 +155,9 @@ Hard-coded QA-only POC UNKNOWN-route sanity contract (not a runtime notebook env
 Blood-gas item selection is versioned in `specs/blood_gas_itemids.json`:
 - LAB + POC definitive pCO2 extraction uses manifest allowlists and explicit exclusions.
 - Source classes are ABG/VBG/UNKNOWN; UNKNOWN means definitive pCO2 with unresolved sample type.
+- LAB UNKNOWN is specimen-driven (blood-fluid pCO2 with specimen text not classifiable as arterial/venous).
+- POC UNKNOWN is manifest-driven via `icu.pco2_unknown_itemids` (with specimen-text override when ICU specimen itemids are configured).
+- When `icu.pco2_unknown_itemids` is empty (current default), `poc_other_*` detail columns are omitted from canonical exports.
 - UNKNOWN remains cohort-eligible for pCO2-threshold inclusion.
 - Gas qualification for enrollment is any-time during stay (`pco2_threshold_any`).
 - `pco2_threshold_0_24h` is retained as a timing marker (`first qualifying gas <= 24h from ED presentation anchor`).
@@ -165,16 +169,10 @@ Blood-gas item selection is versioned in `specs/blood_gas_itemids.json`:
   - `poc_itemid_qc_status` (`pass|warning|fail`)
   - `poc_itemid_qc_blocking_passed`
   - `poc_itemid_qc_failed_itemids_n`, `poc_itemid_qc_warning_itemids_n`
-  - `poc_itemid_qc_fail_reasons`, `poc_itemid_qc_warn_reasons`
-- Backward-compatible aliases remain for this cycle:
-  - `poc_itemid_qc_passed` (alias of `poc_itemid_qc_blocking_passed`)
-  - `poc_itemid_qc_reason` (alias reason text)
+  - `poc_itemid_qc_reason`, `poc_itemid_qc_fail_reasons`, `poc_itemid_qc_warn_reasons`
 - Canonical POC contribution metrics in `qa_summary.json`:
   - `poc_qualifying_earliest_0_24h_hadm_n` / `_rate`
   - `poc_qualifying_any_type_0_24h_hadm_n` / `_rate`
-- Deprecated alias metrics:
-  - `poc_hypercap_0_24h_edstay_n` / `_rate` now alias hadm-level any-type POC counts.
-  - `poc_hypercap_0_24h_alias_of` documents the canonical replacement field.
 - ICU HCO3 fallback is explicit-itemid only (no regex fallback).
 - Blood-gas triplet capture now pairs `pCO2 + pH + pO2` from the same draw context:
   - LAB uses specimen/panel context.
@@ -218,9 +216,9 @@ QUARTO_PYTHON="$PWD/.venv/bin/python" quarto render "Hypercap CC NLP Classifier.
 
 Legacy compatibility note:
 - The `.ipynb` versions are retained as transition-era references and `make notebook-*` compatibility targets.
-- The legacy `.ipynb` files intentionally remain in the repository root (same level as `.qmd`) so existing notebook targets and collaborators’ links continue to work.
+- The stage `.ipynb` files are now stored under `Legacy Code/` and executed there by `make notebook-*` compatibility targets.
 - New feature work should be authored in `.qmd`.
-- Archiving/moving `.ipynb` files is deferred until `make notebook-*` targets are retired.
+- Additional cleanup/removal of `.ipynb` compatibility targets is deferred until `make notebook-*` targets are retired.
 
 Related (independent) workflows:
 - `Annotation/` – manual annotation workflow
@@ -333,6 +331,10 @@ Requires credentialed access to **MIMIC‑IV on BigQuery** (HOSP + ICU) and **MI
 ├── debug/abg_vbg_capture/       # ABG/VBG capture forensics (debug-only)
 ├── Drafts/                     # manuscript/abstract drafts
 ├── Legacy Code/                # prior versions / deprecated experiments
+│   ├── MIMICIV_hypercap_EXT_cohort.ipynb
+│   ├── Rater Agreement Analysis.ipynb
+│   ├── Hypercap CC NLP Classifier.ipynb
+│   └── Hypercap CC NLP Analysis.ipynb
 ├── MIMIC tabular data/         # raw/derived data exports (not shared; request access)
 ├── .jupyter/                   # repo-local kernelspec (hypercap-cc-nlp)
 ├── _quarto.yml
@@ -340,10 +342,6 @@ Requires credentialed access to **MIMIC‑IV on BigQuery** (HOSP + ICU) and **MI
 ├── Hypercap CC NLP Classifier.qmd
 ├── Rater Agreement Analysis.qmd
 ├── Hypercap CC NLP Analysis.qmd
-├── MIMICIV_hypercap_EXT_cohort.ipynb
-├── Rater Agreement Analysis.ipynb
-├── Hypercap CC NLP Classifier.ipynb
-├── Hypercap CC NLP Analysis.ipynb
 ├── Chart Review Sample Calc.qmd
 ├── Makefile
 ├── LICENSE
@@ -369,13 +367,13 @@ Anthropometric timing policy:
 Hypercapnia timing + integrity policy:
 - Timing is anchored on `dt_qualifying_hypercapnia_hours` from ED presentation (fallback to admittime when ED anchor is missing).
 - Early/late split flags (`presenting_hypercapnia`, `late_hypercapnia`) are not exported; use `pco2_threshold_0_24h` and `hypercap_timing_class` (`within_24h`, `after_24h`, `icd_only_or_no_qualifying_gas`).
-- Timestamp integrity and ventilation-window sanitation are additive (`hospital_los_negative_flag`, `admittime_before_ed_intime_flag`, `dt_first_imv_hours_model`, `dt_first_niv_hours_model`, `imv_time_outside_window_flag`, `niv_time_outside_window_flag`).
+- Timestamp integrity and ventilation-window sanitation are computed in cohort stage and reported in QC artifacts (`timing_integrity_audit.csv`, `ventilation_timing_audit.csv`, `qa_summary.json`); the row-level integrity flags are QC-only and not exported in canonical analysis-facing workbooks.
 - Blood-gas provenance fields are exported for first-gas anchor auditability (`first_gas_specimen_type`, `first_gas_specimen_present`, `first_gas_pco2_itemid`, `first_gas_pco2_fluid`, `co2_other_is_blood_asserted`).
 
 Classifier CC missingness policy:
-- Pseudo-missing CC tokens (e.g., `-`, `--`, `N`, `UNKNOWN`, redaction underscores) are retained and tracked in diagnostics.
+- Pseudo-missing CC tokens are excluded upstream from the cohort CC export (`-`, `N`, `___`, underscore-only, empty).
 - Pseudo-missing rows are forced to uncodable primary output (`RFV1="uncodable"`, `RFV1_name="Uncodable/Unknown"`).
-- Final workbook exports `cc_missing_reason` (plus `cc_text_for_nlp`); `cc_missing_flag` and `cc_pseudomissing_flag` remain in classifier diagnostics/audits only.
+- Final workbook exports `cc_missing_reason`, raw ED text as `chief_complaint_raw`, and NLP-ready text as `cc_text_for_nlp`; `cc_missing_flag` and `cc_pseudomissing_flag` remain in classifier diagnostics/audits only.
 
 Annotation workbook curation remains an independent manual workflow.
 
@@ -391,10 +389,15 @@ Annotation workbook curation remains an independent manual workflow.
 - Train an NLP classifier to predict RVC groups and evaluate against adjudicated labels.
 
 ED vitals cleaning policy (cohort stage):
-- Temperatures in the 20–50 range are treated as Celsius-like and converted to Fahrenheit, then range-validated (50–120 °F).
-- Pain score `13` is treated as sentinel/unknown and set missing; valid pain range is 0–10.
+- Temperatures in the 25–45 range are treated as Celsius-like and converted to Fahrenheit, then range-validated (50–115 °F).
+- Pain score is normalized to numeric 0–10 (supports `7/10` and numeric-token extraction from free text); score `13` is treated as sentinel/unknown and set missing.
 - SBP/DBP are range-validated to 20–300 / 10–200; SpO2 values `>100` or `<0` are dropped while `0` is retained and flagged.
 - Per-run ED vitals audits are written to `MIMIC tabular data/prior runs/YYYY-MM-DD ed_vitals_*.csv`.
+- Scope-specific pre/post-clean outlier audits are written to:
+  - `debug/audits/ed_spine/vitals_outlier_audit_raw_pre_clean.csv`
+  - `debug/audits/ed_spine/vitals_outlier_audit_clean_post_clean.csv`
+  - `debug/audits/ed_cc/vitals_outlier_audit_raw_pre_clean.csv`
+  - `debug/audits/ed_cc/vitals_outlier_audit_clean_post_clean.csv`
 
 ## Results mapping
 | Artifact | Notebook | Output path |
@@ -408,7 +411,9 @@ ED vitals cleaning policy (cohort stage):
 | Full CC workbook (no NLP) | `MIMICIV_hypercap_EXT_cohort.qmd` | Canonical: `MIMIC tabular data/MIMICIV all with CC.xlsx`; archive: `MIMIC tabular data/prior runs/YYYY-MM-DD MIMICIV all with CC.xlsx` |
 | Cohort run manifest | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD cohort_run_manifest.json` |
 | Data dictionary | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD MIMICIV all with CC_data_dictionary.xlsx` and `.csv` |
-| QA summary | `MIMICIV_hypercap_EXT_cohort.qmd` | `qa_summary.json` |
+| QA summary (primary, workbook-aligned) | `MIMICIV_hypercap_EXT_cohort.qmd` | `qa_summary.json` (`scope_name="ed_cc"`) |
+| QA summary (ED spine) | `MIMICIV_hypercap_EXT_cohort.qmd` | `debug/qa/qa_summary_ed_spine.json` |
+| QA summary (ED CC scope) | `MIMICIV_hypercap_EXT_cohort.qmd` | `debug/qa/qa_summary_ed_cc.json` |
 | OMR diagnostics | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD omr_diagnostics.json` |
 | Anthropometric coverage audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD anthropometrics_coverage_audit.json` |
 | Gas source audit | `MIMICIV_hypercap_EXT_cohort.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD gas_source_audit.json` |
@@ -463,6 +468,7 @@ ED vitals cleaning policy (cohort stage):
 - `qa_status` remains the local cohort QA status.
 - `contract_status`, `contract_warning_codes`, and `contract_error_codes` are copied from the latest cohort contract report.
 - `qa_status_final` is the max severity across local QA and contract findings (`pass|warning|fail`).
+- `scope_name` and `n_rows` describe the primary QA denominator (`ed_cc`), with ED-spine QA preserved in `debug/qa/qa_summary_ed_spine.json`.
 | Ascertainment overlap UpSet outputs | `Hypercap CC NLP Analysis.qmd` | `Ascertainment_Overlap_UpSet.png`, `Ascertainment_Overlap_Intersections.xlsx` |
 | Analysis run manifest | `Hypercap CC NLP Analysis.qmd` | `MIMIC tabular data/prior runs/YYYY-MM-DD analysis_run_manifest.json` |
 | Rater input manifest | `Rater Agreement Analysis.qmd` | `annotation_agreement_outputs_nlp/R3_vs_NLP_input_manifest.json` |
@@ -478,9 +484,8 @@ Rater join policy:
   - `coverage_status` is `ok|warning|fail` (warning when `0 < matched_rows < 160`).
 - Agreement metrics are computed on canonical RVC codes, with label normalization/mapping exported in `R3_vs_NLP_label_mapping_audit.csv`.
 
-Schema transition note:
-- Classifier intake now applies transitional aliases (`age`, `hr`, `rr`, `sbp`, `dbp`, `temp`, `spo2`, `race`) from canonical source columns when alias columns are absent.
-- Source columns are preserved; aliases are compatibility scaffolding and may be deprecated after full downstream migration.
+Schema note:
+- Classifier intake now expects canonical cohort export column names directly; transitional alias backfills were removed from the Quarto stage.
 
 Anthropometric provenance note:
 - `anthro_source` is standardized to `ED`, `ICU`, `HOSPITAL`, or `missing`.
@@ -542,7 +547,7 @@ Reproducibility checklist:
 
 Legacy compatibility:
 - `make notebook-pipeline` and `make notebook-pipeline-audit` remain available during transition.
-- Root-level `.ipynb` notebook files are intentionally preserved for that compatibility path.
+- Compatibility `.ipynb` notebooks are executed from `Legacy Code/`.
 - Main pipeline development and PDF distribution should use the Quarto targets.
 
 ## Debug workflows
@@ -556,6 +561,7 @@ See `debug/abg_vbg_capture/README.md` for scope, inputs, and outputs.
 
 ## Quarto / R note
 `Chart Review Sample Calc.qmd` uses R packages (`presize`, `kappaSize`, `irr`) for reference-standard power calculations.
+The notebook does not install packages at runtime; it fails fast with install instructions when those packages are missing.
 
 ## License
 Released under the **MIT License**.

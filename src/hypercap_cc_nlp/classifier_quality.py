@@ -37,12 +37,13 @@ def annotate_cc_missingness(
     df: pd.DataFrame,
     *,
     cc_column: str,
+    raw_output_column: str = "chief_complaint_raw",
     nlp_input_column: str = "cc_text_for_nlp",
     missing_flag_column: str = "cc_missing_flag",
     pseudo_flag_column: str = "cc_pseudomissing_flag",
     missing_reason_column: str = "cc_missing_reason",
 ) -> pd.DataFrame:
-    """Annotate true-vs-pseudo missing CCs and derive deterministic NLP input text."""
+    """Annotate true-vs-pseudo missing CCs and derive raw/NLP chief complaint text columns."""
     if cc_column not in df.columns:
         raise KeyError(f"Chief complaint column not found: {cc_column}")
 
@@ -62,7 +63,8 @@ def annotate_cc_missingness(
     out[missing_flag_column] = (is_true_missing | is_pseudo_missing).astype("boolean")
     out[pseudo_flag_column] = is_pseudo_missing.astype("boolean")
     out[missing_reason_column] = reason
-    out[nlp_input_column] = out[cc_column].astype("string")
+    out[raw_output_column] = out[cc_column].astype("string")
+    out[nlp_input_column] = out[raw_output_column]
     out.loc[is_true_missing | is_pseudo_missing, nlp_input_column] = pd.NA
     return out
 

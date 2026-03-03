@@ -30,13 +30,11 @@ OMR_TIMING_TIERS = ("pre_ed_365", "post_ed_365", "missing")
 EXPECTED_STRUCTURAL_NULL_FIELDS = (
     "poc_abg_ph_uom",
     "poc_vbg_ph_uom",
-    "poc_other_ph_uom",
 )
 
 PACO2_VALUE_UOM_PAIRS = (
     ("poc_abg_paco2", "poc_abg_paco2_uom"),
     ("poc_vbg_paco2", "poc_vbg_paco2_uom"),
-    ("poc_other_paco2", "poc_other_paco2_uom"),
 )
 
 DEFAULT_VITALS_MODEL_RANGES: dict[str, tuple[float, float]] = {

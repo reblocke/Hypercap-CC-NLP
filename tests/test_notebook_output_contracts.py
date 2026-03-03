@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 
 WORK_DIR = Path(__file__).resolve().parents[1]
@@ -48,12 +49,22 @@ def test_cohort_notebook_contains_ed_vitals_cleaning_helpers() -> None:
     cohort_text = (WORK_DIR / "MIMICIV_hypercap_EXT_cohort.qmd").read_text()
     assert "def normalize_temperature_to_f(" in cohort_text
     assert "def clean_pain_score(" in cohort_text
+    assert "pain_parsed_from_fraction" in cohort_text
+    assert "pain_parsed_from_text_numeric" in cohort_text
+    assert "pain_non_numeric_set_na" in cohort_text
     assert "def clean_bp(" in cohort_text
     assert "def clean_o2sat(" in cohort_text
+    assert "chief_complaint_inclusion_mask(" in cohort_text
+    assert "canonicalize_cc_for_inclusion(" in cohort_text
     assert "def build_ed_vitals_audit_artifacts(" in cohort_text
+    assert "build_vitals_outlier_phase_audit(" in cohort_text
     assert "ed_vitals_distribution_summary.csv" in cohort_text
     assert "ed_vitals_extreme_examples.csv" in cohort_text
     assert "ed_vitals_model_delta.csv" in cohort_text
+    assert "vitals_outlier_audit_raw_pre_clean.csv" in cohort_text
+    assert "vitals_outlier_audit_clean_post_clean.csv" in cohort_text
+    assert "qa_summary_ed_spine.json" in cohort_text
+    assert "qa_summary_ed_cc.json" in cohort_text
     assert "ed_triage_temp_f_clean" in cohort_text
     assert "ed_first_temp_f_clean" in cohort_text
     assert "ed_triage_o2sat_clean" in cohort_text
@@ -108,7 +119,6 @@ def test_cohort_notebook_contains_ed_vitals_cleaning_helpers() -> None:
     assert "normalize_anthro_source(" in cohort_text
     assert "first_other_src_detail" in cohort_text
     assert "first_gas_anchor_has_pco2" in cohort_text
-    assert "poc_itemid_qc_passed" in cohort_text
     assert "poc_itemid_qc_reason" in cohort_text
     assert "poc_itemid_qc_status" in cohort_text
     assert "poc_itemid_qc_blocking_passed" in cohort_text
@@ -120,7 +130,6 @@ def test_cohort_notebook_contains_ed_vitals_cleaning_helpers() -> None:
     assert "poc_qc_is_telemetry_only" in cohort_text
     assert "poc_qualifying_earliest_0_24h_hadm_n" in cohort_text
     assert "poc_qualifying_any_type_0_24h_hadm_n" in cohort_text
-    assert "poc_hypercap_0_24h_alias_of" in cohort_text
     assert "hco3_band_qc_inconsistency_n" in cohort_text
     assert "pco2_threshold_any" in cohort_text
     assert "pco2_threshold_0_24h" in cohort_text
@@ -144,7 +153,8 @@ def test_cohort_notebook_contains_ed_vitals_cleaning_helpers() -> None:
     assert "vbg_hypercap_threshold" in cohort_text
     assert "unknown_hypercap_threshold" in cohort_text
     assert "hypercap_timing_class" in cohort_text
-    assert "timing_usable_for_model" in cohort_text
+    assert "timing_integrity_audit.csv" in cohort_text
+    assert "ventilation_timing_audit.csv" in cohort_text
     assert "contract_warning_codes" in cohort_text
     assert "contract_error_codes" in cohort_text
     assert "qa_status_final" in cohort_text
@@ -165,8 +175,8 @@ def test_analysis_notebook_contains_requested_outputs() -> None:
     assert "from upsetplot import UpSet, from_indicators" in analysis_text
     assert "def select_preferred_vital_column(" in analysis_text
     assert "qualifying_gas_time_observed_rate" in analysis_text
-    assert "poc_itemid_qc_passed" in analysis_text
     assert "poc_itemid_qc_status" in analysis_text
+    assert "poc_itemid_qc_reason" in analysis_text
     assert "poc_itemid_qc_failed_itemids_n" in analysis_text
     assert "poc_itemid_qc_warning_itemids_n" in analysis_text
     assert "poc_qualifying_earliest_0_24h_hadm_n" in analysis_text
@@ -174,19 +184,43 @@ def test_analysis_notebook_contains_requested_outputs() -> None:
     assert "UNKNOWN semantics" in analysis_text
     assert "panel_unknown_rate" in analysis_text
     assert "encounter_unknown_rate" in analysis_text
+    assert "analysis_export_registry" in analysis_text
+    assert "def write_excel_export(" in analysis_text
 
 
 def test_classifier_notebook_contains_spell_mode_comparison_and_audit() -> None:
     classifier_text = (WORK_DIR / "Hypercap CC NLP Classifier.qmd").read_text()
+    assert 'scoring_method: str = "max"' in classifier_text
+    assert "group_scores_from_proto_row(" in classifier_text
+    assert "score_one_segment_soft(" in classifier_text
     assert "CC_SPELL_CORRECTION_MODE" in classifier_text
     assert "SPELL_CORRECTION_MODES" in classifier_text
+    assert "SymSpell(max_dictionary_edit_distance=1" in classifier_text
     assert "choose_spell_mode(" in classifier_text
     assert "classifier_spell_mode_comparison.csv" in classifier_text
     assert "classifier_spellfix_log.csv" in classifier_text
     assert "classifier_spellfix_guardrail_audit.csv" in classifier_text
+    assert "classifier_phrase_guardrail_cases.csv" in classifier_text
     assert "SPELL_PROTECT_PHRASES" in classifier_text
+    assert "LEMMA_PROTECT_PHRASES" in classifier_text
     assert "SPELL_DENYLIST_SUBSTITUTIONS" in classifier_text
+    assert '("femer", "fever")' in classifier_text
+    assert '("black", "back")' in classifier_text
+    assert '"femer": "femur"' in classifier_text
+    assert '"trach": "tracheostomy"' in classifier_text
+    assert '"mvc": "motor vehicle collision"' in classifier_text
+    assert '"mva": "motor vehicle accident"' in classifier_text
+    assert "bleed_token_truncation" in classifier_text
+    assert "femer_to_fever" in classifier_text
+    assert "RX_NEURO_BLEED" in classifier_text
+    assert "RX_NEURO_BLEED_TRAUMA_CONTEXT" in classifier_text
+    assert "RX_NEURO_BLEED_DIAGNOSIS_CONTEXT" in classifier_text
+    assert "run_phrase_guardrail_suite" in classifier_text
+    assert "HEAD BLEED" in classifier_text
+    assert "Upper GI bleed" in classifier_text
+    assert "FEMER FX" in classifier_text
     assert "integrity_violation_total" in classifier_text
+    assert "scoring_config" in classifier_text
     assert "classifier_export_drop_columns" in classifier_text
     assert '"cc_missing_flag"' in classifier_text
     assert '"cc_pseudomissing_flag"' in classifier_text
@@ -204,10 +238,17 @@ def test_rater_notebook_contains_key_inventory_and_canonical_mapping() -> None:
     assert "category_prevalence_nonzero_n" in rater_text
 
 
+def test_chart_review_notebook_avoids_runtime_package_installs() -> None:
+    chart_review_text = (WORK_DIR / "Chart Review Sample Calc.qmd").read_text()
+    assert not re.search(r"^\s*install\.packages\s*\(", chart_review_text, re.MULTILINE)
+    assert "requireNamespace" in chart_review_text
+
+
 def test_cohort_notebook_requires_manifest_hco3_and_poc_fallback_guard() -> None:
     cohort_text = (WORK_DIR / "MIMICIV_hypercap_EXT_cohort.qmd").read_text()
     assert "lab.get(\"po2_itemids\"" in cohort_text
     assert "icu.get(\"po2_itemids\"" in cohort_text
+    assert "icu.get(\"pco2_unknown_itemids\"" in cohort_text
     assert "po2_abg_itemids" in cohort_text
     assert "po2_vbg_itemids" in cohort_text
     assert "first_abg_po2" in cohort_text
@@ -243,8 +284,8 @@ def test_cohort_notebook_uses_unknown_fallback_naming_and_drops_legacy_flags() -
     cohort_text = (WORK_DIR / "MIMICIV_hypercap_EXT_cohort.qmd").read_text()
     assert "gas_source_tier_fallback_unknown_rate" in cohort_text
     assert "gas_source_tier_fallback_other_rate" not in cohort_text
-    assert "poc_hypercap_0_24h_edstay_n" in cohort_text
-    assert "poc_hypercap_0_24h_alias_of" in cohort_text
+    assert "poc_qualifying_earliest_0_24h_hadm_n" in cohort_text
+    assert "poc_qualifying_any_type_0_24h_hadm_n" in cohort_text
     assert '"flag_any_gas_hypercapnia_poc"' in cohort_text
     assert '"flag_any_gas_hypercapnia"' in cohort_text
 
@@ -252,7 +293,19 @@ def test_cohort_notebook_uses_unknown_fallback_naming_and_drops_legacy_flags() -
 def test_cohort_notebook_drops_redundant_export_columns() -> None:
     cohort_text = (WORK_DIR / "MIMICIV_hypercap_EXT_cohort.qmd").read_text()
     assert "cohort_export_drop_columns" in cohort_text
+    assert "model_overwrite_audit.csv" in cohort_text
+    assert "model_overwrite_threshold = 0.05" in cohort_text
     assert '"first_pco2"' in cohort_text
+    assert '"ed_gender"' in cohort_text
+    assert '"ed_race"' in cohort_text
+    assert '"ed_intime_first"' in cohort_text
+    assert '"age_at_admit"' in cohort_text
+    assert '"first_gas_time"' in cohort_text
+    assert '"dt_first_qualifying_gas_hours"' in cohort_text
+    assert '"lab_other_ph"' in cohort_text
+    assert '"lab_other_paco2"' in cohort_text
+    assert '"lab_other_time"' in cohort_text
+    assert '"hospital_expire_flag"' in cohort_text
     assert '"enrolled_any"' in cohort_text
     assert '"enrolled_any_icd_union_secondary"' in cohort_text
     assert '"gas_source_unknown_rate"' in cohort_text
@@ -260,3 +313,11 @@ def test_cohort_notebook_drops_redundant_export_columns() -> None:
     assert '"gas_source_inference_primary_tier"' in cohort_text
     assert '"lab_abg_po2"' in cohort_text
     assert '"poc_abg_po2"' in cohort_text
+    assert '"ed_triage_hr_model"' in cohort_text
+    assert '"ed_first_temp_model"' in cohort_text
+    assert '"ed_triage_temp_f_clean"' in cohort_text
+    assert '"ed_triage_pain_clean"' in cohort_text
+    assert '"ed_first_o2sat_model"' in cohort_text
+    assert '"first_ph_model"' in cohort_text
+    assert '"first_pco2_model"' in cohort_text
+    assert '"first_lactate_model"' in cohort_text
