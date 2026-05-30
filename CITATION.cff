@@ -1,0 +1,36 @@
+cff-version: 1.2.0
+message: >-
+  If you use this repository, please cite the GitHub release matching the code
+  you used, the relevant MIMIC-IV resources, and the published abstract or
+  manuscript once final citation metadata is available.
+title: Hypercap-CC-NLP
+type: software
+authors:
+  - family-names: Merdad
+    given-names: Reyan
+  - family-names: Crawford
+    given-names: Monique
+  - family-names: Christenson
+    given-names: Matthias
+  - family-names: Pettine
+    given-names: Warren
+  - family-names: Locke
+    given-names: Brian W.
+    orcid: https://orcid.org/0000-0002-3588-5238
+repository-code: "https://github.com/reblocke/Hypercap-CC-NLP"
+license: MIT
+keywords:
+  - hypercapnia
+  - respiratory failure
+  - natural language processing
+  - MIMIC-IV
+  - emergency department
+  - Quarto
+version: "v0.1.0"
+date-released: "2026-05-30"
+identifiers:
+  - type: url
+    value: https://github.com/reblocke/Hypercap-CC-NLP
+abstract: >-
+  Quarto-first reproducibility code for a MIMIC-IV study of presenting-concern
+  profiles in hypercapnic respiratory failure.

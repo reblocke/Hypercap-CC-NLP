@@ -1,0 +1,261 @@
+# AGENTS.md
+
+## Project overview
+- This repository is a **Python-first** project for statistical programming, experimental analysis, and scientific computing.
+- The primary language is **Python**. Do not propose non-Python implementations unless explicitly asked.
+- Priorities (in order):
+  1) **Human time**: readability, maintainability, debuggability
+  2) **Reproducibility**: deterministic runs, stable environments. It will only be run from start-to-finish
+  3) **Performance**: only when needed and measured
+
+## Continuity Ledger (compaction-safe; recommended)
+Maintain a single Continuity Ledger for this workspace in `http://CONTINUITY.md`.
+
+The ledger is the canonical session briefing designed to survive context compaction; do not rely on earlier chat text unless it’s reflected in the ledger.
+
+### How it works
+- At the start of every assistant turn: read `http://CONTINUITY.md`, update it to reflect the latest goal/constraints/decisions/state, then proceed.
+- Update `http://CONTINUITY.md` again whenever any of these change: goal, constraints/assumptions, key decisions, progress state (Done/Now/Next), or important tool outcomes.
+- Keep it short and stable: facts only, no transcripts. Prefer bullets.
+- Mark uncertainty as `UNCONFIRMED` (never guess).
+
+### `functions.update_plan` vs the Ledger
+- Use `functions.update_plan` only for short-term execution scaffolding (a small 3–7 step plan).
+- Use `http://CONTINUITY.md` for long-running continuity across compaction (the “what/why/current state”), not a step-by-step task list.
+
+### In replies
+- Begin with a brief **Ledger Snapshot** (Goal + Now/Next + Open Questions).
+- Print the full ledger only when it materially changes or when the user asks.
+
+### `http://CONTINUITY.md` format (keep headings)
+- Goal (incl. success criteria):
+- Constraints/Assumptions:
+- Key decisions:
+- State:
+- Done:
+- Now:
+- Next:
+- Open questions (UNCONFIRMED if needed):
+- Working set (files/ids/commands):
+
+## Authority hierarchy (resolve conflicts in this order)
+1) The study protocol / analysis plan / primary papers and domain requirements (if applicable)
+2) Repository docs: `README.md`, `docs/SPEC.md`, `docs/DECISIONS.md`, and this `AGENTS.md`
+3) Existing code and notebooks (reference only)
+
+Document roles within the repository docs layer:
+- `README.md` = onboarding/runbook (setup, auth, render commands, operator workflows)
+- `docs/SPEC.md` = current normative contract (stages, handoffs, outputs, QA surfaces, runtime constraints)
+- `docs/DECISIONS.md` = dated rationale/history (why the contract changed, plus superseded decisions)
+
+When lower-level code conflicts with higher-level requirements:
+- implement the higher-level requirement,
+- document the divergence (and why) in `docs/DECISIONS.md` with file/line references.
+
+## Non-negotiables (keep updated)
+Use this section to list hard constraints the assistant must not violate (and update it as the project evolves). Examples:
+- fixed dataset contract (required columns, units, and encoding)
+- required reporting conventions (tables, figures, rounding, labels)
+- approved modeling approach(es) and diagnostics
+- performance or memory ceilings in production
+- Core phase logic for the 4-stage pipeline must live in the `.qmd` notebooks:
+  - `MIMICIV_hypercap_EXT_cohort.qmd`
+  - `Hypercap CC NLP Classifier.qmd`
+  - `Rater Agreement Analysis.qmd`
+  - `Hypercap CC NLP Analysis.qmd`
+- Generated notebook PDFs, figures, tables, HTML bundles, and root-level analysis exports must write to `Results/YYYY-MM-DD/`.
+- `Drafts/` is manual-only working space and must not be modified by automated render/migration steps.
+- `artifacts/` is reserved for QA/debug/manifests, including `artifacts/qa/cohort/`, `artifacts/qa/rater_agreement/`, `artifacts/qa/analysis/`, and `artifacts/qa/baselines/`.
+- Standalone `.py` modules are allowed for QA/data-fidelity/contracts/audit/parity/scripts/tests only.
+- Renderable analysis notebooks must run without runtime imports from `src/` or other repo-local Python packages. If a helper is required for execution, define it in a clearly labeled “Local helper functions” notebook section in that `.qmd`.
+- If a collaborator receives the `.qmd` and the declared input data, they should be able to recreate the stage outputs by rendering that notebook alone.
+
+If this section is empty or ambiguous, default to: correctness → clarity → reproducibility → measured optimization.
+
+## Environment
+- Python ≥ 3.11 on macOS/Linux (use the repo’s pinned version if specified in `pyproject.toml`).
+- Dependency management uses **uv** (`pyproject.toml` + `uv.lock`).
+  - Commit `pyproject.toml` and `uv.lock`.
+  - Do **not** add `pip install ...` / `conda install ...` commands to committed code (scripts, modules, notebooks).
+  - If dependencies must change, propose the `pyproject.toml` edits and the corresponding uv workflow needed to update the lockfile.
+- Code quality uses **Ruff only**:
+  - Formatting: `ruff format`
+  - Linting: `ruff check` (use `--fix` when appropriate)
+  - Do not introduce Black, isort, flake8, pylint, or additional formatters/linters.
+- Quarto (`.qmd`) with Python execution is the default notebook interface for pipeline work.
+- Jupyter (`.ipynb`) is legacy/compatibility-only unless explicitly requested.
+
+## Repository structure and design
+- Prefer a **src layout** for importable code:
+  - `src/<package_name>/...`
+  - `tests/...`
+  - optional: `notebooks/`, `scripts/`, `docs/`, `artifacts/`
+- In this repository, `src/` is primarily for QA/contracts/audit/parity helpers and supporting scripts.
+- Renderable `.qmd` notebooks must not depend on runtime `src/` imports; `src/` helpers are for offline QA/tests/scripts only.
+- Do not move primary cohort/classifier/rater/analysis phase logic from `.qmd` into `src/` unless explicitly requested.
+- Keep notebook-local helper functions deterministic, restartable, and self-contained.
+
+## Coding style (human-centered)
+- **Clarity beats cleverness.** Optimize for the next reader (often future-you).
+- Prefer **deep modules** over shallow wrappers:
+  - simple interface (few arguments, sensible defaults)
+  - hide complexity behind well-named functions/classes
+- Avoid deep nesting:
+  - use guard clauses / early returns
+  - keep control flow flat and readable
+- Use meaningful names:
+  - descriptive is good (even if long)
+  - avoid single-letter names outside tight mathematical contexts
+- Limit function arguments:
+  - if a function needs >5 parameters, consider:
+    - a dataclass/typed config object
+    - grouping related parameters into a single structure
+    - splitting responsibilities
+- Prefer explicit data flow:
+  - no hidden global state
+  - no reliance on implicit working directory
+  - pass dependencies explicitly
+- Imports:
+  - avoid `from x import *`
+  - avoid heavy imports inside tight loops unless profiling supports it
+  - standard library first; third-party next; local imports last
+- Use docstrings for public functions/classes:
+  - what the function does
+  - inputs/outputs (units, shapes, dtypes)
+  - important assumptions and edge cases
+- Use type hints for public APIs and cross-module boundaries.
+
+## Code delivery in assistant responses
+- Provide **paste-ready** code blocks: complete imports, functions, and example usage.
+- Prefer stable, widely used packages over custom implementations of standard methods.
+- If changes span multiple files, show a clear file-by-file patch or the full new file contents.
+- If you’re unsure about a project choice, make the smallest safe assumption and flag it explicitly as `UNCONFIRMED`.
+
+## Data manipulation and I/O
+- Use `pandas` for tabular work, `numpy` for arrays, and `scipy` where appropriate.
+- Prefer vectorized operations over row-wise Python loops.
+  - Avoid `df.apply(..., axis=1)` and `iterrows()` unless there is a clear, documented need.
+- Avoid chained assignment in pandas; use `.loc[...]`.
+- Use `pathlib.Path` for paths.
+  - Never hard-code absolute paths.
+  - Do not change the global working directory in committed code (`os.chdir`).
+- Validate inputs at boundaries:
+  - schema/columns, dtypes, ranges, units
+  - fail fast with informative error messages
+- Prefer stable intermediate data formats for derived artifacts (often Parquet for tables) when appropriate.
+
+## Reproducibility
+- All examples must run from a fresh Python session.
+- Always show required imports in examples.
+- Randomness:
+  - Prefer `rng = np.random.default_rng(1234)` and pass `rng` explicitly.
+  - For libraries with their own RNG controls, set seeds explicitly and document where.
+- Avoid manual, non-reproducible steps. If something changes data, it should be executable code.
+
+## Notebooks and Quarto
+- Quarto notebooks (`.qmd`) are the source of truth for the main 4-stage pipeline:
+  - `MIMICIV_hypercap_EXT_cohort.qmd`
+  - `Hypercap CC NLP Classifier.qmd`
+  - `Rater Agreement Analysis.qmd`
+  - `Hypercap CC NLP Analysis.qmd`
+- Use Python code chunks by default unless a notebook is explicitly R-based.
+- Keep notebooks restartable and deterministic:
+  - `quarto render` should succeed from a clean environment.
+- Core data/model/analysis logic for each stage must remain embedded in the corresponding `.qmd`.
+- A renderable `.qmd` must be self-contained at runtime: no `src/` path injection, no imports from repo-local packages for executed stage logic, and all execution-critical helpers defined in that notebook.
+- Jupyter notebooks (`.ipynb`) may be retained as legacy references during transition but should not be the default execution target.
+- Quarto authoring expectations:
+  - label chunks clearly
+  - keep reports narrative and include a “Local helper functions” section for stage logic
+  - avoid interactive-only notebook behavior in pipeline notebooks
+
+## Notebook edit/run protocol (Codex + VS Code)
+- Treat Codex edits as equivalent to manual edits.
+- After Codex changes a Quarto notebook:
+  - save the `.qmd`
+  - run `quarto render` for that notebook (or the stage Make target)
+- Prefer stage-level Make targets (`make quarto-*`) over ad hoc notebook execution for reproducibility.
+- If legacy `.ipynb` files are touched for compatibility, reflect equivalent logic in the canonical `.qmd` source.
+- If edits are not appearing in VS Code:
+  - use “File: Revert File” or reload the window
+  - ensure `files.autoReload` is enabled
+- Preferred VS Code settings (user-level):
+  - `files.autoSave`: `onFocusChange`
+  - `files.autoReload`: `onFocusChange`
+  - `files.useExperimentalFileWatcher`: `true` (recommended for Box Sync paths)
+
+## Modeling
+Choose tools that match the inferential goal:
+- Classical/statistical inference: `statsmodels` (including formula interfaces when helpful)
+- Predictive modeling / ML: `scikit-learn` (pipelines, CV, proper train/test splits)
+- Bayesian modeling: **PyMC + ArviZ**
+
+General modeling expectations:
+- State the estimand and assumptions.
+- Include basic diagnostics appropriate to the model class.
+  - e.g., residual checks, convergence checks, calibration/leakage checks
+- Prefer returning tidy/tabular outputs (`pandas.DataFrame`) with clear column names and metadata.
+
+## Visualization
+- Publication figures are **Python-first** (`matplotlib` primary; `seaborn` only as a thin styling/stat helper).
+- Migration note: legacy non-Python plotting-style guidance is replaced by equivalent Python standards below.
+- Start from output requirements, not defaults:
+  - define target journal/page width first, then set explicit `figsize` in inches
+  - decide single-column vs two-column layout before plotting
+  - use deterministic plotting code only (no manual post-hoc editing in GUI tools)
+- Typography and geometry:
+  - use one consistent font family across all figures in a manuscript
+  - set explicit font sizes for title, axis labels, ticks, legend, and annotations
+  - use readable stroke/marker sizes at final print size (avoid hairline strokes)
+  - keep panel aspect ratios intentional; avoid accidental distortion
+- Color and accessibility:
+  - default to colorblind-safe palettes; avoid red/green-only encodings
+  - ensure information is not color-only (use line type/marker shape where needed)
+  - verify contrast on white background and in grayscale
+- Axes, scales, and statistical integrity:
+  - label every axis with variable name and units
+  - prefer meaningful tick intervals and concise numeric formatting
+  - avoid truncated axes unless scientifically justified and explicitly signposted
+  - keep transformations (e.g., log scale) explicit in labels/captions
+  - show uncertainty (CI/SE/IQR) where inferential interpretation requires it
+- Legends, labels, and multi-panel layout:
+  - place legends where they do not occlude data; remove legends when direct labels are clearer
+  - keep category naming consistent across all figures/tables
+  - align panel limits/ticks across subplots when comparisons are intended
+  - use shared legends/titles for multi-panel figures to reduce clutter
+- Export and reproducibility defaults:
+  - always call `savefig(...)` with explicit `dpi`, `bbox_inches`, facecolor, and format
+  - prefer vector outputs (`.pdf`/`.svg`) for line art; high-DPI raster (`.png`, typically 300–600 DPI) for images/heatmaps
+  - keep `matplotlib` style centralized (project-level rcParams helper or context manager), not ad hoc per cell
+  - ensure figure scripts are restartable and regenerate identical outputs from a clean session
+
+## Performance and optimization
+- Default stance: **do not optimize prematurely**. Write correct, clear code first.
+- If performance matters:
+  - profile to find bottlenecks
+  - optimize the bottleneck (not everything)
+  - benchmark before/after to confirm improvement
+  - stop when it’s “fast enough” (avoid over-optimization)
+- Prefer algorithmic and data-structure improvements over micro-optimizations.
+- Use vectorization and compiled backends (NumPy/SciPy) where appropriate.
+- Consider parallelization only when tasks are independent and I/O won’t bottleneck.
+- Introduce heavier tools (Numba/Cython/custom C/C++) only after profiling and with tests.
+
+## Tests and checks
+- Use `pytest` for unit tests under `tests/`.
+- When creating/modifying functions, add or update tests and state how to run them (e.g., `pytest -q`).
+- Use small, de-identified fixtures (or synthetic data) under `tests/fixtures/`.
+
+## Milestone discipline and definition of done (recommended)
+Every milestone should end with:
+- tests passing locally (`pytest`)
+- generated outputs updated under `Results/YYYY-MM-DD/` and QA/debug outputs updated under `artifacts/`, if outputs changed
+- documentation updated (`README.md` / `docs/DECISIONS.md`) if behavior or assumptions changed
+- a commit with a clear message is ready to be made
+
+## What not to do
+- Do not add interactive-only calls to pipelines (`breakpoint()`, `pdb.set_trace()`, `input()`).
+- Do not introduce hidden global state or non-determinism without clear explanation.
+- Do not restructure the project into new orchestration frameworks (Kedro/Dagster/Prefect/etc.) unless explicitly asked.
+- Do not extract core phase logic from pipeline `.qmd` notebooks into standalone `.py` modules.
+- Do not commit secrets, credentials, patient identifiers, or large raw extracts.

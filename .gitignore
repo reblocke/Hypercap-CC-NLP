@@ -1,0 +1,58 @@
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+GOOGLE_APPLICATION_CREDENTIALS*
+
+# Python, Quarto, and editor caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.uv-cache/
+.venv/
+.quarto/
+**/*.quarto_ipynb
+.ipynb_checkpoints/
+.jupyter/
+.codex/
+
+# macOS/local metadata
+.DS_Store
+.Rhistory
+
+# Restricted/private data and drafts
+MIMIC tabular data/
+Drafts/
+Annotation/*.xlsx
+Annotation/*.xls
+Annotation/*.docx
+Annotation/*.pdf
+Annotation/Full Annotations/
+Annotation/Test Annotations/
+Annotation/resource_manifest.json
+
+# Generated outputs and debug artifacts
+Results/
+artifacts/
+debug/
+outputs/
+tmp/
+Legacy Code/
+hypercap_outputs_bundle_*/
+outputs*.zip
+*.log
+
+# Generated manuscripts, figures, tables, archives, and data products
+*.xlsx
+*.xls
+*.docx
+*.pptx
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.tif
+*.tiff
+*.zip
+*.parquet
