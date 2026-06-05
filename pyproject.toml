@@ -1,6 +1,6 @@
 [project]
 name = "hypercap-cc-nlp"
-version = "0.1.0"
+version = "0.1.1"
 description = "Hypercapnia cohort assembly and NLP classifier for ED chief complaints in MIMIC-IV."
 readme = "README.md"
 license = { file = "LICENSE" }

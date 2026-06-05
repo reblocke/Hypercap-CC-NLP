@@ -4,12 +4,22 @@
 
 **Links & IDs**
 - Repository: https://github.com/reblocke/Hypercap-CC-NLP
-- Release intent: journal-submission code snapshot `v0.1.0`
-- Related abstract: *Chief Complaint Profiles in Hypercapnic Respiratory Failure: A Natural Language Processing Study of MIMIC-IV* (ATS 2026 abstract; exact proceedings metadata pending verification)
+- Release intent: journal-submission code snapshot `v0.1.1`
+- Related abstract: *C75-09 Chief Complaint Profiles in Hypercapnic Respiratory Failure: A Natural Language Processing Study of MIMIC-IV*, American Journal of Respiratory and Critical Care Medicine, 2026;212(Supplement_1), DOI [10.1093/ajrccm/aamag162.4737](https://doi.org/10.1093/ajrccm/aamag162.4737)
+- Machine-readable index: [`llms.txt`](./llms.txt)
 - Statistical environment: Python 3.11, Quarto, BigQuery-backed MIMIC-IV access
 
 ## Cite This Work
-Please cite the GitHub release matching the code you used, the relevant MIMIC-IV resources, and the published abstract or manuscript once the final citation metadata is available. Repository citation metadata is provided in [`CITATION.cff`](./CITATION.cff).
+Please cite the GitHub release matching the code you used, the relevant MIMIC-IV resources, and the ATS abstract when referring to the presented findings. Repository citation metadata is provided in [`CITATION.cff`](./CITATION.cff). Do not cite this repository as a final journal article until an accepted manuscript record exists.
+
+Current related scholarly output:
+
+- Merdad RH, Crawford M, Christenson M, Pettine W, Locke B. **C75-09 Chief Complaint Profiles in Hypercapnic Respiratory Failure: A Natural Language Processing Study of MIMIC-IV.** American Journal of Respiratory and Critical Care Medicine. 2026;212(Supplement_1). DOI [10.1093/ajrccm/aamag162.4737](https://doi.org/10.1093/ajrccm/aamag162.4737).
+
+Key source-data citations:
+
+- MIMIC-IV v3.1, DOI [10.13026/kpb9-mt58](https://doi.org/10.13026/kpb9-mt58).
+- MIMIC-IV-ED v2.2, DOI [10.13026/5ntk-km72](https://doi.org/10.13026/5ntk-km72).
 
 ## Data Access And Ethics
 This repository does not distribute row-level data, MIMIC-derived workbooks, annotation workbooks, generated debug logs, or draft manuscript files. The pipeline requires credentialed access to:
@@ -25,6 +35,7 @@ Researchers must obtain the required PhysioNet/MIMIC training, data-use approval
 - [`docs/SPEC.md`](docs/SPEC.md) is the current pipeline contract: stage ownership, private handoffs, output locations, QA surfaces, runtime constraints, and acceptance checks.
 - [`docs/DECISIONS.md`](docs/DECISIONS.md) records dated rationale and superseded decisions.
 - [`docs/MANUSCRIPT_MAPPING.md`](docs/MANUSCRIPT_MAPPING.md) maps manuscript tables/figures to notebook stages and generated assets.
+- [`data_dictionary.md`](data_dictionary.md) and [`data_dictionary.csv`](data_dictionary.csv) describe restricted source fields, derived NLP/cohort variables, benchmark metrics, and aggregate release assets without exposing row-level data.
 
 ## Quick Start
 
@@ -132,6 +143,8 @@ A successful private run produces:
 
 For public release, generated manuscript outputs should be attached as GitHub/Zenodo release assets, not tracked in git.
 
+The `v0.1.1` release refreshes metadata for the verified ATS abstract while preserving the aggregate `v0.1.0` submission-assets bundle. Release asset checksums should validate from the downloaded filename, not from private local paths.
+
 ## Paper To Code Mapping
 
 | Manuscript item | Producing notebook | Output |
@@ -194,6 +207,7 @@ RUN_MANIFEST_REQUIRE_CLEAN_GIT=1 RESULTS_DATE=2026-04-29 make quarto-pipeline-au
 ```
 
 Not tracked in the public repository: `MIMIC tabular data/`, `Drafts/`, `Results/`, `artifacts/`, `debug/`, `outputs/`, `tmp/`, legacy notebooks, local environment files, Office/PDF/image exports, and generated Excel workbooks.
+Also not tracked: `CONTINUITY.md`, which is a local agent/session ledger rather than a public project artifact.
 
 ## Environment
 

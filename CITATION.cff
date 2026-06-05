@@ -1,8 +1,8 @@
 cff-version: 1.2.0
 message: >-
   If you use this repository, please cite the GitHub release matching the code
-  you used, the relevant MIMIC-IV resources, and the published abstract or
-  manuscript once final citation metadata is available.
+  you used, the relevant MIMIC-IV resources, and the ATS abstract when referring
+  to the presented findings.
 title: Hypercap-CC-NLP
 type: software
 authors:
@@ -18,6 +18,7 @@ authors:
     given-names: Brian W.
     orcid: https://orcid.org/0000-0002-3588-5238
 repository-code: "https://github.com/reblocke/Hypercap-CC-NLP"
+url: "https://github.com/reblocke/Hypercap-CC-NLP"
 license: MIT
 keywords:
   - hypercapnia
@@ -25,12 +26,77 @@ keywords:
   - natural language processing
   - MIMIC-IV
   - emergency department
+  - chief complaint
   - Quarto
-version: "v0.1.0"
-date-released: "2026-05-30"
+version: "v0.1.1"
+date-released: "2026-06-05"
 identifiers:
   - type: url
     value: https://github.com/reblocke/Hypercap-CC-NLP
 abstract: >-
   Quarto-first reproducibility code for a MIMIC-IV study of presenting-concern
   profiles in hypercapnic respiratory failure.
+references:
+  - type: article
+    title: >-
+      C75-09 Chief Complaint Profiles in Hypercapnic Respiratory Failure: A
+      Natural Language Processing Study of MIMIC-IV
+    authors:
+      - family-names: Merdad
+        given-names: R. H.
+      - family-names: Crawford
+        given-names: M.
+      - family-names: Christenson
+        given-names: M.
+      - family-names: Pettine
+        given-names: W.
+      - family-names: Locke
+        given-names: B.
+    year: 2026
+    journal: American Journal of Respiratory and Critical Care Medicine
+    volume: "212"
+    issue: Supplement_1
+    doi: 10.1093/ajrccm/aamag162.4737
+    url: https://doi.org/10.1093/ajrccm/aamag162.4737
+  - type: data
+    title: MIMIC-IV
+    authors:
+      - family-names: Johnson
+        given-names: Alistair
+      - family-names: Bulgarelli
+        given-names: Lucas
+      - family-names: Pollard
+        given-names: Tom
+      - family-names: Gow
+        given-names: Brian
+      - family-names: Moody
+        given-names: Benjamin
+      - family-names: Horng
+        given-names: Steven
+      - family-names: Celi
+        given-names: Leo Anthony
+      - family-names: Mark
+        given-names: Roger
+    year: 2024
+    version: "3.1"
+    doi: 10.13026/kpb9-mt58
+    url: https://doi.org/10.13026/kpb9-mt58
+  - type: data
+    title: MIMIC-IV-ED
+    authors:
+      - family-names: Johnson
+        given-names: Alistair
+      - family-names: Bulgarelli
+        given-names: Lucas
+      - family-names: Pollard
+        given-names: Tom
+      - family-names: Celi
+        given-names: Leo Anthony
+      - family-names: Mark
+        given-names: Roger
+      - family-names: Horng
+        given-names: Steven
+    year: 2023
+    version: "2.2"
+    doi: 10.13026/5ntk-km72
+    url: https://doi.org/10.13026/5ntk-km72

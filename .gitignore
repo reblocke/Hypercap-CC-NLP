@@ -16,6 +16,7 @@ __pycache__/
 .ipynb_checkpoints/
 .jupyter/
 .codex/
+CONTINUITY.md
 
 # macOS/local metadata
 .DS_Store
