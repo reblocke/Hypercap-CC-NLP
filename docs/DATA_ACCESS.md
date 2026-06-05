@@ -6,9 +6,8 @@ This repository intentionally excludes row-level data and private study artifact
 
 The pipeline requires credentialed access to MIMIC-IV through PhysioNet/BigQuery:
 
-- MIMIC-IV HOSP
-- MIMIC-IV ICU
-- MIMIC-IV-ED
+- MIMIC-IV HOSP and ICU v3.1, DOI `10.13026/kpb9-mt58`
+- MIMIC-IV-ED v2.2, DOI `10.13026/5ntk-km72`
 - MIMIC-IV-Note only for future note-based extensions
 
 Local runs also require private generated handoff workbooks under `MIMIC tabular data/` and, for the rater stage, the private adjudicated annotation workbook.
@@ -33,4 +32,6 @@ Users without restricted data access can inspect code, run static/unit tests, an
 
 ## Citation
 
-Users should cite the relevant MIMIC-IV resources according to PhysioNet requirements and cite this repository release when referencing the analysis code.
+Users should cite the relevant MIMIC-IV resources according to PhysioNet requirements, cite this repository release when referencing the analysis code, and cite the ATS 2026 abstract when referencing the presented findings:
+
+- Merdad RH, Crawford M, Christenson M, Pettine W, Locke B. C75-09 Chief Complaint Profiles in Hypercapnic Respiratory Failure: A Natural Language Processing Study of MIMIC-IV. American Journal of Respiratory and Critical Care Medicine. 2026;212(Supplement_1). DOI `10.1093/ajrccm/aamag162.4737`.

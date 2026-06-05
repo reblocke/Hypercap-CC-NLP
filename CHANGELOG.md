@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.1.1 - 2026-06-05
+
+- Refreshed journal-submission metadata with verified ATS 2026 abstract DOI `10.1093/ajrccm/aamag162.4737`.
+- Added `llms.txt` plus Markdown/CSV data dictionaries for machine discovery and reviewer handoff.
+- Replaced the broad internal `AGENTS.md` with concise repository-specific guidance.
+- Removed tracked `CONTINUITY.md` from the public release surface and documented it as local-only.
+- Updated release policy to require portable checksums for aggregate submission assets.
+
 ## v0.1.0 - 2026-05-30
 
 - Prepared the journal-submission public code snapshot.
