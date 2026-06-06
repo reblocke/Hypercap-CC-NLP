@@ -47,10 +47,11 @@ Researchers must obtain the required PhysioNet/MIMIC training, data-use approval
 uv sync --frozen
 ```
 
-Install the spaCy English model used by the classifier:
+This installs the locked spaCy English model used by the classifier. Verify the
+model is loadable:
 
 ```bash
-./.venv/bin/python -m spacy download en_core_web_sm
+uv run python -c "import spacy; spacy.load('en_core_web_sm')"
 ```
 
 Install/check Quarto for notebook rendering:

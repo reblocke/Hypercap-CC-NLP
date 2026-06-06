@@ -35,6 +35,10 @@ HELPER_FUNCTIONS = [
     "build_rfv_membership_long",
     "make_category_indicators",
     "summarize_multilabel_prevalence",
+    "_first_available_datetime",
+    "_numeric_sort_key",
+    "first_eligible_admission_mask",
+    "select_first_eligible_admission_per_patient",
     "summarize_labels_per_encounter",
     "_ordered_categories_for_comorbidity_summary",
     "summarize_rfv_prevalence_by_comorbidity",
@@ -98,6 +102,8 @@ build_rfv_label_artifacts = HELPERS["build_rfv_label_artifacts"]
 build_rfv_membership_long = HELPERS["build_rfv_membership_long"]
 make_category_indicators = HELPERS["make_category_indicators"]
 summarize_multilabel_prevalence = HELPERS["summarize_multilabel_prevalence"]
+first_eligible_admission_mask = HELPERS["first_eligible_admission_mask"]
+select_first_eligible_admission_per_patient = HELPERS["select_first_eligible_admission_per_patient"]
 summarize_labels_per_encounter = HELPERS["summarize_labels_per_encounter"]
 summarize_rfv_prevalence_by_comorbidity = HELPERS["summarize_rfv_prevalence_by_comorbidity"]
 
@@ -331,6 +337,47 @@ def test_summarize_multilabel_prevalence_is_ge_primary_label_prevalence() -> Non
     )
     merged["pct_of_encounters_primary"] = merged["pct_of_encounters_primary"].fillna(0)
     assert (merged["pct_of_encounters_multi"] >= merged["pct_of_encounters_primary"]).all()
+
+
+def test_select_first_eligible_admission_per_patient_uses_deterministic_ties() -> None:
+    df = pd.DataFrame(
+        {
+            "subject_id": [10, 10, 20, 20, 30],
+            "hadm_id": [102, 101, 202, 201, 301],
+            "ed_stay_id": [1002, 1001, 2002, 2001, 3001],
+            "ed_anchor_time": [
+                "2020-01-02 00:00",
+                "2020-01-01 00:00",
+                "2020-02-01 00:00",
+                "2020-02-01 00:00",
+                pd.NaT,
+            ],
+            "admittime": [
+                "2020-01-02 01:00",
+                "2020-01-01 01:00",
+                "2020-02-01 02:00",
+                "2020-02-01 01:00",
+                pd.NaT,
+            ],
+        }
+    )
+
+    mask = first_eligible_admission_mask(df)
+    selected = select_first_eligible_admission_per_patient(df)
+
+    assert mask.tolist() == [False, True, False, True, True]
+    assert selected["hadm_id"].tolist() == [101, 201, 301]
+    assert selected["subject_id"].is_unique
+
+
+def test_select_first_eligible_admission_per_patient_requires_subject_id() -> None:
+    df = pd.DataFrame({"hadm_id": [1, 2]})
+    with pytest.raises(KeyError, match="subject_id"):
+        select_first_eligible_admission_per_patient(df)
+
+    df_missing_subject = pd.DataFrame({"subject_id": [1, pd.NA], "hadm_id": [1, 2]})
+    with pytest.raises(ValueError, match="missing subject_id"):
+        select_first_eligible_admission_per_patient(df_missing_subject)
 
 
 def test_summarize_rfv_prevalence_by_comorbidity_uses_multilabel_sets() -> None:

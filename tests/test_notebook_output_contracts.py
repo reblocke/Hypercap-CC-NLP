@@ -493,6 +493,27 @@ def test_supplement_sensitivity_figures_use_first_priority_admission_language() 
     assert "Primary RFV group" not in target_blocks
 
 
+def test_first_admission_sensitivity_is_secondary_aggregate_workbook() -> None:
+    analysis_text = (WORK_DIR / "Hypercap CC NLP Analysis.qmd").read_text()
+
+    assert '"first_admission_sensitivity": "First_Admission_Sensitivity.xlsx"' in analysis_text
+    assert "select_first_eligible_admission_per_patient" in analysis_text
+    assert "FIRST_ADMISSION_SIMILARITY_THRESHOLD_PP = 2.0" in analysis_text
+    for sheet_name in (
+        "Cohort_Counts",
+        "Overall_Grouped",
+        "Overall_Canonical",
+        "By_Ascertainment",
+        "By_Age",
+        "By_Acidemia",
+        "Top_Category_Flags",
+        "Interpretation_Flags",
+    ):
+        assert sheet_name in analysis_text
+    assert "row-level identifiers and raw chief complaint text are not exported" in analysis_text
+    assert "manuscript_asset_name=\"First_Admission_Sensitivity.xlsx\"" not in analysis_text
+
+
 def test_generated_supplement_table_assets_are_notebook_native() -> None:
     classifier_text = (WORK_DIR / "Hypercap CC NLP Classifier.qmd").read_text()
     rater_text = (WORK_DIR / "Rater Agreement Analysis.qmd").read_text()
@@ -653,7 +674,21 @@ def test_public_release_tree_excludes_generated_and_private_roots() -> None:
         "Results",
         "tmp",
     ):
-        assert not (WORK_DIR / relative_path).exists()
+        tracked = subprocess.run(
+            ["git", "ls-files", "--", relative_path],
+            cwd=WORK_DIR,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        assert tracked.stdout.strip() == ""
+        if (WORK_DIR / relative_path).exists():
+            ignored = subprocess.run(
+                ["git", "check-ignore", "-q", relative_path],
+                cwd=WORK_DIR,
+                check=False,
+            )
+            assert ignored.returncode == 0
 
 
 def test_public_release_git_hygiene_patterns() -> None:

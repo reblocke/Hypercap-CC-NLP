@@ -366,7 +366,7 @@ def run_preflight_checks(work_dir: Path) -> list[dict[str, Any]]:
                 "severity": "P1",
                 "category": "preflight",
                 "code": "missing_spacy_model",
-                "message": "spaCy model en_core_web_sm is not loadable.",
+                "message": "spaCy model en_core_web_sm is not loadable. Run `uv sync --frozen`; if the locked install is still broken, run `make spacy-model` as a repair step.",
             }
         )
 

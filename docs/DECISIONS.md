@@ -92,7 +92,7 @@ Consequences:
 Status: accepted
 
 Context:
-- After the multi-label RFV refactor, the manuscript's primary estimand is encounter-level, non-mutually-exclusive prevalence rather than mutually exclusive composition.
+- After the multi-label RFV refactor and estimand clarification, the manuscript's primary estimand is admission-level, non-mutually-exclusive prevalence rather than mutually exclusive composition.
 - The previous merged notebook still treated acidemia timing as a fifth main figure and did not surface the analytic cohort flow in the main figure set.
 - The manuscript narrative is cleaner when the main Results figures follow cohort yield/flow first, then primary and secondary prevalence comparisons.
 

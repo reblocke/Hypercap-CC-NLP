@@ -10,10 +10,10 @@ STAGE ?= all
 .PHONY: check-resources clean-generated contracts-check
 
 setup:
-	uv sync
+	uv sync --frozen
 
 spacy-model:
-	./.venv/bin/python -m spacy download en_core_web_sm
+	uv run python -m spacy download en_core_web_sm
 
 kernel-install:
 	./.venv/bin/python -m ipykernel install --user --name hypercap-cc-nlp --display-name "Python (hypercap-cc-nlp)"

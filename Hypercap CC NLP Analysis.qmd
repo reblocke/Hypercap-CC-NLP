@@ -795,7 +795,7 @@ def summarize_multilabel_prevalence(
     grouped: bool = False,
     max_rfv: int = 5,
 ) -> pd.DataFrame:
-    """Summarize encounter-level multi-label RFV prevalence within strata."""
+    """Summarize admission-level multi-label RFV prevalence within strata."""
     strata_cols = [strata] if isinstance(strata, str) else list(strata)
     ensure_required_columns(df, strata_cols)
 
@@ -832,6 +832,71 @@ def summarize_multilabel_prevalence(
         summary["n_with_category"] / summary["N_group"].replace(0, np.nan) * 100
     ).fillna(0.0)
     return summary
+
+
+def _first_available_datetime(df: pd.DataFrame, columns: list[str]) -> pd.Series:
+    """Return the first non-missing datetime value across candidate columns."""
+    out = pd.Series(pd.NaT, index=df.index, dtype="datetime64[ns]")
+    for column in columns:
+        if column not in df.columns:
+            continue
+        candidate = pd.to_datetime(df[column], errors="coerce")
+        out = out.where(out.notna(), candidate)
+    return out
+
+
+def _numeric_sort_key(df: pd.DataFrame, column: str) -> pd.Series:
+    """Return a numeric sort key for deterministic admission tie-breaking."""
+    if column not in df.columns:
+        return pd.Series(np.nan, index=df.index, dtype="float64")
+    return pd.to_numeric(df[column], errors="coerce")
+
+
+def first_eligible_admission_mask(df: pd.DataFrame) -> pd.Series:
+    """Select each patient's first eligible admission using deterministic ties."""
+    ensure_required_columns(df, ["subject_id"])
+    subject_key = df["subject_id"].astype("string").str.strip()
+    missing_subject = subject_key.isna() | subject_key.eq("")
+    if bool(missing_subject.any()):
+        raise ValueError(
+            "Cannot define first-admission sensitivity with missing subject_id values."
+        )
+
+    sort_frame = pd.DataFrame(
+        {
+            "subject_id_key": subject_key,
+            "ed_anchor_time_key": _first_available_datetime(
+                df,
+                ["ed_anchor_time", "ed_intime", "ed_intime_first", "admittime"],
+            ),
+            "admittime_key": _first_available_datetime(df, ["admittime"]),
+            "hadm_id_key": _numeric_sort_key(df, "hadm_id"),
+            "ed_stay_id_key": _numeric_sort_key(df, "ed_stay_id"),
+            "original_row_order": np.arange(len(df)),
+        },
+        index=df.index,
+    )
+    ordered = sort_frame.sort_values(
+        [
+            "subject_id_key",
+            "ed_anchor_time_key",
+            "admittime_key",
+            "hadm_id_key",
+            "ed_stay_id_key",
+            "original_row_order",
+        ],
+        kind="mergesort",
+        na_position="last",
+    )
+    selected_index = ordered.drop_duplicates(subset=["subject_id_key"], keep="first").index
+    mask = pd.Series(False, index=df.index)
+    mask.loc[selected_index] = True
+    return mask
+
+
+def select_first_eligible_admission_per_patient(df: pd.DataFrame) -> pd.DataFrame:
+    """Return one first eligible admission per patient for sensitivity analyses."""
+    return df.loc[first_eligible_admission_mask(df)].copy()
 
 
 def summarize_labels_per_encounter(
@@ -1416,6 +1481,7 @@ MANUSCRIPT_ASSET_FILENAMES = {
 
 SECONDARY_OUTPUT_FILENAMES = {
     "cohort_construction": "Cohort_Construction_and_Definitions.xlsx",
+    "first_admission_sensitivity": "First_Admission_Sensitivity.xlsx",
     "ascertainment_flow_diagram": "Ascertainment_Flow_Diagram.png",
     "ascertainment_flow_workbook": "Ascertainment_Flow_Diagram_Summary.xlsx",
     "figure_manifest": "figure_manifest.csv",
@@ -2936,6 +3002,7 @@ HYPERCAP_CRITERIA = [
 
 
 RFV_PRIMARY_COL_SENSITIVITY = "RFV1_name"
+FIRST_ADMISSION_SIMILARITY_THRESHOLD_PP = 2.0
 
 input_df = pd.read_excel(ANALYSIS_INPUT_PATH, engine="openpyxl")
 analytic_df = input_df.copy()
@@ -3055,11 +3122,25 @@ other_gas_df = analytic_df.loc[analytic_df["unknown_hypercap_threshold"].eq(1)].
 both_df = analytic_df.loc[analytic_df["inclusion_route"].eq("Both")].copy()
 icd_only_df = analytic_df.loc[analytic_df["inclusion_route"].eq("ICD_only")].copy()
 gas_only_df = analytic_df.loc[analytic_df["inclusion_route"].eq("Gas_only")].copy()
+first_admission_df = select_first_eligible_admission_per_patient(analytic_df)
+first_admission_biochemical_df = first_admission_df.loc[
+    first_admission_df["pco2_threshold_any"].eq(1)
+].copy()
+first_admission_icd_positive_df = first_admission_df.loc[
+    first_admission_df["any_hypercap_icd"].eq(1)
+].copy()
+first_admission_abg_df = first_admission_df.loc[
+    first_admission_df["abg_hypercap_threshold"].eq(1)
+].copy()
+first_admission_vbg_df = first_admission_df.loc[
+    first_admission_df["vbg_hypercap_threshold"].eq(1)
+].copy()
 
 assert len(analytic_df) == len(input_df)
 assert len(biochemical_df) == int(analytic_df["pco2_threshold_any"].sum())
 assert len(icd_positive_df) == int(analytic_df["any_hypercap_icd"].sum())
 assert len(icd_positive_df) + len(gas_only_df) == len(analytic_df)
+assert first_admission_df["subject_id"].astype("string").nunique() == len(first_admission_df)
 assert analytic_df["label_count"].between(0, 5).all()
 assert not (
     analytic_df["analytical_label_set"].map(lambda labels: RFV_UNCODABLE_LABEL in labels and len(labels) > 1)
@@ -3095,7 +3176,7 @@ rfv_comorbidity_notes = pd.DataFrame(
     {
         "note": [
             "Base cohort is RFV_COMORBIDITY_BASE_COHORT = analytic_df.",
-            "RFV prevalence is encounter-level multi-label prevalence across RFV1_name..RFV5_name.",
+            "RFV prevalence is admission-level multi-label prevalence across RFV1_name..RFV5_name.",
             "Rows are not mutually exclusive; percentages need not sum to 100% within a comorbidity stratum.",
             "absolute_difference_pp is pct_flag_encounters_with_category minus pct_no_flag_encounters_with_category.",
         ]
@@ -3407,7 +3488,7 @@ display(cohort_qc_summary)
 
 ## ICD And Inclusion Categories
 
-Use the full analytic cohort for encounter-level ascertainment summaries.
+Use the full analytic cohort for admission-level ascertainment summaries.
 
 ```{python}
 #| label: hypercap-cc-nlp-analysis-cell-004
@@ -3519,7 +3600,7 @@ note_export(rfv_uncodable_output_path)
 
 ## Symptom Composition By Hypercapnia Definition
 
-Generate encounter-level multi-label prevalence summaries. Each encounter contributes once to every RFV category present across `RFV1_name..RFV5_name`, so percentages are not mutually exclusive and may exceed 100 when summed across categories.
+Generate admission-level multi-label prevalence summaries. Each admission contributes once to every RFV category present across `RFV1_name..RFV5_name`, so percentages are not mutually exclusive and may exceed 100 when summed across categories.
 
 ```{python}
 #| label: hypercap-cc-nlp-analysis-cell-006
@@ -3603,7 +3684,7 @@ plot_panelled_lollipop(
     facet_order=definition_label_order,
     category_order=definition_category_order[:10],
     title="Chief-complaint prevalence across hypercapnia definitions",
-    x_label="Percent of encounters",
+    x_label="Percent of admissions",
     panel_titles=definition_panel_titles,
 )
 ```
@@ -3653,7 +3734,7 @@ for idx, definition in enumerate(definition_order):
 
 ax.set_xticks(x)
 ax.set_xticklabels(symptom_order, rotation=25, ha="right")
-ax.set_ylabel("Percent of encounters")
+ax.set_ylabel("Percent of admissions")
 ax.set_xlabel("RFV category")
 ax.set_title("Top multi-label RFV prevalences by hypercapnia definition (95% CI)")
 ax.legend(title="Definition", bbox_to_anchor=(1.05, 1), loc="upper left")
@@ -3747,7 +3828,7 @@ plot_panelled_lollipop(
     facet_order=timing_order,
     category_order=timing_category_order[:10],
     title="Chief-complaint prevalence across blood-gas timing strata",
-    x_label="Percent of encounters",
+    x_label="Percent of admissions",
     filename=timing_prevalence_panel_plot_path.name,
     panel_titles={timing: timing for timing in timing_order},
 )
@@ -3794,7 +3875,7 @@ for idx, timing_label in enumerate(timing_order):
 
 ax.set_xticks(x)
 ax.set_xticklabels(timing_symptom_order, rotation=25, ha="right")
-ax.set_ylabel("Percent of encounters")
+ax.set_ylabel("Percent of admissions")
 ax.set_xlabel("RFV category")
 ax.set_title("Top multi-label RFV prevalences by gas-timing stratum (95% CI)")
 ax.legend(title="Timing from ED", bbox_to_anchor=(1.05, 1), loc="upper left")
@@ -4868,8 +4949,8 @@ table2_labels_per_encounter = summarize_labels_per_encounter(analytic_df)
 table2_notes = pd.DataFrame(
     {
         "note": [
-            "Primary RFV prevalence is multi-label: each encounter contributes once to every assigned RFV category across RFV1_name..RFV5_name.",
-            "Categories are not mutually exclusive; percentages represent the percent of encounters with at least one mapped label and may sum to more than 100%.",
+            "Primary RFV prevalence is multi-label: each admission contributes once to every assigned RFV category across RFV1_name..RFV5_name.",
+            "Categories are not mutually exclusive; percentages represent the percent of admissions with at least one mapped label and may sum to more than 100%.",
             "Sensitivity outputs use RFV1_name only and yield a mutually exclusive distribution that sums to approximately 100%.",
         ]
     }
@@ -4886,7 +4967,7 @@ table_2_xlsx_path = write_excel_export(
     {
         "Combined_View": combined_table_2,
         "RFV_Prevalence": rfv_counts,
-        "Labels_per_Encounter": table2_labels_per_encounter,
+        "Labels_per_Admission": table2_labels_per_encounter,
         "RFV_Uncodable_Diagnostics": rfv_uncodable_diagnostics,
         "RFV_Label_Coverage": rfv_label_coverage_audit,
         "Notes": table2_notes,
@@ -4908,7 +4989,7 @@ sensitivity_table_2_path = write_excel_export(
         "Notes": pd.DataFrame(
             {
                 "note": [
-                    "Sensitivity analysis: RFV1_name only. Each encounter contributes only its primary predicted category.",
+                    "Sensitivity analysis: RFV1_name only. Each admission contributes only its primary predicted category.",
                     "Percentages in this workbook are mutually exclusive and should sum to approximately 100% after rounding.",
                 ]
             }
@@ -5399,6 +5480,287 @@ acidemia_severity_workbook_path = write_excel_export(
     },
 )
 note_export(acidemia_severity_workbook_path)
+
+
+def _overall_rfv_prevalence(frame: pd.DataFrame, *, grouped: bool) -> pd.DataFrame:
+    return summarize_multilabel_prevalence(
+        frame.assign(Comparison_Group="Overall"),
+        strata="Comparison_Group",
+        grouped=grouped,
+    )
+
+
+def _route_rfv_prevalence_for_sensitivity(
+    *,
+    abg_frame: pd.DataFrame,
+    vbg_frame: pd.DataFrame,
+    icd_frame: pd.DataFrame,
+) -> pd.DataFrame:
+    return pd.concat(
+        [
+            summarize_multilabel_prevalence(
+                abg_frame.assign(Ascertainment_Group="ABG (PCO2 >= 45 mmHg)"),
+                strata="Ascertainment_Group",
+                grouped=True,
+            ),
+            summarize_multilabel_prevalence(
+                vbg_frame.assign(Ascertainment_Group="VBG (PCO2 >= 50 mmHg)"),
+                strata="Ascertainment_Group",
+                grouped=True,
+            ),
+            summarize_multilabel_prevalence(
+                icd_frame.assign(Ascertainment_Group="ICD-positive"),
+                strata="Ascertainment_Group",
+                grouped=True,
+            ),
+        ],
+        ignore_index=True,
+    )
+
+
+def _compare_first_admission_prevalence(
+    all_admissions_summary: pd.DataFrame,
+    first_admission_summary: pd.DataFrame,
+    *,
+    key_cols: list[str],
+    comparison_label: str,
+) -> pd.DataFrame:
+    value_cols = [*key_cols, "category", "N_group", "n_with_category", "pct_of_encounters"]
+    all_side = all_admissions_summary[value_cols].rename(
+        columns={
+            "N_group": "N_all_admissions",
+            "n_with_category": "n_all_admissions",
+            "pct_of_encounters": "pct_all_admissions",
+        }
+    )
+    first_side = first_admission_summary[value_cols].rename(
+        columns={
+            "N_group": "N_first_admissions",
+            "n_with_category": "n_first_admissions",
+            "pct_of_encounters": "pct_first_admissions",
+        }
+    )
+    compared = all_side.merge(
+        first_side,
+        on=[*key_cols, "category"],
+        how="outer",
+    )
+    for column in (
+        "N_all_admissions",
+        "n_all_admissions",
+        "pct_all_admissions",
+        "N_first_admissions",
+        "n_first_admissions",
+        "pct_first_admissions",
+    ):
+        compared[column] = pd.to_numeric(compared[column], errors="coerce").fillna(0)
+    compared["difference_pp_first_minus_all"] = (
+        compared["pct_first_admissions"] - compared["pct_all_admissions"]
+    )
+    compared["absolute_difference_pp"] = compared["difference_pp_first_minus_all"].abs()
+    compared["over_2pp_threshold"] = compared["absolute_difference_pp"].gt(
+        FIRST_ADMISSION_SIMILARITY_THRESHOLD_PP
+    )
+    compared.insert(0, "comparison", comparison_label)
+    return compared.sort_values(
+        [*key_cols, "absolute_difference_pp", "category"],
+        ascending=[*[True for _ in key_cols], False, True],
+    ).reset_index(drop=True)
+
+
+def _top_category_flags(
+    compared: pd.DataFrame,
+    *,
+    key_cols: list[str],
+    comparison_label: str,
+) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    for key_values, group in compared.groupby(key_cols, dropna=False):
+        if not isinstance(key_values, tuple):
+            key_values = (key_values,)
+        all_top = group.sort_values(
+            ["pct_all_admissions", "category"],
+            ascending=[False, True],
+        ).iloc[0]
+        first_top = group.sort_values(
+            ["pct_first_admissions", "category"],
+            ascending=[False, True],
+        ).iloc[0]
+        row = {
+            "comparison": comparison_label,
+            "top_category_all_admissions": all_top["category"],
+            "top_category_first_admissions": first_top["category"],
+            "top_category_changed": bool(all_top["category"] != first_top["category"]),
+        }
+        row.update(dict(zip(key_cols, key_values, strict=False)))
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+first_overall_grouped = _overall_rfv_prevalence(first_admission_df, grouped=True)
+first_overall_canonical = _overall_rfv_prevalence(first_admission_df, grouped=False)
+all_overall_grouped = _overall_rfv_prevalence(analytic_df, grouped=True)
+all_overall_canonical = _overall_rfv_prevalence(analytic_df, grouped=False)
+first_route_prevalence = _route_rfv_prevalence_for_sensitivity(
+    abg_frame=first_admission_abg_df,
+    vbg_frame=first_admission_vbg_df,
+    icd_frame=first_admission_icd_positive_df,
+)
+first_age_prevalence = summarize_multilabel_prevalence(
+    first_admission_df,
+    strata="AgeGroup",
+    grouped=True,
+)
+first_ph_df = first_admission_biochemical_df.loc[
+    first_admission_biochemical_df["ph_severity"].notna()
+].copy()
+first_ph_prevalence = summarize_multilabel_prevalence(
+    first_ph_df,
+    strata="ph_severity",
+    grouped=True,
+)
+
+first_admission_comparisons = {
+    "overall_grouped": _compare_first_admission_prevalence(
+        all_overall_grouped,
+        first_overall_grouped,
+        key_cols=["Comparison_Group"],
+        comparison_label="Overall grouped RFV prevalence",
+    ),
+    "overall_canonical": _compare_first_admission_prevalence(
+        all_overall_canonical,
+        first_overall_canonical,
+        key_cols=["Comparison_Group"],
+        comparison_label="Overall canonical RFV prevalence",
+    ),
+    "by_ascertainment": _compare_first_admission_prevalence(
+        route_prevalence_summary,
+        first_route_prevalence,
+        key_cols=["Ascertainment_Group"],
+        comparison_label="Grouped RFV prevalence by ascertainment route",
+    ),
+    "by_age": _compare_first_admission_prevalence(
+        age_prevalence_summary,
+        first_age_prevalence,
+        key_cols=["AgeGroup"],
+        comparison_label="Grouped RFV prevalence by age group",
+    ),
+    "by_acidemia": _compare_first_admission_prevalence(
+        ph_prevalence,
+        first_ph_prevalence,
+        key_cols=["ph_severity"],
+        comparison_label="Grouped RFV prevalence by acidemia severity",
+    ),
+}
+first_admission_top_flags = pd.concat(
+    [
+        _top_category_flags(frame, key_cols=key_cols, comparison_label=label)
+        for frame, key_cols, label in (
+            (
+                first_admission_comparisons["overall_grouped"],
+                ["Comparison_Group"],
+                "Overall grouped RFV prevalence",
+            ),
+            (
+                first_admission_comparisons["overall_canonical"],
+                ["Comparison_Group"],
+                "Overall canonical RFV prevalence",
+            ),
+            (
+                first_admission_comparisons["by_ascertainment"],
+                ["Ascertainment_Group"],
+                "Grouped RFV prevalence by ascertainment route",
+            ),
+            (
+                first_admission_comparisons["by_age"],
+                ["AgeGroup"],
+                "Grouped RFV prevalence by age group",
+            ),
+            (
+                first_admission_comparisons["by_acidemia"],
+                ["ph_severity"],
+                "Grouped RFV prevalence by acidemia severity",
+            ),
+        )
+    ],
+    ignore_index=True,
+)
+
+first_admission_interpretation = []
+for key, frame in first_admission_comparisons.items():
+    top_flags = first_admission_top_flags.loc[
+        first_admission_top_flags["comparison"].eq(frame["comparison"].iloc[0])
+    ]
+    first_admission_interpretation.append(
+        {
+            "comparison_key": key,
+            "comparison": frame["comparison"].iloc[0],
+            "max_absolute_difference_pp": round(float(frame["absolute_difference_pp"].max()), 2),
+            "rows_over_2pp_threshold": int(frame["over_2pp_threshold"].sum()),
+            "top_category_changes": int(top_flags["top_category_changed"].sum()),
+            "similar_by_rule": bool(
+                (not frame["over_2pp_threshold"].any())
+                and (not top_flags["top_category_changed"].any())
+            ),
+            "similarity_rule": (
+                "Similar if no compared prevalence differs by more than "
+                f"{FIRST_ADMISSION_SIMILARITY_THRESHOLD_PP:.1f} percentage points "
+                "and top categories are unchanged."
+            ),
+        }
+    )
+first_admission_interpretation = pd.DataFrame(first_admission_interpretation)
+admissions_per_subject = analytic_df.groupby("subject_id", dropna=False).size()
+first_admission_counts = pd.DataFrame(
+    {
+        "metric": [
+            "all_eligible_admissions",
+            "unique_patients",
+            "first_admission_sensitivity_admissions",
+            "admissions_excluded_by_first_admission_restriction",
+            "patients_with_multiple_eligible_admissions",
+            "maximum_eligible_admissions_per_patient",
+        ],
+        "count": [
+            int(len(analytic_df)),
+            int(analytic_df["subject_id"].nunique(dropna=True)),
+            int(len(first_admission_df)),
+            int(len(analytic_df) - len(first_admission_df)),
+            int(admissions_per_subject.gt(1).sum()),
+            int(admissions_per_subject.max()),
+        ],
+    }
+)
+first_admission_notes = pd.DataFrame(
+    {
+        "note": [
+            "Primary analysis includes all eligible ED-linked hospital admissions.",
+            "First-admission sensitivity keeps the first eligible admission per subject_id after current inclusion criteria and NLP outputs are applied.",
+            "First eligible admission is selected by ed_anchor_time, then admittime, then hadm_id, then ed_stay_id.",
+            "Workbook contains aggregate comparisons only; row-level identifiers and raw chief complaint text are not exported.",
+            (
+                "Practical similarity flag: no top-category change and no absolute prevalence "
+                f"difference greater than {FIRST_ADMISSION_SIMILARITY_THRESHOLD_PP:.1f} percentage points."
+            ),
+        ]
+    }
+)
+first_admission_sensitivity_path = write_excel_export(
+    "first_admission_sensitivity",
+    {
+        "Cohort_Counts": first_admission_counts,
+        "Overall_Grouped": first_admission_comparisons["overall_grouped"],
+        "Overall_Canonical": first_admission_comparisons["overall_canonical"],
+        "By_Ascertainment": first_admission_comparisons["by_ascertainment"],
+        "By_Age": first_admission_comparisons["by_age"],
+        "By_Acidemia": first_admission_comparisons["by_acidemia"],
+        "Top_Category_Flags": first_admission_top_flags,
+        "Interpretation_Flags": first_admission_interpretation,
+        "Notes": first_admission_notes,
+    },
+    builder="select_first_eligible_admission_per_patient",
+)
+note_export(first_admission_sensitivity_path)
 ph_group_sizes = (
     ph_prevalence.drop_duplicates(subset=["ph_severity"])[["ph_severity", "N_group"]]
     .set_index("ph_severity")["N_group"]
@@ -5535,7 +5897,7 @@ for axis_index, (axis, category) in enumerate(zip(np.ravel(axes), etiology_categ
         axis.text(value + 0.5, y_pos, f"{value:.1f}%", va="center", ha="left", fontsize=FIGURE_STYLE["annotation_size"])
     axis.set_title(category)
     axis.set_xlim(0, max_pct)
-    axis.set_xlabel("Percent of encounters")
+    axis.set_xlabel("Percent of admissions")
     finish_axis(axis, x_grid=True, y_grid=False)
     if axis_index % 3 == 0:
         axis.set_yticks(y_positions)
