@@ -85,6 +85,11 @@ def main() -> int:
     manifest = collect_run_manifest(work_dir, run_id)
     manifest["pipeline_mode"] = args.pipeline_mode
     preflight_findings = run_preflight_checks(work_dir)
+    baseline_info = resolve_baseline_metrics(
+        work_dir,
+        args.baseline,
+        pre_run_qa_summary=pre_run_qa_summary,
+    )
     stage_commands = resolve_stage_commands(args.pipeline_mode)
     consistency_command = "make quarto-pipeline"
     pipeline_run = run_pipeline_with_logs(
@@ -97,11 +102,6 @@ def main() -> int:
     artifact_result = load_and_validate_artifacts(
         work_dir,
         run_started_at_utc=pipeline_run["started_utc"],
-    )
-    baseline_info = resolve_baseline_metrics(
-        work_dir,
-        args.baseline,
-        pre_run_qa_summary=pre_run_qa_summary,
     )
     drift_df = compute_metric_drift(
         artifact_result["current_metrics"],
