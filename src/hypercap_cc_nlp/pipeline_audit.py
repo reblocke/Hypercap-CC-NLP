@@ -503,6 +503,25 @@ def _find_first_other_pco2_pct_eq_160(qa_summary: dict[str, Any]) -> float | Non
     return None
 
 
+def _first_other_pco2_audit_is_missing(qa_summary: dict[str, Any]) -> bool:
+    records = qa_summary.get("first_other_pco2_audit")
+    if not isinstance(records, list) or not records:
+        return True
+
+    saw_valid_audit_row = False
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        status = str(record.get("status", "")).strip().lower()
+        if status == "missing_columns":
+            continue
+        saw_valid_audit_row = True
+        if str(record.get("source", "")).upper() == "POC" and record.get("pct_eq_160") is None:
+            return True
+
+    return not saw_valid_audit_row
+
+
 def _check_numeric_infinity(df: pd.DataFrame, frame_name: str) -> list[dict[str, Any]]:
     findings: list[dict[str, Any]] = []
     numeric = df.select_dtypes(include=[np.number])
@@ -761,7 +780,7 @@ def load_and_validate_artifacts(
                 }
             )
 
-        if _find_first_other_pco2_pct_eq_160(qa_summary) is None:
+        if _first_other_pco2_audit_is_missing(qa_summary):
             findings.append(
                 {
                     "severity": "P1",

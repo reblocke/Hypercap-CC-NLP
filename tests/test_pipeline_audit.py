@@ -142,6 +142,29 @@ def test_load_and_validate_artifacts_infinite_values_is_hard_fail(tmp_path: Path
     assert "infinite_values_detected" in codes
 
 
+def test_load_and_validate_artifacts_accepts_first_other_audit_without_poc_row(
+    tmp_path: Path,
+) -> None:
+    _write_minimal_required_artifacts(tmp_path)
+    qa_path = cohort_qa_dir(tmp_path) / "qa_summary.json"
+    qa_summary = json.loads(qa_path.read_text())
+    qa_summary["first_other_pco2_audit"] = [
+        {
+            "source": "LAB_BG_UNKNOWN",
+            "count_nonnull": 2506,
+            "pct_eq_160": 0.0,
+            "status": "ok",
+        }
+    ]
+    qa_path.write_text(json.dumps(qa_summary))
+
+    result = load_and_validate_artifacts(tmp_path, run_started_at_utc=_past_iso())
+
+    codes = {finding["code"] for finding in result["findings"]}
+    assert "missing_first_other_pco2_audit" not in codes
+    assert "first_other_pco2_pct_eq_160_poc" not in result["current_metrics"]
+
+
 def test_compute_metric_drift_emits_warning_and_fail_thresholds() -> None:
     current = {
         "cohort_rows": 111.0,
