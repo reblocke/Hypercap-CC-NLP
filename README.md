@@ -54,6 +54,13 @@ model is loadable:
 uv run python -c "import spacy; spacy.load('en_core_web_sm')"
 ```
 
+Install the R packages used by the analysis CONSORT figure and chart-review
+notebook:
+
+```bash
+make r-packages
+```
+
 Install/check Quarto for notebook rendering:
 
 ```bash

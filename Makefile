@@ -5,8 +5,9 @@ RESULTS_DATE ?= $(shell date +%Y-%m-%d)
 RESULTS_DIR ?= Results/$(RESULTS_DATE)
 BASELINE ?= latest
 STAGE ?= all
+R_REQUIRED_PACKAGES ?= consort presize kappaSize irr
 
-.PHONY: setup spacy-model kernel-install bq-auth tinytex-install test lint format smoke baseline-capture-jupyter quarto-parity-check quarto-cohort quarto-classifier quarto-rater quarto-analysis quarto-chart-review quarto-reyan-figures quarto-pipeline quarto-pipeline-audit
+.PHONY: setup spacy-model r-packages kernel-install bq-auth tinytex-install test lint format smoke baseline-capture-jupyter quarto-parity-check quarto-cohort quarto-classifier quarto-rater quarto-analysis quarto-chart-review quarto-reyan-figures quarto-pipeline quarto-pipeline-audit
 .PHONY: check-resources clean-generated contracts-check
 
 setup:
@@ -14,6 +15,9 @@ setup:
 
 spacy-model:
 	uv run python -m spacy download en_core_web_sm
+
+r-packages:
+	Rscript scripts/install_r_packages.R $(R_REQUIRED_PACKAGES)
 
 kernel-install:
 	./.venv/bin/python -m ipykernel install --user --name hypercap-cc-nlp --display-name "Python (hypercap-cc-nlp)"
@@ -73,7 +77,7 @@ quarto-rater:
 	@test -f "artifacts/qa/rater_agreement/R3_vs_NLP_summary.txt" || (echo "Missing R3_vs_NLP_summary.txt after quarto rater run." >&2; exit 1)
 	@test -f "$(RESULTS_DIR)/Rater Agreement Analysis.pdf" || (echo "Missing rater PDF output." >&2; exit 1)
 
-quarto-analysis:
+quarto-analysis: r-packages
 	@test -f "MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx" || (echo "Missing analysis input workbook. Run make quarto-classifier first." >&2; exit 1)
 	@mkdir -p "$(RESULTS_DIR)"
 	RESULTS_DATE="$(RESULTS_DATE)" QUARTO_PYTHON="$(QUARTO_PYTHON)" quarto render "Hypercap CC NLP Analysis.qmd" --to pdf --output-dir "$(RESULTS_DIR)" --output "Hypercap CC NLP Analysis.pdf"
@@ -87,7 +91,7 @@ quarto-reyan-figures:
 	@test -f "$(RESULTS_DIR)/Figure S1.png" || (echo "Missing representative supplement figure after merged analysis render." >&2; exit 1)
 	@test -f "$(RESULTS_DIR)/Hypercap CC NLP Analysis.pdf" || (echo "Missing merged analysis PDF output." >&2; exit 1)
 
-quarto-chart-review:
+quarto-chart-review: r-packages
 	@mkdir -p "$(RESULTS_DIR)"
 	RESULTS_DATE="$(RESULTS_DATE)" quarto render "Chart Review Sample Calc.qmd"
 	@test -f "$(RESULTS_DIR)/Chart Review Sample Calc.html" || (echo "Missing chart review HTML output." >&2; exit 1)
