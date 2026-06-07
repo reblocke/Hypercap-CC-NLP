@@ -374,6 +374,7 @@ COHORT_REQUIRED_AUDIT_SUFFIXES = (
     "first_gas_anchor_audit.csv",
     "hco3_integrity_audit.csv",
     "hco3_coverage_audit.csv",
+    "qualifying_ph_pairing_completeness_audit.csv",
     "timing_integrity_audit.csv",
     "ventilation_timing_audit.csv",
     "anthropometric_cleaning_audit.csv",
@@ -4804,6 +4805,34 @@ hosp_raw AS (
     AND (le.valuenum IS NOT NULL OR le.value IS NOT NULL)
     AND LOWER(COALESCE(di.fluid, '')) IN ({LAB_BLOOD_FLUID_SQL_LIST})
 ),
+hosp_ph_raw AS (
+  SELECT
+    le.hadm_id,
+    le.charttime,
+    le.specimen_id,
+    le.itemid,
+    COALESCE(
+      CAST(le.valuenum AS FLOAT64),
+      SAFE_CAST(REGEXP_EXTRACT(LOWER(le.value), r'(-?\d+(?:\.\d+)?)') AS FLOAT64)
+    ) AS ph_value
+  FROM `{PHYS}.{HOSP}.labevents` le
+  JOIN `{PHYS}.{HOSP}.d_labitems` di
+    ON di.itemid = le.itemid
+  WHERE le.itemid IN UNNEST({LAB_PH_SQL_ARRAY})
+    AND le.specimen_id IS NOT NULL
+    AND (le.valuenum IS NOT NULL OR le.value IS NOT NULL)
+    AND LOWER(COALESCE(di.fluid, '')) IN ({LAB_BLOOD_FLUID_SQL_LIST})
+),
+hosp_ph_clean AS (
+  SELECT
+    hadm_id,
+    charttime,
+    specimen_id,
+    itemid,
+    ph_value
+  FROM hosp_ph_raw
+  WHERE ph_value BETWEEN 6.3 AND 7.8
+),
 hosp_specimen AS (
   SELECT
     le.specimen_id,
@@ -4817,7 +4846,7 @@ hosp_specimen AS (
     ORDER BY le.charttime DESC
   ) = 1
 ),
-hosp_pco2_clean AS (
+hosp_pco2_base AS (
   SELECT
     r.hadm_id,
     r.charttime,
@@ -4836,10 +4865,94 @@ hosp_pco2_clean AS (
   WHERE r.val IS NOT NULL
     AND (CASE WHEN r.uom_nospace = 'kpa' THEN r.val * 7.50062 ELSE r.val END) BETWEEN 5 AND 200
 ),
+hosp_pco2_clean AS (
+  SELECT
+    p.*,
+    h.ph_value AS qualifying_ph,
+    h.charttime AS qualifying_ph_time,
+    CASE
+      WHEN h.ph_value IS NOT NULL THEN 'LAB'
+      ELSE NULL
+    END AS qualifying_ph_source_branch,
+    CASE
+      WHEN h.ph_value IS NOT NULL THEN p.site
+      ELSE NULL
+    END AS qualifying_ph_site,
+    CASE
+      WHEN h.ph_value IS NOT NULL THEN 'paired_same_specimen_panel'
+      ELSE 'qualifying_panel_missing_ph'
+    END AS qualifying_ph_pairing_status
+  FROM hosp_pco2_base p
+  LEFT JOIN hosp_ph_clean h
+    ON h.hadm_id = p.hadm_id
+   AND h.specimen_id = p.specimen_id
+   AND ABS(TIMESTAMP_DIFF(h.charttime, p.charttime, MINUTE)) <= 10
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY p.hadm_id, p.charttime, p.specimen_id, p.itemid
+    ORDER BY
+      CASE WHEN h.charttime = p.charttime THEN 0 ELSE 1 END,
+      ABS(TIMESTAMP_DIFF(h.charttime, p.charttime, SECOND)),
+      h.itemid
+  ) = 1
+),
 icu_pco2_itemids AS (
   SELECT itemid, LOWER(label) AS lbl
   FROM `{PHYS}.{ICU}.d_items`
   WHERE itemid IN UNNEST({ICU_PCO2_SQL_ARRAY})
+),
+icu_specimen AS (
+  SELECT
+    ce.stay_id,
+    ce.charttime,
+    LOWER(COALESCE(ce.value, '')) AS specimen_type_text
+  FROM `{PHYS}.{ICU}.chartevents` ce
+  WHERE ce.itemid IN UNNEST({ICU_SPECIMEN_SQL_ARRAY})
+    AND ce.value IS NOT NULL
+),
+icu_ph_raw AS (
+  SELECT
+    ie.hadm_id,
+    ce.stay_id,
+    ce.itemid,
+    ce.charttime,
+    COALESCE(
+      CAST(ce.valuenum AS FLOAT64),
+      SAFE_CAST(REGEXP_EXTRACT(LOWER(ce.value), r'(-?\d+(?:\.\d+)?)') AS FLOAT64)
+    ) AS ph_value
+  FROM `{PHYS}.{ICU}.chartevents` ce
+  JOIN `{PHYS}.{ICU}.icustays` ie
+    ON ie.stay_id = ce.stay_id
+  WHERE ce.itemid IN UNNEST({ICU_PH_SQL_ARRAY})
+    AND (ce.valuenum IS NOT NULL OR ce.value IS NOT NULL)
+),
+icu_ph_ranked AS (
+  SELECT
+    r.*,
+    s.specimen_type_text,
+    ROW_NUMBER() OVER (
+      PARTITION BY r.hadm_id, r.stay_id, r.charttime, r.itemid
+      ORDER BY ABS(TIMESTAMP_DIFF(r.charttime, s.charttime, SECOND))
+    ) AS specimen_rank
+  FROM icu_ph_raw r
+  LEFT JOIN icu_specimen s
+    ON s.stay_id = r.stay_id
+   AND ABS(TIMESTAMP_DIFF(r.charttime, s.charttime, MINUTE)) <= 120
+),
+icu_ph_clean AS (
+  SELECT
+    hadm_id,
+    stay_id,
+    itemid,
+    charttime,
+    CASE
+      WHEN REGEXP_CONTAINS(COALESCE(specimen_type_text, ''), r'arter|\\bart\\b') THEN 'arterial'
+      WHEN REGEXP_CONTAINS(COALESCE(specimen_type_text, ''), r'ven|central|mixed') THEN 'venous'
+      ELSE 'unknown'
+    END AS site,
+    ph_value
+  FROM icu_ph_ranked
+  WHERE ph_value BETWEEN 6.3 AND 7.8
+    AND (specimen_rank = 1 OR specimen_type_text IS NULL)
 ),
 icu_pco2_raw AS (
   SELECT
@@ -4865,15 +4978,6 @@ icu_pco2_raw AS (
     ON ie.stay_id = ce.stay_id
   WHERE ce.valuenum IS NOT NULL OR ce.value IS NOT NULL
 ),
-icu_specimen AS (
-  SELECT
-    ce.stay_id,
-    ce.charttime,
-    LOWER(COALESCE(ce.value, '')) AS specimen_type_text
-  FROM `{PHYS}.{ICU}.chartevents` ce
-  WHERE ce.itemid IN UNNEST({ICU_SPECIMEN_SQL_ARRAY})
-    AND ce.value IS NOT NULL
-),
 icu_pco2_ranked AS (
   SELECT
     r.*,
@@ -4887,7 +4991,7 @@ icu_pco2_ranked AS (
     ON s.stay_id = r.stay_id
    AND ABS(TIMESTAMP_DIFF(r.charttime, s.charttime, MINUTE)) <= 120
 ),
-icu_pco2_clean AS (
+icu_pco2_base AS (
   SELECT
     hadm_id,
     charttime,
@@ -4907,6 +5011,37 @@ icu_pco2_clean AS (
     AND (specimen_rank = 1 OR specimen_type_text IS NULL)
     AND (CASE WHEN uom_nospace = 'kpa' THEN val * 7.50062 ELSE val END) BETWEEN 5 AND 200
 ),
+icu_pco2_clean AS (
+  SELECT
+    p.*,
+    h.ph_value AS qualifying_ph,
+    h.charttime AS qualifying_ph_time,
+    CASE
+      WHEN h.ph_value IS NOT NULL THEN 'POC'
+      ELSE NULL
+    END AS qualifying_ph_source_branch,
+    CASE
+      WHEN h.ph_value IS NOT NULL THEN h.site
+      ELSE NULL
+    END AS qualifying_ph_site,
+    CASE
+      WHEN h.ph_value IS NOT NULL THEN 'paired_same_time_panel'
+      ELSE 'qualifying_panel_missing_ph'
+    END AS qualifying_ph_pairing_status
+  FROM icu_pco2_base p
+  LEFT JOIN icu_ph_clean h
+    ON h.hadm_id = p.hadm_id
+   AND h.stay_id = p.stay_id
+   AND h.site = p.site
+   AND ABS(TIMESTAMP_DIFF(h.charttime, p.charttime, MINUTE)) <= 10
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY p.hadm_id, p.stay_id, p.charttime, p.itemid
+    ORDER BY
+      CASE WHEN h.charttime = p.charttime THEN 0 ELSE 1 END,
+      ABS(TIMESTAMP_DIFF(h.charttime, p.charttime, SECOND)),
+      h.itemid
+  ) = 1
+),
 all_pco2 AS (
   SELECT * FROM hosp_pco2_clean
   UNION ALL
@@ -4922,6 +5057,11 @@ stay_pco2 AS (
     p.site,
     p.pco2_mmhg,
     p.source_branch,
+    p.qualifying_ph,
+    p.qualifying_ph_time,
+    p.qualifying_ph_source_branch,
+    p.qualifying_ph_site,
+    p.qualifying_ph_pairing_status,
     a.ed_intime_first,
     a.admittime,
     a.dischtime,
@@ -4946,6 +5086,11 @@ qualifying_candidates AS (
       ELSE 'unknown'
     END AS site,
     source_branch,
+    qualifying_ph,
+    qualifying_ph_time,
+    qualifying_ph_source_branch,
+    qualifying_ph_site,
+    qualifying_ph_pairing_status,
     itemid,
     dt_hours,
     IF(used_admittime_anchor = 1, 'ADMITTIME_FALLBACK', 'ED_INTIME') AS anchor_source,
@@ -5049,6 +5194,11 @@ qualifying_first AS (
     pco2_mmhg AS qualifying_pco2_mmhg,
     site AS qualifying_site,
     source_branch AS qualifying_source_branch,
+    qualifying_ph,
+    qualifying_ph_time,
+    qualifying_ph_source_branch,
+    qualifying_ph_site,
+    qualifying_ph_pairing_status,
     threshold_mmhg AS qualifying_threshold_mmhg,
     dt_hours AS dt_qualifying_hypercapnia_hours,
     itemid AS qualifying_pco2_itemid,
@@ -5139,6 +5289,11 @@ SELECT
   q.qualifying_pco2_mmhg,
   q.qualifying_site,
   q.qualifying_source_branch,
+  q.qualifying_ph,
+  q.qualifying_ph_time,
+  q.qualifying_ph_source_branch,
+  q.qualifying_ph_site,
+  q.qualifying_ph_pairing_status,
   q.qualifying_threshold_mmhg,
   q.dt_qualifying_hypercapnia_hours,
   q.qualifying_pco2_itemid,
@@ -7064,6 +7219,7 @@ TARGET_RAW_FIELDS = {
         "first_ph","first_hco3","first_hco3_time","first_hco3_source","first_hco3_itemid","first_hco3_qc_flag","first_lactate",
         "serum_hco3_time","serum_hco3_mmol_l","serum_hco3_itemid",
         "qualifying_pco2_time","qualifying_pco2_mmhg","qualifying_site","qualifying_source_branch","qualifying_threshold_mmhg",
+        "qualifying_ph","qualifying_ph_time","qualifying_ph_source_branch","qualifying_ph_site","qualifying_ph_pairing_status",
         "first_abg_po2","first_vbg_po2","first_other_po2",
         "first_abg_hypercap_time_0_24h","first_abg_hypercap_pco2_mmhg","first_abg_hypercap_source_branch","first_abg_hypercap_itemid",
         "first_vbg_hypercap_time_0_24h","first_vbg_hypercap_pco2_mmhg","first_vbg_hypercap_source_branch","first_vbg_hypercap_itemid",
@@ -10080,6 +10236,11 @@ qualifying_hadm_cols = [
     "qualifying_pco2_mmhg",
     "qualifying_site",
     "qualifying_source_branch",
+    "qualifying_ph",
+    "qualifying_ph_time",
+    "qualifying_ph_source_branch",
+    "qualifying_ph_site",
+    "qualifying_ph_pairing_status",
     "qualifying_threshold_mmhg",
     "dt_qualifying_hypercapnia_hours",
     "max_pco2_0_6h",
@@ -11038,6 +11199,95 @@ hco3_coverage_audit_path = PRIOR_RUNS_DIR / f"{out_date} hco3_coverage_audit.csv
 hco3_coverage_audit.to_csv(hco3_coverage_audit_path, index=False)
 print("Wrote:", hco3_coverage_audit_path)
 
+qualifying_ph_numeric = pd.to_numeric(
+    ed_df.get("qualifying_ph", pd.Series(index=ed_df.index, dtype="float64")),
+    errors="coerce",
+)
+qualifying_ph_status = (
+    ed_df.get(
+        "qualifying_ph_pairing_status",
+        pd.Series("missing", index=ed_df.index, dtype="string"),
+    )
+    .astype("string")
+    .fillna("missing")
+)
+qualifying_ph_present = qualifying_ph_numeric.notna()
+pco2_any_bool = threshold_any.eq(1)
+any_icd_bool = any_icd.eq(1)
+
+qualifying_ph_scope_specs = [
+    (
+        "broad_gas_positive",
+        "Broad gas-positive admissions",
+        pco2_any_bool,
+    ),
+    (
+        "first_qualifying_gas_within_24h",
+        "First qualifying gas within 24h",
+        pco2_any_bool & qualifying_hours.le(24.0),
+    ),
+    (
+        "first_qualifying_gas_within_6h",
+        "First qualifying gas within 6h",
+        pco2_any_bool & qualifying_hours.lt(6.0),
+    ),
+    (
+        "late_gas_after_24h",
+        "First qualifying gas after 24h",
+        pco2_any_bool & qualifying_hours.gt(24.0),
+    ),
+    (
+        "icd_plus_gas",
+        "ICD-positive plus qualifying gas",
+        any_icd_bool & pco2_any_bool,
+    ),
+    (
+        "icd_only",
+        "ICD-only admissions without qualifying gas",
+        any_icd_bool & ~pco2_any_bool,
+    ),
+]
+
+qualifying_ph_rows: list[dict[str, Any]] = []
+for scope_key, scope_label, scope_mask_raw in qualifying_ph_scope_specs:
+    scope_mask = scope_mask_raw.fillna(False).astype(bool)
+    denominator_n = int(scope_mask.sum())
+    qualifying_gas_n = int((scope_mask & pco2_any_bool).sum())
+    paired_ph_available_n = int((scope_mask & pco2_any_bool & qualifying_ph_present).sum())
+    paired_ph_missing_n = int((scope_mask & pco2_any_bool & ~qualifying_ph_present).sum())
+    status_counts = (
+        qualifying_ph_status.loc[scope_mask]
+        .value_counts(dropna=False)
+        .to_dict()
+    )
+    qualifying_ph_rows.append(
+        {
+            "scope_key": scope_key,
+            "scope_label": scope_label,
+            "denominator_n": denominator_n,
+            "qualifying_gas_n": qualifying_gas_n,
+            "paired_ph_available_n": paired_ph_available_n,
+            "paired_ph_missing_n": paired_ph_missing_n,
+            "paired_ph_available_pct": float(paired_ph_available_n / qualifying_gas_n * 100)
+            if qualifying_gas_n
+            else 0.0,
+            "no_qualifying_gas_n": int(denominator_n - qualifying_gas_n),
+            "paired_same_specimen_panel_n": int(status_counts.get("paired_same_specimen_panel", 0)),
+            "paired_same_time_panel_n": int(status_counts.get("paired_same_time_panel", 0)),
+            "qualifying_panel_missing_ph_n": int(status_counts.get("qualifying_panel_missing_ph", 0)),
+        }
+    )
+
+qualifying_ph_pairing_completeness_audit = pd.DataFrame(qualifying_ph_rows)
+qualifying_ph_pairing_completeness_audit_path = (
+    PRIOR_RUNS_DIR / f"{out_date} qualifying_ph_pairing_completeness_audit.csv"
+)
+qualifying_ph_pairing_completeness_audit.to_csv(
+    qualifying_ph_pairing_completeness_audit_path,
+    index=False,
+)
+print("Wrote:", qualifying_ph_pairing_completeness_audit_path)
+
 print("ED vitals cleaning summary (raw->clean removals):")
 display(
     ed_vitals_model_delta[
@@ -11593,6 +11843,11 @@ hco3_coverage_audit_records = (
     if "hco3_coverage_audit" in globals()
     else []
 )
+qualifying_ph_pairing_completeness_audit_records = (
+    json.loads(qualifying_ph_pairing_completeness_audit.to_json(orient="records"))
+    if "qualifying_ph_pairing_completeness_audit" in globals()
+    else []
+)
 blood_gas_itemid_manifest_audit_records = (
     json.loads(blood_gas_itemid_manifest_audit.to_json(orient="records"))
     if "blood_gas_itemid_manifest_audit" in globals() and not blood_gas_itemid_manifest_audit.empty
@@ -11764,6 +12019,7 @@ qa_summary = {
     "anthropometric_cleaning_audit": anthropometric_cleaning_audit_records,
     "hco3_integrity_audit": hco3_integrity_audit_records,
     "hco3_coverage_audit": hco3_coverage_audit_records,
+    "qualifying_ph_pairing_completeness_audit": qualifying_ph_pairing_completeness_audit_records,
     "hco3_band_qc_inconsistency_n": int(
         globals().get("hco3_band_qc_inconsistency_n", 0)
     ),
@@ -11835,6 +12091,11 @@ qa_summary = {
         else None,
         "hco3_coverage": str(hco3_coverage_audit_path)
         if "hco3_coverage_audit_path" in globals()
+        else None,
+        "qualifying_ph_pairing_completeness": str(
+            qualifying_ph_pairing_completeness_audit_path
+        )
+        if "qualifying_ph_pairing_completeness_audit_path" in globals()
         else None,
         "gas_source_diagnostics_by_ed_stay": str(
             globals().get("gas_source_diagnostics_artifact_path")
@@ -12647,6 +12908,11 @@ cohort_manifest["outputs"] = {
     "hco3_coverage_audit_path": _manifest_relpath(hco3_coverage_audit_path)
     if "hco3_coverage_audit_path" in globals()
     else None,
+    "qualifying_ph_pairing_completeness_audit_path": _manifest_relpath(
+        qualifying_ph_pairing_completeness_audit_path
+    )
+    if "qualifying_ph_pairing_completeness_audit_path" in globals()
+    else None,
     "vitals_outlier_scope_audit_paths": {
         "ed_spine_raw_pre_clean": _manifest_relpath(vitals_outlier_ed_spine_pre_clean_path),
         "ed_spine_clean_post_clean": _manifest_relpath(vitals_outlier_ed_spine_post_clean_path),
@@ -12956,6 +13222,41 @@ META = {
         "definition": "Data branch for the canonical qualifying pCO2 event (LAB or POC).",
         "source": "mimiciv_hosp.labevents + mimiciv_icu.chartevents",
         "derivation": "LAB|POC at qualifying_pco2_time",
+        "units": "categorical",
+    },
+    "qualifying_ph": {
+        "label": "Paired pH for qualifying pCO2",
+        "definition": "pH from the same specimen or time-aligned panel as the canonical qualifying pCO2, when available.",
+        "source": "mimiciv_hosp.labevents + mimiciv_icu.chartevents",
+        "derivation": "pH paired to qualifying_pco2_time by admission, source branch, site, and specimen/time panel within a 10-minute tolerance",
+        "units": "unitless",
+    },
+    "qualifying_ph_time": {
+        "label": "Paired qualifying pH time",
+        "definition": "Timestamp of pH paired to the canonical qualifying pCO2.",
+        "source": "mimiciv_hosp.labevents + mimiciv_icu.chartevents",
+        "derivation": "nearest pH timestamp on the matched qualifying pCO2 specimen or time-aligned panel",
+        "units": "datetime",
+    },
+    "qualifying_ph_source_branch": {
+        "label": "Paired qualifying pH source branch",
+        "definition": "Data branch of the pH paired to the canonical qualifying pCO2.",
+        "source": "Derived",
+        "derivation": "inherits LAB or POC branch from qualifying_pco2_time",
+        "units": "categorical",
+    },
+    "qualifying_ph_site": {
+        "label": "Paired qualifying pH site",
+        "definition": "Sampling site class for the pH paired to the canonical qualifying pCO2.",
+        "source": "Derived",
+        "derivation": "inherits arterial|venous|unknown site from qualifying_pco2_time",
+        "units": "categorical",
+    },
+    "qualifying_ph_pairing_status": {
+        "label": "Qualifying pH pairing status",
+        "definition": "Aggregate-safe status describing whether pH was available on the qualifying pCO2 specimen or time-aligned panel.",
+        "source": "Derived",
+        "derivation": "paired_same_specimen_panel, paired_same_time_panel, or qualifying_panel_missing_ph",
         "units": "categorical",
     },
     "qualifying_threshold_mmhg": {

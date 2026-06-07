@@ -146,6 +146,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import warnings
@@ -173,38 +174,33 @@ WORK_DIR = Path(os.getenv("WORK_DIR", Path.cwd())).expanduser().resolve()
 CANONICAL_NLP_FILENAME = "MIMICIV all with CC_with_NLP.xlsx"
 CANONICAL_VISIT_CANDIDATE_SCORES_FILENAME = "visit_candidate_scores.csv"
 CANONICAL_SEGMENT_CANDIDATE_SCORES_FILENAME = "segment_candidate_scores.csv"
+CANONICAL_ANNOTATION_BENCHMARK_NLP_FILENAME = "annotation_benchmark_with_NLP.xlsx"
+CANONICAL_ANNOTATION_VISIT_CANDIDATE_SCORES_FILENAME = "annotation_visit_candidate_scores.csv"
+CANONICAL_ANNOTATION_SEGMENT_CANDIDATE_SCORES_FILENAME = "annotation_segment_candidate_scores.csv"
 
 
-def resolve_rater_nlp_input_path(work_dir: Path, input_filename: str | None = None) -> Path:
-    filename = input_filename or CANONICAL_NLP_FILENAME
-    input_path = (work_dir / "MIMIC tabular data" / filename).expanduser().resolve()
-    if not input_path.exists():
-        raise FileNotFoundError(
-            "Expected rater NLP input workbook was not found at "
-            f"{input_path}. Run the classifier notebook first or set "
-            "RATER_NLP_INPUT_FILENAME."
-        )
-    return input_path
-
-def resolve_rater_candidate_sidecar_path(
+def resolve_rater_data_path(
     work_dir: Path,
     filename: str | None,
     default_filename: str,
 ) -> Path:
     resolved_filename = filename or default_filename
-    input_path = (work_dir / "MIMIC tabular data" / resolved_filename).expanduser().resolve()
-    if not input_path.exists():
-        raise FileNotFoundError(
-            "Expected classifier candidate sidecar was not found at "
-            f"{input_path}. Run the classifier notebook first or set the "
-            "corresponding RATER_*_CANDIDATE_SCORES_FILENAME override."
-        )
-    return input_path
+    return (work_dir / "MIMIC tabular data" / resolved_filename).expanduser().resolve()
 
 RATER_ANNOTATION_PATH = os.getenv("RATER_ANNOTATION_PATH")
 RATER_NLP_INPUT_FILENAME = os.getenv("RATER_NLP_INPUT_FILENAME")
 RATER_VISIT_CANDIDATE_SCORES_FILENAME = os.getenv("RATER_VISIT_CANDIDATE_SCORES_FILENAME")
 RATER_SEGMENT_CANDIDATE_SCORES_FILENAME = os.getenv("RATER_SEGMENT_CANDIDATE_SCORES_FILENAME")
+RATER_ANNOTATION_BENCHMARK_NLP_FILENAME = os.getenv("RATER_ANNOTATION_BENCHMARK_NLP_FILENAME")
+RATER_ANNOTATION_VISIT_CANDIDATE_SCORES_FILENAME = os.getenv(
+    "RATER_ANNOTATION_VISIT_CANDIDATE_SCORES_FILENAME"
+)
+RATER_ANNOTATION_SEGMENT_CANDIDATE_SCORES_FILENAME = os.getenv(
+    "RATER_ANNOTATION_SEGMENT_CANDIDATE_SCORES_FILENAME"
+)
+RATER_BENCHMARK_SOURCE = os.getenv("RATER_BENCHMARK_SOURCE", "auto").strip().lower() or "auto"
+if RATER_BENCHMARK_SOURCE not in {"auto", "annotation_direct", "cohort_overlap"}:
+    raise ValueError("RATER_BENCHMARK_SOURCE must be one of auto, annotation_direct, cohort_overlap.")
 
 annotation_default_path = WORK_DIR / "Annotation/Final 2025-10-14 Annotation Sample.xlsx"
 annotation_path = (
@@ -212,19 +208,39 @@ annotation_path = (
     if RATER_ANNOTATION_PATH
     else annotation_default_path
 )
-nlp_path = resolve_rater_nlp_input_path(
+nlp_path = resolve_rater_data_path(
     WORK_DIR,
     RATER_NLP_INPUT_FILENAME if RATER_NLP_INPUT_FILENAME else None,
+    CANONICAL_NLP_FILENAME,
 )
-visit_candidate_scores_path = resolve_rater_candidate_sidecar_path(
+visit_candidate_scores_path = resolve_rater_data_path(
     WORK_DIR,
     RATER_VISIT_CANDIDATE_SCORES_FILENAME if RATER_VISIT_CANDIDATE_SCORES_FILENAME else None,
     CANONICAL_VISIT_CANDIDATE_SCORES_FILENAME,
 )
-segment_candidate_scores_path = resolve_rater_candidate_sidecar_path(
+segment_candidate_scores_path = resolve_rater_data_path(
     WORK_DIR,
     RATER_SEGMENT_CANDIDATE_SCORES_FILENAME if RATER_SEGMENT_CANDIDATE_SCORES_FILENAME else None,
     CANONICAL_SEGMENT_CANDIDATE_SCORES_FILENAME,
+)
+annotation_benchmark_nlp_path = resolve_rater_data_path(
+    WORK_DIR,
+    RATER_ANNOTATION_BENCHMARK_NLP_FILENAME if RATER_ANNOTATION_BENCHMARK_NLP_FILENAME else None,
+    CANONICAL_ANNOTATION_BENCHMARK_NLP_FILENAME,
+)
+annotation_visit_candidate_scores_path = resolve_rater_data_path(
+    WORK_DIR,
+    RATER_ANNOTATION_VISIT_CANDIDATE_SCORES_FILENAME
+    if RATER_ANNOTATION_VISIT_CANDIDATE_SCORES_FILENAME
+    else None,
+    CANONICAL_ANNOTATION_VISIT_CANDIDATE_SCORES_FILENAME,
+)
+annotation_segment_candidate_scores_path = resolve_rater_data_path(
+    WORK_DIR,
+    RATER_ANNOTATION_SEGMENT_CANDIDATE_SCORES_FILENAME
+    if RATER_ANNOTATION_SEGMENT_CANDIDATE_SCORES_FILENAME
+    else None,
+    CANONICAL_ANNOTATION_SEGMENT_CANDIDATE_SCORES_FILENAME,
 )
 
 # Centralized run configuration. Edit these values when sharing the
@@ -239,6 +255,10 @@ CONFIG = {
     "nlp_min_sim": None,
     "visit_candidate_scores_path": visit_candidate_scores_path,
     "segment_candidate_scores_path": segment_candidate_scores_path,
+    "annotation_benchmark_nlp_path": annotation_benchmark_nlp_path,
+    "annotation_visit_candidate_scores_path": annotation_visit_candidate_scores_path,
+    "annotation_segment_candidate_scores_path": annotation_segment_candidate_scores_path,
+    "benchmark_source": RATER_BENCHMARK_SOURCE,
     "raters_output_dir": WORK_DIR / "Annotation/Full Annotations/Agreement Metrics",
     "nlp_output_dir": WORK_DIR / "artifacts" / "qa" / "rater_agreement",
 }
@@ -252,16 +272,57 @@ NLP_SHEET = CONFIG["nlp_sheet"]
 NLP_MIN_SIM = CONFIG["nlp_min_sim"]
 VISIT_CANDIDATE_SCORES_PATH = Path(CONFIG["visit_candidate_scores_path"])
 SEGMENT_CANDIDATE_SCORES_PATH = Path(CONFIG["segment_candidate_scores_path"])
+ANNOTATION_BENCHMARK_NLP_PATH = Path(CONFIG["annotation_benchmark_nlp_path"])
+ANNOTATION_VISIT_CANDIDATE_SCORES_PATH = Path(CONFIG["annotation_visit_candidate_scores_path"])
+ANNOTATION_SEGMENT_CANDIDATE_SCORES_PATH = Path(CONFIG["annotation_segment_candidate_scores_path"])
+BENCHMARK_SOURCE_REQUESTED = str(CONFIG["benchmark_source"])
 RATERS_OUTPUT_DIR = Path(CONFIG["raters_output_dir"])
 NLP_OUTPUT_DIR = Path(CONFIG["nlp_output_dir"])
 RESULTS_DATE = os.getenv("RESULTS_DATE", datetime.now().strftime("%Y-%m-%d")).strip() or datetime.now().strftime("%Y-%m-%d")
 RESULTS_DIR = WORK_DIR / "Results" / RESULTS_DATE
 
-# Fail fast if required input workbooks are missing. This prevents subtle
-# downstream errors that are harder for new users to debug.
-for path in (ANNOTATION_PATH, NLP_PATH, VISIT_CANDIDATE_SCORES_PATH, SEGMENT_CANDIDATE_SCORES_PATH):
+# Fail fast for the benchmark source that will actually be used. Direct
+# annotation benchmarking must not depend on final-cohort NLP artifacts.
+DIRECT_ANNOTATION_BENCHMARK_PATHS = (
+    ANNOTATION_BENCHMARK_NLP_PATH,
+    ANNOTATION_VISIT_CANDIDATE_SCORES_PATH,
+    ANNOTATION_SEGMENT_CANDIDATE_SCORES_PATH,
+)
+COHORT_OVERLAP_BENCHMARK_PATHS = (
+    NLP_PATH,
+    VISIT_CANDIDATE_SCORES_PATH,
+    SEGMENT_CANDIDATE_SCORES_PATH,
+)
+
+if not ANNOTATION_PATH.exists():
+    raise FileNotFoundError(f"Required annotation workbook not found: {ANNOTATION_PATH}")
+
+direct_path_exists = [path.exists() for path in DIRECT_ANNOTATION_BENCHMARK_PATHS]
+DIRECT_BENCHMARK_COMPLETE = all(direct_path_exists)
+DIRECT_BENCHMARK_PARTIAL = any(direct_path_exists) and not DIRECT_BENCHMARK_COMPLETE
+
+if BENCHMARK_SOURCE_REQUESTED == "annotation_direct":
+    required_paths = DIRECT_ANNOTATION_BENCHMARK_PATHS
+elif BENCHMARK_SOURCE_REQUESTED == "cohort_overlap":
+    required_paths = COHORT_OVERLAP_BENCHMARK_PATHS
+elif DIRECT_BENCHMARK_PARTIAL:
+    missing_paths = [
+        str(path)
+        for path, exists in zip(DIRECT_ANNOTATION_BENCHMARK_PATHS, direct_path_exists)
+        if not exists
+    ]
+    raise FileNotFoundError(
+        "Incomplete direct annotation benchmark artifacts found. Missing: "
+        + "; ".join(missing_paths)
+    )
+elif DIRECT_BENCHMARK_COMPLETE:
+    required_paths = DIRECT_ANNOTATION_BENCHMARK_PATHS
+else:
+    required_paths = COHORT_OVERLAP_BENCHMARK_PATHS
+
+for path in required_paths:
     if not path.exists():
-        raise FileNotFoundError(f"Required input file not found: {path}")
+        raise FileNotFoundError(f"Required benchmark input file not found: {path}")
 
 # Ensure output folders exist before writing artifacts.
 RATERS_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -284,6 +345,8 @@ if os.getenv("VERBOSE_RENDER", "").strip() == "1":
     )
     print(f"Visit candidate scores: {_config_display_path(VISIT_CANDIDATE_SCORES_PATH)}")
     print(f"Segment candidate scores: {_config_display_path(SEGMENT_CANDIDATE_SCORES_PATH)}")
+    print(f"Annotation benchmark source requested: {BENCHMARK_SOURCE_REQUESTED}")
+    print(f"Annotation benchmark NLP workbook: {_config_display_path(ANNOTATION_BENCHMARK_NLP_PATH)}")
     print(f"Raters output dir: {_config_display_path(RATERS_OUTPUT_DIR)}")
     print(f"NLP output dir: {_config_display_path(NLP_OUTPUT_DIR)}")
 ```
@@ -318,6 +381,10 @@ ENV_KNOBS: tuple[str, ...] = (
     "RATER_ANNOTATION_PATH",
     "RATER_VISIT_CANDIDATE_SCORES_FILENAME",
     "RATER_SEGMENT_CANDIDATE_SCORES_FILENAME",
+    "RATER_ANNOTATION_BENCHMARK_NLP_FILENAME",
+    "RATER_ANNOTATION_VISIT_CANDIDATE_SCORES_FILENAME",
+    "RATER_ANNOTATION_SEGMENT_CANDIDATE_SCORES_FILENAME",
+    "RATER_BENCHMARK_SOURCE",
     "ANALYSIS_INPUT_FILENAME",
     "BQ_QUERY_TIMEOUT_SECS",
     "WRITE_ARCHIVE_XLSX_EXPORTS",
@@ -787,6 +854,270 @@ def hash_join_keys(
 
     key_frame[hash_col] = key_frame.apply(_hash_row, axis=1)
     return key_frame[[hash_col]].sort_values(hash_col).reset_index(drop=True)
+
+
+def assign_annotation_row_id(df: pd.DataFrame, id_col: str = "annotation_row_id") -> pd.DataFrame:
+    """Add a deterministic one-based key for direct annotation benchmarking."""
+    out = df.copy()
+    out[id_col] = np.arange(1, len(out) + 1, dtype=int)
+    return out
+
+
+def build_annotation_direct_join(
+    df_r3: pd.DataFrame,
+    df_nlp: pd.DataFrame,
+    *,
+    id_col: str = "annotation_row_id",
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, Any]]:
+    """Build direct annotation benchmark join keyed only by annotation_row_id."""
+    validate_required_columns(df_r3, [id_col], "direct annotation R3 source")
+    validate_required_columns(df_nlp, [id_col], "direct annotation NLP source")
+    normalized_r3 = normalize_join_keys(df_r3, [id_col])
+    normalized_nlp = normalize_join_keys(df_nlp, [id_col])
+    _validate_unique_keys(normalized_r3, [id_col], context="direct annotation R3 source")
+    _validate_unique_keys(normalized_nlp, [id_col], context="direct annotation NLP source")
+    matched = normalized_r3.merge(normalized_nlp, on=[id_col], how="inner")
+    _validate_unique_keys(matched, [id_col], context="direct annotation joined output")
+    unmatched_adjudicated = _anti_join_keys(normalized_r3, normalized_nlp, [id_col])
+    unmatched_nlp = _anti_join_keys(normalized_nlp, normalized_r3, [id_col])
+    matched_rows = int(len(matched))
+    if matched_rows == 0:
+        raise ValueError(
+            "Direct annotation benchmark join produced zero matched rows. "
+            "Check annotation_row_id creation in classifier and rater notebooks."
+        )
+    r3_rows = int(len(normalized_r3))
+    nlp_rows = int(len(normalized_nlp))
+    audit = {
+        "benchmark_source": "annotation_direct",
+        "key_columns": [id_col],
+        "key_strategy": "annotation_row_id",
+        "r3_rows": r3_rows,
+        "nlp_rows": nlp_rows,
+        "matched_rows": matched_rows,
+        "unmatched_adjudicated_rows": int(len(unmatched_adjudicated)),
+        "unmatched_nlp_rows": int(len(unmatched_nlp)),
+        "human_human_denominator_n": r3_rows,
+        "nlp_benchmark_denominator_n": matched_rows,
+        "matched_rate_vs_adjudicated": float(matched_rows / r3_rows) if r3_rows else None,
+        "unmatched_rate_vs_adjudicated": (
+            float(len(unmatched_adjudicated) / r3_rows) if r3_rows else None
+        ),
+        "unmatched_rate_vs_nlp": float(len(unmatched_nlp) / nlp_rows) if nlp_rows else None,
+        "join_interpretation": (
+            "direct_annotation_fully_covered"
+            if matched_rows == r3_rows
+            else "direct_annotation_partial_coverage"
+        ),
+        "severity": "info" if matched_rows == r3_rows else "warning",
+    }
+    return matched, unmatched_adjudicated, unmatched_nlp, audit
+
+
+def agreement_class(gold: Set[str], pred: Set[str]) -> str:
+    """Classify NLP-vs-adjudication as exact, partial, or none."""
+    if gold == pred:
+        return "exact"
+    if gold & pred:
+        return "partial"
+    return "none"
+
+
+def per_category_prf(
+    gold_sets: list[set[str]],
+    pred_sets: list[set[str]],
+    categories: list[str],
+) -> pd.DataFrame:
+    """Compute one-vs-rest support, counts, precision, recall, and F1."""
+    rows: list[dict[str, object]] = []
+    for category in categories:
+        tp = fp = fn = tn = 0
+        for gold, pred in zip(gold_sets, pred_sets):
+            gold_has = category in gold
+            pred_has = category in pred
+            if gold_has and pred_has:
+                tp += 1
+            elif not gold_has and pred_has:
+                fp += 1
+            elif gold_has and not pred_has:
+                fn += 1
+            else:
+                tn += 1
+        precision = tp / (tp + fp) if (tp + fp) else np.nan
+        recall = tp / (tp + fn) if (tp + fn) else np.nan
+        f1 = 2 * precision * recall / (precision + recall) if precision + recall > 0 else np.nan
+        rows.append(
+            {
+                "category_code": category,
+                "category_label": canonical_label_for_code(category),
+                "N": len(gold_sets),
+                "adjudicated_support": tp + fn,
+                "nlp_positives": tp + fp,
+                "tp": tp,
+                "fp": fp,
+                "fn": fn,
+                "tn": tn,
+                "precision": precision,
+                "recall": recall,
+                "f1": f1,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+BOOTSTRAP_SEED = 20260607
+
+
+def _nan_quantiles(values: list[float], probs: tuple[float, float]) -> tuple[float, float]:
+    array = np.asarray(values, dtype=float)
+    if array.size == 0 or np.isnan(array).all():
+        return np.nan, np.nan
+    lo, hi = np.nanquantile(array, probs)
+    return float(lo), float(hi)
+
+
+def bootstrap_per_category_prf_cis(
+    gold_sets: list[set[str]],
+    pred_sets: list[set[str]],
+    categories: list[str],
+    *,
+    n_boot: int = 2000,
+    seed: int = BOOTSTRAP_SEED,
+    ci: float = 0.95,
+) -> pd.DataFrame:
+    """Bootstrap visit-level CIs for per-category precision, recall, and F1."""
+    n = len(gold_sets)
+    estimates = per_category_prf(gold_sets, pred_sets, categories).set_index("category_code")
+    if n == 0:
+        return pd.DataFrame(columns=["category_code", "metric", "estimate", "ci_low", "ci_high", "n_boot", "seed"])
+    rng = np.random.default_rng(seed)
+    alpha = (1 - ci) / 2
+    probs = (alpha, 1 - alpha)
+    samples: dict[tuple[str, str], list[float]] = {
+        (category, metric): []
+        for category in categories
+        for metric in ("precision", "recall", "f1")
+    }
+    for _ in range(n_boot):
+        indices = rng.integers(0, n, size=n)
+        sampled_gold = [gold_sets[int(index)] for index in indices]
+        sampled_pred = [pred_sets[int(index)] for index in indices]
+        sampled = per_category_prf(sampled_gold, sampled_pred, categories).set_index("category_code")
+        for category in categories:
+            for metric in ("precision", "recall", "f1"):
+                samples[(category, metric)].append(float(sampled.loc[category, metric]))
+    rows: list[dict[str, object]] = []
+    for category in categories:
+        for metric in ("precision", "recall", "f1"):
+            ci_low, ci_high = _nan_quantiles(samples[(category, metric)], probs)
+            rows.append(
+                {
+                    "category_code": category,
+                    "category_label": canonical_label_for_code(category),
+                    "metric": metric,
+                    "estimate": float(estimates.loc[category, metric]),
+                    "ci_low": ci_low,
+                    "ci_high": ci_high,
+                    "n_boot": n_boot,
+                    "seed": seed,
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def bootstrap_set_agreement_cis(
+    gold_sets: list[set[str]],
+    pred_sets: list[set[str]],
+    *,
+    n_boot: int = 2000,
+    seed: int = BOOTSTRAP_SEED,
+    ci: float = 0.95,
+) -> pd.DataFrame:
+    """Bootstrap visit-level CIs for exact, partial, and none agreement rates."""
+    n = len(gold_sets)
+    classes = [agreement_class(gold, pred) for gold, pred in zip(gold_sets, pred_sets)]
+    if n == 0:
+        return pd.DataFrame(columns=["metric", "estimate", "ci_low", "ci_high", "n_boot", "seed"])
+    rng = np.random.default_rng(seed)
+    alpha = (1 - ci) / 2
+    probs = (alpha, 1 - alpha)
+    values = {metric: [] for metric in ("exact_rate", "partial_rate", "none_rate")}
+    for _ in range(n_boot):
+        indices = rng.integers(0, n, size=n)
+        sampled = [classes[int(index)] for index in indices]
+        values["exact_rate"].append(sampled.count("exact") / n)
+        values["partial_rate"].append(sampled.count("partial") / n)
+        values["none_rate"].append(sampled.count("none") / n)
+    rows: list[dict[str, object]] = []
+    for class_name, metric in (("exact", "exact_rate"), ("partial", "partial_rate"), ("none", "none_rate")):
+        ci_low, ci_high = _nan_quantiles(values[metric], probs)
+        rows.append(
+            {
+                "metric": metric,
+                "estimate": classes.count(class_name) / n,
+                "ci_low": ci_low,
+                "ci_high": ci_high,
+                "n_boot": n_boot,
+                "seed": seed,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def multilabel_confusion_matrix(
+    gold_sets: list[set[str]],
+    pred_sets: list[set[str]],
+    categories: list[str],
+    *,
+    none_label: str = "__none__",
+) -> pd.DataFrame:
+    """Build adjudicated-by-NLP multi-label category co-occurrence matrix."""
+    labels = [*categories, none_label]
+    matrix = pd.DataFrame(0, index=labels, columns=labels, dtype=int)
+    category_set = set(categories)
+    for gold, pred in zip(gold_sets, pred_sets):
+        gold_labels = sorted(set(gold) & category_set) or [none_label]
+        pred_labels = sorted(set(pred) & category_set) or [none_label]
+        for gold_label in gold_labels:
+            for pred_label in pred_labels:
+                matrix.loc[gold_label, pred_label] += 1
+    matrix.index.name = "adjudicated_category"
+    return matrix.reset_index()
+
+
+def grouped_rfv_code(code: str) -> str:
+    """Collapse canonical RFV codes to broader groups for compact confusion summaries."""
+    if code.startswith("RVC-SYM-"):
+        return "RVC-SYM"
+    return code
+
+
+def grouped_label_for_code(code: str) -> str:
+    labels = {
+        "RVC-SYM": "Symptoms",
+        "RVC-INJ": "Injuries & adverse effects",
+        "RVC-DIS": "Diseases (patient-stated)",
+        "RVC-TEST": "Abnormal test result",
+        "RVC-DIAG": "Diagnostic/Screening/Preventive",
+        "RVC-TREAT": "Treatment/Medication",
+        "RVC-ADMIN": "Administrative",
+        "RVC-UNCL": "Uncodable/Unknown",
+    }
+    return labels.get(code, code)
+
+
+def redact_chief_complaint_example(text: object, *, max_chars: int = 160) -> str:
+    """Conservatively redact a short chief-complaint example for private QA review."""
+    if pd.isna(text):
+        return ""
+    redacted = str(text)
+    redacted = re.sub(r"\[\*\*.*?\*\*\]", "[REDACTED]", redacted)
+    redacted = re.sub(r"\b\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\b", "[DATE]", redacted)
+    redacted = re.sub(r"\b\d{2,}\b", "[NUMBER]", redacted)
+    redacted = re.sub(r"\s+", " ", redacted).strip()
+    if len(redacted) > max_chars:
+        redacted = redacted[: max_chars - 3].rstrip() + "..."
+    return redacted
 
 
 def render_latex_longtable(
@@ -1840,16 +2171,25 @@ def _prediction_sets_from_visit_candidates(
     *,
     score_threshold: float,
     top_k_cutoff: int,
+    uncodable_threshold: float | None = None,
 ) -> list[set[str]]:
     """Build emitted prediction sets from visit candidate scores."""
     prediction_lookup: dict[int, set[str]] = {}
     for matched_visit_id, group in visit_scores.groupby("matched_visit_id", dropna=False):
         ranked = group.sort_values(["visit_rank_effective", "category_code"], kind="mergesort")
-        ranked = ranked.loc[
+        clinical_ranked = ranked.loc[
             pd.to_numeric(ranked["visit_score_effective"], errors="coerce").ge(score_threshold)
             & ranked["category_code"].ne(UNCODABLE_RVC_CODE)
         ]
-        prediction_lookup[int(matched_visit_id)] = set(ranked.head(top_k_cutoff)["category_code"].astype(str))
+        emitted = set(clinical_ranked.head(top_k_cutoff)["category_code"].astype(str))
+        if not emitted and uncodable_threshold is not None:
+            uncodable_candidates = ranked.loc[
+                ranked["category_code"].eq(UNCODABLE_RVC_CODE)
+                & pd.to_numeric(ranked["visit_score_effective"], errors="coerce").ge(uncodable_threshold)
+            ]
+            if not uncodable_candidates.empty:
+                emitted = {UNCODABLE_RVC_CODE}
+        prediction_lookup[int(matched_visit_id)] = emitted
     return [prediction_lookup.get(index, set()) for index in range(int(visit_scores["matched_visit_id"].max()) + 1)]
 
 
@@ -1977,6 +2317,7 @@ def build_threshold_sweep(
             visit_scores,
             score_threshold=DEFAULT_VISIT_EMIT_THRESHOLD,
             top_k_cutoff=DEFAULT_VISIT_TOPK_CUTOFF,
+            uncodable_threshold=uncodable_threshold,
         )
         rows.append(
             summarize_prediction_setting(
@@ -2243,35 +2584,191 @@ import json
 
 # Step 1: Load adjudicator labels and validate keys/columns.
 df = read_sheet_checked(ANNOTATION_PATH, ANNOTATION_SHEET)
+df = assign_annotation_row_id(df)
 r3_key_candidates = ["hadm_id", "subject_id", "ed_stay_id"]
 r3_label_cols = [
     c for c in df.columns
     if c.startswith("annot3_rvs") and c.endswith("_cat")
 ]
 r3_present_keys = [column for column in r3_key_candidates if column in df.columns]
-r3_cols = r3_present_keys + r3_label_cols
+r3_cols = ["annotation_row_id"] + r3_present_keys + r3_label_cols
 validate_required_columns(df, r3_cols, "Annotation sheet for R3")
 df_r3 = df[r3_cols].copy()
 
-# Step 2: Load NLP outputs and validate key columns.
-df_nlp = read_sheet_checked(NLP_PATH, NLP_SHEET)
 nlp_key_candidates = ["hadm_id", "subject_id", "ed_stay_id"]
 nlp_name_cols = [f"RFV{i}_name" for i in range(1, 6)]
-present_name_cols = [c for c in nlp_name_cols if c in df_nlp.columns]
-nlp_present_keys = [column for column in nlp_key_candidates if column in df_nlp.columns]
-validate_required_columns(df_nlp, nlp_present_keys, "NLP sheet")
-if not present_name_cols:
-    raise KeyError("NLP file must contain RFV*_name columns.")
 
-r3_join_keys, join_key_strategy, join_key_diagnostics = select_join_key_columns(df_r3, df_nlp)
-validate_unique_keys(df_r3, r3_join_keys, "Annotation sheet for R3")
-validate_unique_keys(df_nlp, r3_join_keys, "NLP sheet")
-key_inventory = build_join_key_inventory(
-    df_r3,
-    df_nlp,
-    r3_join_keys,
-    strategy=join_key_strategy,
+use_direct_annotation_benchmark = (
+    BENCHMARK_SOURCE_REQUESTED == "annotation_direct"
+    or (BENCHMARK_SOURCE_REQUESTED == "auto" and DIRECT_BENCHMARK_COMPLETE)
 )
+
+def _cohort_overlap_not_run(reason: str, error: str = "") -> None:
+    """Record a nonblocking cohort-overlap diagnostic for direct benchmarks."""
+    global df_nlp_cohort
+    global cohort_present_name_cols
+    global cohort_join_keys
+    global cohort_join_key_strategy
+    global cohort_join_key_diagnostics
+    global cohort_key_inventory
+    global cohort_df_join
+    global cohort_unmatched_adjudicated
+    global cohort_unmatched_nlp
+    global cohort_overlap_join_audit
+
+    df_nlp_cohort = pd.DataFrame()
+    cohort_present_name_cols = []
+    cohort_join_keys = []
+    cohort_join_key_strategy = "not_run"
+    cohort_join_key_diagnostics = pd.DataFrame(
+        [
+            {
+                "join_key_strategy": "not_run",
+                "join_key_columns": "",
+                "columns_present_r3": False,
+                "columns_present_nlp": False,
+                "selected": False,
+                "eligible_for_join": False,
+                "failure_reason": reason,
+            }
+        ]
+    )
+    cohort_key_inventory = pd.DataFrame(
+        [
+            {
+                "join_key_strategy": "not_run",
+                "join_key_columns": "",
+                "r3_rows": int(len(df_r3)),
+                "nlp_rows": 0,
+                "overlapping_unique_keys": 0,
+                "failure_reason": reason,
+            }
+        ]
+    )
+    cohort_df_join = pd.DataFrame()
+    cohort_unmatched_adjudicated = pd.DataFrame()
+    cohort_unmatched_nlp = pd.DataFrame()
+    cohort_overlap_join_audit = {
+        "benchmark_source": "cohort_overlap",
+        "key_columns": [],
+        "key_strategy": "not_run",
+        "r3_rows": int(len(df_r3)),
+        "nlp_rows": 0,
+        "matched_rows": 0,
+        "unmatched_adjudicated_rows": 0,
+        "unmatched_nlp_rows": 0,
+        "human_human_denominator_n": int(len(df_r3)),
+        "nlp_benchmark_denominator_n": 0,
+        "matched_rate_vs_adjudicated": None,
+        "unmatched_rate_vs_adjudicated": None,
+        "unmatched_rate_vs_nlp": None,
+        "join_interpretation": "cohort_overlap_not_run_for_direct_benchmark",
+        "coverage_status": "not_run",
+        "target_sample_n": R3_NLP_TARGET_SAMPLE_N,
+        "severity": "info",
+        "diagnostic_reason": reason,
+        "diagnostic_error": error,
+    }
+
+
+# Step 2: Load cohort-overlap NLP outputs for the secondary audit and optional fallback.
+try:
+    if use_direct_annotation_benchmark and not NLP_PATH.exists():
+        raise FileNotFoundError(f"Cohort NLP workbook not found: {NLP_PATH}")
+    df_nlp_cohort = read_sheet_checked(NLP_PATH, NLP_SHEET)
+    cohort_present_name_cols = [c for c in nlp_name_cols if c in df_nlp_cohort.columns]
+    nlp_present_keys = [column for column in nlp_key_candidates if column in df_nlp_cohort.columns]
+    validate_required_columns(df_nlp_cohort, nlp_present_keys, "Cohort NLP sheet")
+    if not cohort_present_name_cols:
+        raise KeyError("Cohort NLP file must contain RFV*_name columns.")
+
+    cohort_join_keys, cohort_join_key_strategy, cohort_join_key_diagnostics = select_join_key_columns(
+        df_r3,
+        df_nlp_cohort,
+    )
+    validate_unique_keys(df_r3, cohort_join_keys, "Annotation sheet for R3 cohort-overlap audit")
+    validate_unique_keys(df_nlp_cohort, cohort_join_keys, "Cohort NLP sheet")
+    cohort_key_inventory = build_join_key_inventory(
+        df_r3,
+        df_nlp_cohort,
+        cohort_join_keys,
+        strategy=cohort_join_key_strategy,
+    )
+    (
+        cohort_df_join,
+        cohort_unmatched_adjudicated,
+        cohort_unmatched_nlp,
+        cohort_overlap_join_audit,
+    ) = build_r3_nlp_join_audit(
+        df_r3,
+        df_nlp_cohort,
+        cohort_join_keys,
+        target_sample_n=R3_NLP_TARGET_SAMPLE_N,
+        gate_policy=R3_NLP_GATE_POLICY,
+        key_strategy=cohort_join_key_strategy,
+        key_diagnostics=cohort_join_key_diagnostics,
+    )
+except Exception as exc:
+    if not use_direct_annotation_benchmark:
+        raise
+    _cohort_overlap_not_run(
+        "final-cohort overlap join remains a secondary diagnostic and was not run",
+        str(exc),
+    )
+cohort_overlap_join_audit["benchmark_source"] = "cohort_overlap"
+if use_direct_annotation_benchmark:
+    df_nlp = read_sheet_checked(ANNOTATION_BENCHMARK_NLP_PATH, NLP_SHEET)
+    present_name_cols = [c for c in nlp_name_cols if c in df_nlp.columns]
+    validate_required_columns(df_nlp, ["annotation_row_id"], "direct annotation NLP sheet")
+    if not present_name_cols:
+        raise KeyError("Direct annotation NLP file must contain RFV*_name columns.")
+    r3_join_keys = ["annotation_row_id"]
+    join_key_strategy = "annotation_row_id"
+    df_join, unmatched_adjudicated, unmatched_nlp, join_audit = build_annotation_direct_join(
+        df_r3,
+        df_nlp,
+        id_col="annotation_row_id",
+    )
+    join_key_diagnostics = pd.DataFrame(
+        [
+            {
+                "join_key_strategy": join_key_strategy,
+                "join_key_columns": "annotation_row_id",
+                "columns_present_r3": True,
+                "columns_present_nlp": True,
+                "selected": True,
+                "eligible_for_join": True,
+                "failure_reason": "",
+                "r3_rows": int(len(df_r3)),
+                "nlp_rows": int(len(df_nlp)),
+                "overlapping_unique_keys": int(len(df_join)),
+            }
+        ]
+    )
+    key_inventory = build_join_key_inventory(
+        df_r3,
+        df_nlp,
+        r3_join_keys,
+        strategy=join_key_strategy,
+    )
+    active_visit_candidate_scores_path = ANNOTATION_VISIT_CANDIDATE_SCORES_PATH
+    active_segment_candidate_scores_path = ANNOTATION_SEGMENT_CANDIDATE_SCORES_PATH
+    benchmark_source = "annotation_direct"
+else:
+    df_nlp = df_nlp_cohort
+    present_name_cols = cohort_present_name_cols
+    r3_join_keys = cohort_join_keys
+    join_key_strategy = cohort_join_key_strategy
+    join_key_diagnostics = cohort_join_key_diagnostics
+    key_inventory = cohort_key_inventory
+    df_join = cohort_df_join
+    unmatched_adjudicated = cohort_unmatched_adjudicated
+    unmatched_nlp = cohort_unmatched_nlp
+    join_audit = cohort_overlap_join_audit
+    active_visit_candidate_scores_path = VISIT_CANDIDATE_SCORES_PATH
+    active_segment_candidate_scores_path = SEGMENT_CANDIDATE_SCORES_PATH
+    benchmark_source = "cohort_overlap"
+
 label_mapping_audit = build_label_mapping_audit(
     df_r3,
     df_nlp,
@@ -2285,17 +2782,7 @@ if unmapped_label_count > 0:
         unmapped_label_count,
     )
 
-# Step 3: Build key-normalized join plus explicit overlap audit.
-df_join, unmatched_adjudicated, unmatched_nlp, join_audit = build_r3_nlp_join_audit(
-    df_r3,
-    df_nlp,
-    r3_join_keys,
-    target_sample_n=R3_NLP_TARGET_SAMPLE_N,
-    gate_policy=R3_NLP_GATE_POLICY,
-    key_strategy=join_key_strategy,
-    key_diagnostics=join_key_diagnostics,
-)
-
+# Step 3: Summarize selected NLP benchmark denominator plus retained cohort-overlap audit.
 n_before = len(df_r3)
 n_after = int(join_audit["matched_rows"])
 n_dropped = int(join_audit["unmatched_adjudicated_rows"])
@@ -2314,6 +2801,11 @@ print(
     f"({_fmt_rate(join_audit['unmatched_rate_vs_adjudicated'])}); "
     f"{n_unmatched_nlp} NLP rows had no adjudicated match "
     f"({_fmt_rate(join_audit['unmatched_rate_vs_nlp'])})."
+)
+print(
+    "Selected NLP benchmark source:",
+    benchmark_source,
+    f"(cohort-overlap audit matched {cohort_overlap_join_audit['matched_rows']} of {len(df_r3)} adjudicated rows).",
 )
 join_severity = str(join_audit.get("severity", "warning")).lower()
 join_interpretation = str(join_audit.get("join_interpretation", "below_target_overlap_nonzero"))
@@ -2339,10 +2831,18 @@ if n_dropped > 0 or n_unmatched_nlp > 0:
 human_human_denominator_text = (
     f"Human inter-rater agreement was evaluated in the full adjudicated sample (N={n_before})."
 )
-nlp_benchmark_denominator_text = (
-    "NLP-vs-adjudicator benchmarking was evaluated in the matched subset with "
-    f"available join keys in both sources (N={n_after})."
-)
+if benchmark_source == "annotation_direct":
+    nlp_benchmark_denominator_text = (
+        "NLP-vs-adjudicator benchmarking was evaluated by directly scoring the "
+        f"adjudicated annotation chief complaints and joining by annotation_row_id (N={n_after}). "
+        f"The cohort-overlap diagnostic matched {cohort_overlap_join_audit['matched_rows']} of {len(df_r3)} "
+        "adjudicated rows to the final cohort NLP workbook."
+    )
+else:
+    nlp_benchmark_denominator_text = (
+        "NLP-vs-adjudicator benchmarking was evaluated in the matched subset with "
+        f"available join keys in both sources (N={n_after}); no direct annotation benchmark workbook was available."
+    )
 print(human_human_denominator_text)
 print(nlp_benchmark_denominator_text)
 
@@ -2355,7 +2855,7 @@ assert len(nlp_sets) == len(df_join), "NLP set count mismatch"
 
 # Step 4b: Load classifier candidate sidecars for ranking-based validation.
 visit_candidate_scores = read_candidate_sidecar(
-    VISIT_CANDIDATE_SCORES_PATH,
+    active_visit_candidate_scores_path,
     required_columns=[
         "category_code",
         "category_name",
@@ -2368,7 +2868,7 @@ visit_candidate_scores = read_candidate_sidecar(
     label="visit_candidate_scores",
 )
 segment_candidate_scores = read_candidate_sidecar(
-    SEGMENT_CANDIDATE_SCORES_PATH,
+    active_segment_candidate_scores_path,
     required_columns=[
         "seg_idx",
         "segment_text",
@@ -2522,12 +3022,111 @@ if non_empty_set_visit_n > 0 and category_prevalence_nonzero_n == 0:
         f"label sets (non_empty_set_visit_n={non_empty_set_visit_n})."
     )
 
+per_category_metrics = per_category_prf(r3_sets_join, nlp_sets, CANONICAL_CATS)
+per_category_bootstrap_ci = bootstrap_per_category_prf_cis(
+    r3_sets_join,
+    nlp_sets,
+    CANONICAL_CATS,
+    n_boot=2000,
+    seed=BOOTSTRAP_SEED,
+)
+set_agreement_ci = bootstrap_set_agreement_cis(
+    r3_sets_join,
+    nlp_sets,
+    n_boot=2000,
+    seed=BOOTSTRAP_SEED,
+)
+confusion_matrix_canonical = multilabel_confusion_matrix(
+    r3_sets_join,
+    nlp_sets,
+    CANONICAL_CATS,
+)
+GROUPED_CATS = list(dict.fromkeys(grouped_rfv_code(code) for code in CANONICAL_CATS))
+grouped_gold_sets = [
+    {grouped_rfv_code(code) for code in labels}
+    for labels in r3_sets_join
+]
+grouped_nlp_sets = [
+    {grouped_rfv_code(code) for code in labels}
+    for labels in nlp_sets
+]
+confusion_matrix_grouped = multilabel_confusion_matrix(
+    grouped_gold_sets,
+    grouped_nlp_sets,
+    GROUPED_CATS,
+)
+grouped_label_lookup = pd.DataFrame(
+    [
+        {"grouped_code": code, "grouped_label": grouped_label_for_code(code)}
+        for code in GROUPED_CATS
+    ]
+)
+
+def _display_label_set(labels: set[str]) -> str:
+    return "; ".join(canonical_label_for_code(code) for code in sorted(labels))
+
+
+def _first_present_column(frame: pd.DataFrame, candidates: list[str]) -> str | None:
+    for column in candidates:
+        if column in frame.columns:
+            return column
+    return None
+
+
+agreement_classes = [
+    agreement_class(gold, pred)
+    for gold, pred in zip(r3_sets_join, nlp_sets)
+]
+cc_example_column = _first_present_column(
+    df_join,
+    [
+        "chief_complaint_raw",
+        "ed_triage_cc",
+        "chief_complaint",
+        "raw_presenting_concern",
+        "presenting_concern",
+        "chief_complaint_text",
+        "cc",
+    ],
+)
+disagreement_candidates = pd.DataFrame(
+    {
+        "annotation_row_id": df_join["annotation_row_id"].astype("Int64")
+        if "annotation_row_id" in df_join.columns
+        else pd.Series(np.arange(1, len(df_join) + 1), dtype="Int64"),
+        "agreement_class": agreement_classes,
+        "jaccard": visit_metrics["jaccard"],
+        "adjudicated_labels": [_display_label_set(labels) for labels in r3_sets_join],
+        "nlp_labels": [_display_label_set(labels) for labels in nlp_sets],
+        "missed_by_nlp": visit_metrics["missed_by_nlp"],
+        "added_by_nlp": visit_metrics["added_by_nlp"],
+        "chief_complaint_redacted": (
+            df_join[cc_example_column].map(redact_chief_complaint_example)
+            if cc_example_column is not None
+            else ""
+        ),
+    }
+)
+disagreement_examples = (
+    disagreement_candidates.loc[~disagreement_candidates["agreement_class"].eq("exact")]
+    .sort_values(["jaccard", "annotation_row_id"], kind="mergesort")
+    .head(20)
+    .reset_index(drop=True)
+)
+
+for forbidden_column in ("subject_id", "hadm_id", "ed_stay_id", "chief_complaint"):
+    if forbidden_column in disagreement_examples.columns:
+        raise AssertionError(f"Disagreement examples must not export {forbidden_column}.")
+
 # Step 7b: Extended benchmark outputs from classifier candidate sidecars.
 jaccard_q1 = float(visit_metrics["jaccard"].quantile(0.25))
 jaccard_q3 = float(visit_metrics["jaccard"].quantile(0.75))
 headline_payload = {
+    "benchmark_source": benchmark_source,
     "N_matched": int(len(df_join)),
+    "N_adjudicated_rows": int(len(df_r3)),
     "N_unmatched_adjudicated": int(len(unmatched_adjudicated)),
+    "cohort_overlap_matched_rows": int(cohort_overlap_join_audit["matched_rows"]),
     "matched_rate_vs_adjudicated": join_audit.get("matched_rate_vs_adjudicated"),
     "exact_rate": float(pair_summary["exact_rate"]),
     "mean_jaccard": float(pair_summary["mean_jaccard"]),
@@ -2603,6 +3202,12 @@ for metric_name in ("exact_rate", "mean_jaccard", "mean_f1_set", "micro_f1_set")
 # Step 8: Write outputs using stable filenames for downstream workflows.
 visit_metrics.to_csv(NLP_OUTPUT_DIR / "R3_vs_NLP_set_metrics_by_visit.csv", index=False)
 pw_stats.to_csv(NLP_OUTPUT_DIR / "R3_vs_NLP_binary_stats_by_category.csv", index=False)
+per_category_metrics.to_csv(NLP_OUTPUT_DIR / "R3_vs_NLP_per_category_prf.csv", index=False)
+per_category_bootstrap_ci.to_csv(NLP_OUTPUT_DIR / "R3_vs_NLP_per_category_bootstrap_ci.csv", index=False)
+set_agreement_ci.to_csv(NLP_OUTPUT_DIR / "R3_vs_NLP_set_agreement_bootstrap_ci.csv", index=False)
+confusion_matrix_canonical.to_csv(NLP_OUTPUT_DIR / "R3_vs_NLP_confusion_matrix_canonical.csv", index=False)
+confusion_matrix_grouped.to_csv(NLP_OUTPUT_DIR / "R3_vs_NLP_confusion_matrix_grouped.csv", index=False)
+disagreement_examples.to_csv(NLP_OUTPUT_DIR / "R3_vs_NLP_disagreement_examples_redacted.csv", index=False)
 headline_metrics.to_csv(NLP_OUTPUT_DIR / "R3_vs_NLP_headline_metrics.csv", index=False)
 topk_by_visit.to_csv(NLP_OUTPUT_DIR / "R3_vs_NLP_topk_metrics_by_visit.csv", index=False)
 topk_summary.to_csv(NLP_OUTPUT_DIR / "R3_vs_NLP_topk_summary.csv", index=False)
@@ -2641,12 +3246,23 @@ unmatched_nlp.to_csv(
 (NLP_OUTPUT_DIR / "R3_vs_NLP_join_audit.json").write_text(
     json.dumps(join_audit, indent=2)
 )
+(NLP_OUTPUT_DIR / "R3_vs_NLP_cohort_overlap_join_audit.json").write_text(
+    json.dumps(cohort_overlap_join_audit, indent=2)
+)
 key_inventory.to_csv(
     NLP_OUTPUT_DIR / "R3_vs_NLP_key_inventory.csv",
     index=False,
 )
+cohort_key_inventory.to_csv(
+    NLP_OUTPUT_DIR / "R3_vs_NLP_cohort_overlap_key_inventory.csv",
+    index=False,
+)
 join_key_diagnostics.to_csv(
     NLP_OUTPUT_DIR / "join_key_diagnostics.csv",
+    index=False,
+)
+cohort_join_key_diagnostics.to_csv(
+    NLP_OUTPUT_DIR / "cohort_overlap_join_key_diagnostics.csv",
     index=False,
 )
 label_mapping_audit.to_csv(
@@ -2655,6 +3271,10 @@ label_mapping_audit.to_csv(
 )
 pd.DataFrame([join_audit]).to_csv(
     NLP_OUTPUT_DIR / "join_audit_summary.csv",
+    index=False,
+)
+pd.DataFrame([cohort_overlap_join_audit]).to_csv(
+    NLP_OUTPUT_DIR / "cohort_overlap_join_audit_summary.csv",
     index=False,
 )
 
@@ -2727,13 +3347,20 @@ rater_denominator_summary = pd.DataFrame(
     [
         {"metric": "human_human_denominator_text", "value": human_human_denominator_text},
         {"metric": "nlp_benchmark_denominator_text", "value": nlp_benchmark_denominator_text},
+        {"metric": "benchmark_source", "value": benchmark_source},
+        {"metric": "benchmark_source_requested", "value": BENCHMARK_SOURCE_REQUESTED},
         {"metric": "annotation_r3_rows", "value": int(len(df_r3))},
         {"metric": "nlp_rows", "value": int(len(df_nlp))},
         {"metric": "matched_rows", "value": int(len(df_join))},
         {"metric": "unmatched_adjudicated_rows", "value": int(len(unmatched_adjudicated))},
         {"metric": "unmatched_nlp_rows", "value": int(len(unmatched_nlp))},
+        {"metric": "cohort_overlap_matched_rows", "value": int(cohort_overlap_join_audit["matched_rows"])},
+        {"metric": "cohort_overlap_unmatched_adjudicated_rows", "value": int(cohort_overlap_join_audit["unmatched_adjudicated_rows"])},
         {"metric": "join_key_strategy", "value": join_key_strategy},
         {"metric": "join_key_columns", "value": "|".join(r3_join_keys)},
+        {"metric": "annotation_benchmark_nlp_path_exists", "value": bool(ANNOTATION_BENCHMARK_NLP_PATH.exists())},
+        {"metric": "annotation_visit_candidate_scores_path_exists", "value": bool(ANNOTATION_VISIT_CANDIDATE_SCORES_PATH.exists())},
+        {"metric": "annotation_segment_candidate_scores_path_exists", "value": bool(ANNOTATION_SEGMENT_CANDIDATE_SCORES_PATH.exists())},
     ]
 )
 pair_summary_table = pair_summary.to_frame(name="value").reset_index().rename(
@@ -2747,13 +3374,50 @@ threshold_summary_table = (
     .mean(numeric_only=True)
     .reset_index()
 )
+benchmark_notes = pd.DataFrame(
+    [
+        {
+            "note": "primary_denominator",
+            "value": (
+                "Direct annotation benchmark over adjudicated chief complaints"
+                if benchmark_source == "annotation_direct"
+                else "Cohort-overlap benchmark using final cohort NLP workbook"
+            ),
+        },
+        {
+            "note": "partial_agreement_definition",
+            "value": "Non-exact agreement with at least one overlapping RFV label between adjudicated and NLP label sets.",
+        },
+        {
+            "note": "bootstrap_seed",
+            "value": BOOTSTRAP_SEED,
+        },
+        {
+            "note": "cohort_overlap_audit",
+            "value": (
+                f"{cohort_overlap_join_audit['matched_rows']} of {len(df_r3)} adjudicated rows matched "
+                "the final cohort NLP workbook by encounter keys."
+            ),
+        },
+    ]
+)
+cohort_overlap_audit_table = pd.DataFrame([cohort_overlap_join_audit])
 with pd.ExcelWriter(rater_supplement_tables_path, engine="openpyxl") as writer:
     rater_annotation_examples.to_excel(writer, sheet_name="annotation_examples", index=False)
     rvc_grouped_mapping.to_excel(writer, sheet_name="grouped_mapping", index=False)
     rater_denominator_summary.to_excel(writer, sheet_name="matched_denominators", index=False)
     headline_metrics.to_excel(writer, sheet_name="headline_metrics", index=False)
     pair_summary_table.to_excel(writer, sheet_name="agreement_summary", index=False)
+    set_agreement_ci.to_excel(writer, sheet_name="set_agreement_ci", index=False)
     chance_summary_table.to_excel(writer, sheet_name="chance_corrected", index=False)
+    per_category_metrics.to_excel(writer, sheet_name="per_category_metrics", index=False)
+    per_category_bootstrap_ci.to_excel(writer, sheet_name="per_category_ci", index=False)
+    confusion_matrix_canonical.to_excel(writer, sheet_name="confusion_canonical", index=False)
+    confusion_matrix_grouped.to_excel(writer, sheet_name="confusion_grouped", index=False)
+    grouped_label_lookup.to_excel(writer, sheet_name="grouped_confusion_key", index=False)
+    disagreement_examples.to_excel(writer, sheet_name="disagreement_examples", index=False)
+    cohort_overlap_audit_table.to_excel(writer, sheet_name="cohort_overlap_audit", index=False)
+    benchmark_notes.to_excel(writer, sheet_name="benchmark_notes", index=False)
     topk_summary.to_excel(writer, sheet_name="topk_summary", index=False)
     cardinality_summary.to_excel(writer, sheet_name="cardinality_summary", index=False)
     threshold_summary_table.to_excel(writer, sheet_name="threshold_summary", index=False)
@@ -2778,17 +3442,26 @@ input_manifest = {
     "nlp_sheet": NLP_SHEET,
     "visit_candidate_scores_path": _manifest_relpath(VISIT_CANDIDATE_SCORES_PATH),
     "segment_candidate_scores_path": _manifest_relpath(SEGMENT_CANDIDATE_SCORES_PATH),
+    "annotation_benchmark_nlp_path": _manifest_relpath(ANNOTATION_BENCHMARK_NLP_PATH),
+    "annotation_visit_candidate_scores_path": _manifest_relpath(ANNOTATION_VISIT_CANDIDATE_SCORES_PATH),
+    "annotation_segment_candidate_scores_path": _manifest_relpath(ANNOTATION_SEGMENT_CANDIDATE_SCORES_PATH),
+    "active_visit_candidate_scores_path": _manifest_relpath(active_visit_candidate_scores_path),
+    "active_segment_candidate_scores_path": _manifest_relpath(active_segment_candidate_scores_path),
+    "benchmark_source": benchmark_source,
+    "benchmark_source_requested": BENCHMARK_SOURCE_REQUESTED,
     "row_counts": {
         "annotation_r3_rows": int(len(df_r3)),
         "nlp_rows": int(len(df_nlp)),
         "matched_rows": int(len(df_join)),
         "unmatched_adjudicated_rows": int(len(unmatched_adjudicated)),
         "unmatched_nlp_rows": int(len(unmatched_nlp)),
+        "cohort_overlap_matched_rows": int(cohort_overlap_join_audit["matched_rows"]),
     },
     "key_columns": r3_join_keys,
     "key_strategy": join_key_strategy,
     "join_key_diagnostics_path": _manifest_relpath(NLP_OUTPUT_DIR / "join_key_diagnostics.csv"),
     "join_audit": join_audit,
+    "cohort_overlap_join_audit": cohort_overlap_join_audit,
     "matched_key_hash_count": int(len(matched_key_hashes)),
     "unmapped_label_count": unmapped_label_count,
 }
@@ -2810,11 +3483,24 @@ rater_run_manifest["inputs"] = {
     "nlp_sheet": NLP_SHEET,
     "visit_candidate_scores_path": _manifest_relpath(VISIT_CANDIDATE_SCORES_PATH),
     "segment_candidate_scores_path": _manifest_relpath(SEGMENT_CANDIDATE_SCORES_PATH),
+    "annotation_benchmark_nlp_path": _manifest_relpath(ANNOTATION_BENCHMARK_NLP_PATH),
+    "annotation_visit_candidate_scores_path": _manifest_relpath(ANNOTATION_VISIT_CANDIDATE_SCORES_PATH),
+    "annotation_segment_candidate_scores_path": _manifest_relpath(ANNOTATION_SEGMENT_CANDIDATE_SCORES_PATH),
+    "active_visit_candidate_scores_path": _manifest_relpath(active_visit_candidate_scores_path),
+    "active_segment_candidate_scores_path": _manifest_relpath(active_segment_candidate_scores_path),
+    "benchmark_source": benchmark_source,
 }
 rater_run_manifest["join_audit"] = join_audit
+rater_run_manifest["cohort_overlap_join_audit"] = cohort_overlap_join_audit
 rater_run_manifest["outputs"] = {
     "summary_path": _manifest_relpath(NLP_OUTPUT_DIR / "R3_vs_NLP_summary.txt"),
     "headline_metrics_path": _manifest_relpath(NLP_OUTPUT_DIR / "R3_vs_NLP_headline_metrics.csv"),
+    "per_category_metrics_path": _manifest_relpath(NLP_OUTPUT_DIR / "R3_vs_NLP_per_category_prf.csv"),
+    "per_category_bootstrap_ci_path": _manifest_relpath(NLP_OUTPUT_DIR / "R3_vs_NLP_per_category_bootstrap_ci.csv"),
+    "set_agreement_bootstrap_ci_path": _manifest_relpath(NLP_OUTPUT_DIR / "R3_vs_NLP_set_agreement_bootstrap_ci.csv"),
+    "confusion_matrix_canonical_path": _manifest_relpath(NLP_OUTPUT_DIR / "R3_vs_NLP_confusion_matrix_canonical.csv"),
+    "confusion_matrix_grouped_path": _manifest_relpath(NLP_OUTPUT_DIR / "R3_vs_NLP_confusion_matrix_grouped.csv"),
+    "disagreement_examples_path": _manifest_relpath(NLP_OUTPUT_DIR / "R3_vs_NLP_disagreement_examples_redacted.csv"),
     "topk_by_visit_path": _manifest_relpath(NLP_OUTPUT_DIR / "R3_vs_NLP_topk_metrics_by_visit.csv"),
     "topk_summary_path": _manifest_relpath(NLP_OUTPUT_DIR / "R3_vs_NLP_topk_summary.csv"),
     "segment_union_topk_summary_path": _manifest_relpath(NLP_OUTPUT_DIR / "R3_vs_NLP_segment_union_topk_summary.csv"),
@@ -2830,9 +3516,13 @@ rater_run_manifest["outputs"] = {
     "jaccard_plot_path": _manifest_relpath(jaccard_plot_path),
     "threshold_heatmap_path": _manifest_relpath(threshold_heatmap_path),
     "join_audit_path": _manifest_relpath(NLP_OUTPUT_DIR / "R3_vs_NLP_join_audit.json"),
+    "cohort_overlap_join_audit_path": _manifest_relpath(NLP_OUTPUT_DIR / "R3_vs_NLP_cohort_overlap_join_audit.json"),
     "join_audit_summary_path": _manifest_relpath(NLP_OUTPUT_DIR / "join_audit_summary.csv"),
+    "cohort_overlap_join_audit_summary_path": _manifest_relpath(NLP_OUTPUT_DIR / "cohort_overlap_join_audit_summary.csv"),
     "key_inventory_path": _manifest_relpath(NLP_OUTPUT_DIR / "R3_vs_NLP_key_inventory.csv"),
+    "cohort_overlap_key_inventory_path": _manifest_relpath(NLP_OUTPUT_DIR / "R3_vs_NLP_cohort_overlap_key_inventory.csv"),
     "join_key_diagnostics_path": _manifest_relpath(NLP_OUTPUT_DIR / "join_key_diagnostics.csv"),
+    "cohort_overlap_join_key_diagnostics_path": _manifest_relpath(NLP_OUTPUT_DIR / "cohort_overlap_join_key_diagnostics.csv"),
     "label_mapping_audit_path": _manifest_relpath(NLP_OUTPUT_DIR / "R3_vs_NLP_label_mapping_audit.csv"),
     "input_manifest_path": _manifest_relpath(NLP_OUTPUT_DIR / "R3_vs_NLP_input_manifest.json"),
     "matched_key_hashes_path": _manifest_relpath(NLP_OUTPUT_DIR / "R3_vs_NLP_matched_key_hashes.csv"),
@@ -2848,8 +3538,11 @@ rater_run_manifest = sanitize_manifest_payload(rater_run_manifest, work_dir=WORK
 summary_lines = []
 summary_lines.append(human_human_denominator_text)
 summary_lines.append(nlp_benchmark_denominator_text)
-summary_lines.append("=== R3 vs NLP join audit ===")
+summary_lines.append(f"Selected benchmark source: {benchmark_source}")
+summary_lines.append("=== R3 vs NLP selected benchmark join audit ===")
 summary_lines.append(pd.Series(join_audit).to_string())
+summary_lines.append("=== R3 vs NLP cohort-overlap diagnostic join audit ===")
+summary_lines.append(pd.Series(cohort_overlap_join_audit).to_string())
 summary_lines.append("=== R3 (adjudicator) vs NLP: set-level (order-invariant) ===")
 summary_lines.append(pair_summary.to_string())
 summary_lines.append("\n=== R3 vs NLP: headline/Jaccard metrics ===")
@@ -2859,7 +3552,7 @@ summary_lines.append(topk_summary.to_string(index=False))
 summary_lines.append("\n=== R3 vs NLP: label-cardinality calibration ===")
 summary_lines.append(cardinality_summary.to_string(index=False))
 summary_lines.append("\n=== R3 vs NLP: threshold sweeps ===")
-summary_lines.append("All threshold summaries use the matched adjudicated sample only.")
+summary_lines.append("All threshold summaries use the selected adjudicated benchmark sample only.")
 summary_lines.append(threshold_sweep.groupby("setting_type")[["N_matched", "coverage_rate", "mean_jaccard"]].mean(numeric_only=True).to_string())
 summary_lines.append("\n=== R3 vs NLP: chance-corrected (binary per category) ===")
 summary_lines.append(chance_summary.to_string())
@@ -2916,7 +3609,7 @@ for filename, latex_text in qa_latex_tables.items():
 
 ## Draft text: validation metrics (edit as needed)
 
-For multi-label RFV assignment, we treat each visit's labels as an unordered set and summarize agreement with set-based metrics (exact/partial/none, Jaccard, overlap, and set-F1). We report both mean set-F1 (average per visit) and micro set-F1 (pooled over all labels). For chance-corrected agreement, we expand the multi-label task into 17 one-vs-rest binary decisions (one per NHAMCS top-level category) and compute per-category Cohen's kappa and Gwet's AC1; macro-averages across categories are reported, and a multi-rater AC1 is computed across all three reviewers. Human inter-rater agreement is evaluated in the full adjudicated sample, whereas NLP-vs-adjudicator benchmarking is evaluated only in the matched subset with valid join keys in both sources; the matched denominator is reported explicitly in the notebook outputs and exported join audit.
+For multi-label RFV assignment, we treat each visit's labels as an unordered set and summarize agreement with set-based metrics (exact/partial/none, Jaccard, overlap, and set-F1). Partial agreement is defined as non-exact agreement with at least one overlapping RFV label between adjudicated and NLP label sets. We report both mean set-F1 (average per visit) and micro set-F1 (pooled over all labels). For chance-corrected agreement, we expand the multi-label task into 17 one-vs-rest binary decisions (one per NHAMCS top-level category) and compute per-category Cohen's kappa and Gwet's AC1; macro-averages across categories are reported, and a multi-rater AC1 is computed across all three reviewers. Human inter-rater agreement is evaluated in the full adjudicated sample. NLP-vs-adjudicator benchmarking preferentially uses a direct annotation benchmark that scores all adjudicated chief complaints by `annotation_row_id`; the final-cohort overlap join remains a secondary diagnostic that explains why only a subset of annotated rows match the final cohort NLP workbook when the direct benchmark is unavailable.
 
 **Rationale:** Provide manuscript-ready wording for the methods and validation sections.
 

@@ -204,6 +204,15 @@ class ClassifierConfig:
     appendix_relpath: str = "Annotation/nhamcs_rvc_2022_appendixII_codes.csv"
     summary_relpath: str = "Annotation/nhamcs_rvc_2022_summary_by_top_level_17.csv"
     hf_token_env_var: str = "HF_TOKEN"
+    annotation_benchmark_mode_env_var: str = "CLASSIFIER_ANNOTATION_BENCHMARK_MODE"
+    annotation_benchmark_path_env_var: str = "CLASSIFIER_ANNOTATION_BENCHMARK_PATH"
+    annotation_benchmark_sheet_env_var: str = "CLASSIFIER_ANNOTATION_BENCHMARK_SHEET"
+    annotation_benchmark_cc_column_env_var: str = "CLASSIFIER_ANNOTATION_CC_COLUMN"
+    annotation_benchmark_default_path: str = "Annotation/Final 2025-10-14 Annotation Sample.xlsx"
+    annotation_benchmark_default_sheet: str = "cohort_cc_sample"
+    annotation_benchmark_output_filename: str = "annotation_benchmark_with_NLP.xlsx"
+    annotation_visit_candidate_scores_filename: str = "annotation_visit_candidate_scores.csv"
+    annotation_segment_candidate_scores_filename: str = "annotation_segment_candidate_scores.csv"
 
 
 # --- Ontology labels and precedence used by final visit-level outputs. ---
@@ -274,6 +283,9 @@ CC_CANDIDATES: tuple[str, ...] = (
     "ed_chief_complaint",
     "chiefcomplaint",
     "chief_complaint_text",
+    "raw_presenting_concern",
+    "presenting_concern",
+    "chief_complaint_for_review",
     "ed_cc",
     "cc",
 )
@@ -2033,7 +2045,11 @@ def save_with_suffix(
 # --- Candidate-ranking sidecars for downstream validation extensions. ---
 def _classifier_join_key_columns(df: pd.DataFrame) -> list[str]:
     """Return stable join keys to carry into classifier sidecars."""
-    return [column for column in ("ed_stay_id", "hadm_id", "subject_id") if column in df.columns]
+    return [
+        column
+        for column in ("annotation_row_id", "ed_stay_id", "hadm_id", "subject_id")
+        if column in df.columns
+    ]
 
 
 def _score_map_for_segment(
@@ -2414,6 +2430,8 @@ def write_classifier_candidate_sidecars(
     resources: dict[str, Any],
     cfg: ClassifierConfig,
     output_dir: Path,
+    visit_filename: str = "visit_candidate_scores.csv",
+    segment_filename: str = "segment_candidate_scores.csv",
 ) -> dict[str, Path | pd.DataFrame]:
     """Write visit- and segment-level candidate score sidecars."""
     segment_candidate_scores = build_segment_candidate_scores(
@@ -2434,8 +2452,8 @@ def write_classifier_candidate_sidecars(
         cfg=cfg,
     )
 
-    visit_path = output_dir / "visit_candidate_scores.csv"
-    segment_path = output_dir / "segment_candidate_scores.csv"
+    visit_path = output_dir / visit_filename
+    segment_path = output_dir / segment_filename
     visit_candidate_scores.to_csv(visit_path, index=False)
     segment_candidate_scores.to_csv(segment_path, index=False)
     return {
@@ -2720,6 +2738,66 @@ def resolve_classifier_output_paths(
     return canonical_path, archive_path
 
 
+def resolve_annotation_benchmark_input_path(
+    work_dir: Path,
+    *,
+    cfg: ClassifierConfig,
+) -> Path:
+    """Resolve optional direct annotation-benchmark workbook path."""
+    explicit_path = os.getenv(cfg.annotation_benchmark_path_env_var)
+    rater_path = os.getenv("RATER_ANNOTATION_PATH")
+    if explicit_path:
+        return Path(explicit_path).expanduser().resolve()
+    if rater_path:
+        return Path(rater_path).expanduser().resolve()
+    return (work_dir / cfg.annotation_benchmark_default_path).expanduser().resolve()
+
+
+def get_annotation_benchmark_mode(cfg: ClassifierConfig) -> str:
+    """Return validated annotation benchmark mode."""
+    mode = os.getenv(cfg.annotation_benchmark_mode_env_var, "auto").strip().lower() or "auto"
+    allowed = {"auto", "required", "off"}
+    if mode not in allowed:
+        raise ValueError(
+            f"{cfg.annotation_benchmark_mode_env_var} must be one of {sorted(allowed)}, got {mode!r}."
+        )
+    return mode
+
+
+def assign_annotation_row_id(df: pd.DataFrame, id_col: str = "annotation_row_id") -> pd.DataFrame:
+    """Add a deterministic one-based key for direct annotation benchmarking."""
+    out = df.copy()
+    out[id_col] = np.arange(1, len(out) + 1, dtype=int)
+    return out
+
+
+def load_annotation_benchmark_frame(
+    path: Path,
+    *,
+    cfg: ClassifierConfig,
+) -> tuple[pd.DataFrame, str]:
+    """Read and normalize the annotation workbook for direct classifier scoring."""
+    sheet_name = os.getenv(
+        cfg.annotation_benchmark_sheet_env_var,
+        cfg.annotation_benchmark_default_sheet,
+    ).strip() or cfg.annotation_benchmark_default_sheet
+    frame = pd.read_excel(path, sheet_name=sheet_name, engine="openpyxl")
+    frame.columns = frame.columns.str.strip()
+    frame = assign_annotation_row_id(frame)
+
+    explicit_cc_column = os.getenv(cfg.annotation_benchmark_cc_column_env_var, "").strip()
+    if explicit_cc_column:
+        ensure_required_columns(
+            frame,
+            [explicit_cc_column],
+            context="annotation benchmark input",
+        )
+        cc_col = explicit_cc_column
+    else:
+        cc_col = get_cc_column(frame)
+    return frame, cc_col
+
+
 def ensure_required_columns(
     df: pd.DataFrame,
     required: list[str],
@@ -2738,6 +2816,10 @@ def ensure_required_columns(
 ENV_KNOBS: tuple[str, ...] = (
     "WORK_DIR",
     "CLASSIFIER_INPUT_FILENAME",
+    "CLASSIFIER_ANNOTATION_BENCHMARK_MODE",
+    "CLASSIFIER_ANNOTATION_BENCHMARK_PATH",
+    "CLASSIFIER_ANNOTATION_BENCHMARK_SHEET",
+    "CLASSIFIER_ANNOTATION_CC_COLUMN",
     "RATER_NLP_INPUT_FILENAME",
     "RATER_ANNOTATION_PATH",
     "ANALYSIS_INPUT_FILENAME",
@@ -3791,6 +3873,14 @@ ensure_required_workflow_columns = ensure_required_columns
 
 classifier_input_filename = os.getenv(cfg.input_filename_env_var, cfg.input_filename)
 file_path = resolve_classifier_input_path(WORK_DIR, classifier_input_filename)
+early_annotation_benchmark_mode = get_annotation_benchmark_mode(cfg)
+early_annotation_benchmark_path = resolve_annotation_benchmark_input_path(WORK_DIR, cfg=cfg)
+if early_annotation_benchmark_mode == "required" and not early_annotation_benchmark_path.exists():
+    raise FileNotFoundError(
+        "CLASSIFIER_ANNOTATION_BENCHMARK_MODE=required but annotation benchmark workbook "
+        f"was not found at {early_annotation_benchmark_path}. Restore the annotation workbook or set "
+        f"{cfg.annotation_benchmark_path_env_var}."
+    )
 
 strict_resource_hash = os.getenv("CLASSIFIER_STRICT_RESOURCE_HASH", "1").strip() == "1"
 resource_report = verify_classifier_resources(
@@ -4205,6 +4295,140 @@ print(
 print(f"Wrote visit candidate sidecar: {candidate_sidecars['visit_path']}")
 print(f"Wrote segment candidate sidecar: {candidate_sidecars['segment_path']}")
 
+annotation_benchmark_status: dict[str, Any] = {
+    "mode": get_annotation_benchmark_mode(cfg),
+    "status": "not_run",
+    "input_path": None,
+    "output_path": None,
+    "visit_candidate_scores_path": None,
+    "segment_candidate_scores_path": None,
+    "rows": 0,
+    "chief_complaint_column": None,
+    "sheet_name": os.getenv(
+        cfg.annotation_benchmark_sheet_env_var,
+        cfg.annotation_benchmark_default_sheet,
+    ).strip()
+    or cfg.annotation_benchmark_default_sheet,
+}
+annotation_benchmark_path = resolve_annotation_benchmark_input_path(WORK_DIR, cfg=cfg)
+annotation_benchmark_status["input_path"] = str(annotation_benchmark_path)
+
+if annotation_benchmark_status["mode"] == "off":
+    annotation_benchmark_status["status"] = "skipped_off"
+elif not annotation_benchmark_path.exists():
+    annotation_benchmark_status["status"] = "missing_input"
+    message = (
+        "Annotation benchmark workbook not found at "
+        f"{annotation_benchmark_path}; direct annotation scoring skipped in auto mode."
+    )
+    if annotation_benchmark_status["mode"] == "required":
+        raise FileNotFoundError(
+            message
+            + " Restore the annotation workbook or set "
+            f"{cfg.annotation_benchmark_path_env_var}."
+        )
+    print(message)
+else:
+    annotation_source_df, annotation_cc_column = load_annotation_benchmark_frame(
+        annotation_benchmark_path,
+        cfg=cfg,
+    )
+    annotation_benchmark_status["chief_complaint_column"] = annotation_cc_column
+    annotation_scoring_df = annotation_source_df[["annotation_row_id", annotation_cc_column]].copy()
+    annotation_scoring_df = annotate_cc_missingness(
+        annotation_scoring_df,
+        cc_column=annotation_cc_column,
+    )
+    annotation_normalization_payload, annotation_spell_mode_scores = choose_spell_mode(
+        annotation_scoring_df,
+        cc_source_column="cc_text_for_nlp",
+        requested_mode=requested_spell_mode,
+    )
+    annotation_scoring_df = pd.concat(
+        [annotation_scoring_df, annotation_normalization_payload["frame"]],
+        axis=1,
+    )
+    annotation_scoring_df["cc_spell_mode_selected"] = annotation_normalization_payload["selected_mode"]
+    annotation_cache = build_segment_cache(
+        df=annotation_scoring_df,
+        seg_col="cc_cleaned",
+        resources=resources,
+        batch_size=cfg.segment_batch_size,
+    )
+    annotation_out = assign_rvc_per_segment_and_visit_cached(
+        df=annotation_scoring_df,
+        cache=annotation_cache,
+        resources=resources,
+        seg_col="cc_cleaned",
+        cfg=cfg,
+    )
+    annotation_out = apply_pseudomissing_uncodable_policy(
+        annotation_out,
+        max_rfv=cfg.max_rfv,
+        pseudo_flag_column="cc_pseudomissing_flag",
+    )
+    annotation_out = apply_blank_primary_uncodable_policy(
+        annotation_out,
+        max_rfv=cfg.max_rfv,
+        missing_reason_column="cc_missing_reason",
+    )
+    validate_output_schema(
+        annotation_out,
+        max_rfv=cfg.max_rfv,
+        require_primary_for_nonempty=cfg.allow_uncodable_primary,
+    )
+    annotation_sidecars = write_classifier_candidate_sidecars(
+        annotation_out,
+        cache=annotation_cache,
+        resources=resources,
+        cfg=cfg,
+        output_dir=canonical_output_path.parent,
+        visit_filename=cfg.annotation_visit_candidate_scores_filename,
+        segment_filename=cfg.annotation_segment_candidate_scores_filename,
+    )
+    annotation_output_path = canonical_output_path.parent / cfg.annotation_benchmark_output_filename
+    annotation_export_keep_columns = [
+        "annotation_row_id",
+        annotation_cc_column,
+        "chief_complaint_raw",
+        "cc_missing_reason",
+        "cc_cleaned_str",
+        "segment_preds",
+    ]
+    for slot in range(1, cfg.max_rfv + 1):
+        annotation_export_keep_columns.extend(
+            [
+                f"RFV{slot}",
+                f"RFV{slot}_name",
+                f"RFV{slot}_support",
+                f"RFV{slot}_sim",
+            ]
+        )
+    annotation_export = annotation_out[
+        [column for column in annotation_export_keep_columns if column in annotation_out.columns]
+    ].copy()
+    annotation_export.to_excel(
+        annotation_output_path,
+        index=False,
+        sheet_name=cfg.output_sheet_name,
+    )
+    annotation_benchmark_status.update(
+        {
+            "status": "written",
+            "output_path": str(annotation_output_path),
+            "visit_candidate_scores_path": str(annotation_sidecars["visit_path"]),
+            "segment_candidate_scores_path": str(annotation_sidecars["segment_path"]),
+            "rows": int(len(annotation_export)),
+            "spell_mode_selected": annotation_normalization_payload["selected_mode"],
+            "spell_mode_comparison_rows": int(len(annotation_spell_mode_scores)),
+        }
+    )
+    print(
+        "Annotation benchmark export:",
+        f"rows={len(annotation_export):,}",
+        f"path={annotation_output_path}",
+    )
+
 run_date = pd.Timestamp.now().strftime("%Y-%m-%d")
 results_date = os.getenv("RESULTS_DATE", run_date).strip() or run_date
 results_dir = WORK_DIR / "Results" / results_date
@@ -4431,6 +4655,13 @@ stage_manifest["outputs"] = {
     "canonical_output_sha256": canonical_output_sha256,
     "visit_candidate_scores_path": _manifest_relpath(candidate_sidecars["visit_path"]),
     "segment_candidate_scores_path": _manifest_relpath(candidate_sidecars["segment_path"]),
+    "annotation_benchmark_output_path": _manifest_relpath(annotation_benchmark_status.get("output_path")),
+    "annotation_visit_candidate_scores_path": _manifest_relpath(
+        annotation_benchmark_status.get("visit_candidate_scores_path")
+    ),
+    "annotation_segment_candidate_scores_path": _manifest_relpath(
+        annotation_benchmark_status.get("segment_candidate_scores_path")
+    ),
     "archive_output_path": _manifest_relpath(archive_output_path) if write_archive_xlsx else None,
     "archive_output_sha256": archive_output_sha256,
     "cc_missing_audit_path": _manifest_relpath(cc_missing_audit_path),
@@ -4443,6 +4674,7 @@ stage_manifest["outputs"] = {
     "classifier_contract_report_path": _manifest_relpath(contract_report_path),
     "nlp_classifier_supplement_tables_path": _manifest_relpath(classifier_supplement_tables_path),
 }
+stage_manifest["annotation_benchmark"] = annotation_benchmark_status
 stage_manifest = sanitize_manifest_payload(stage_manifest, work_dir=WORK_DIR)
 stage_manifest_path = archive_output_path.parent / f"{run_date} classifier_run_manifest.json"
 stage_manifest_path.write_text(json.dumps(stage_manifest, indent=2))

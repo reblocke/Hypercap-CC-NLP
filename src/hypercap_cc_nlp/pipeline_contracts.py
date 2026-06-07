@@ -39,6 +39,7 @@ COHORT_REQUIRED_AUDIT_SUFFIXES = (
     "first_gas_anchor_audit.csv",
     "hco3_integrity_audit.csv",
     "hco3_coverage_audit.csv",
+    "qualifying_ph_pairing_completeness_audit.csv",
     "timing_integrity_audit.csv",
     "ventilation_timing_audit.csv",
     "anthropometric_cleaning_audit.csv",

@@ -35,10 +35,34 @@ HELPER_FUNCTIONS = [
     "build_rfv_membership_long",
     "make_category_indicators",
     "summarize_multilabel_prevalence",
+    "_require_nonmissing_cluster_unit",
+    "_stratum_mask",
+    "summarize_multilabel_prevalence_with_clustered_ci",
+    "ordered_categories",
+    "ordered_rfv_display_categories",
+    "format_figure_n",
+    "format_figure_pct",
+    "maybe_series",
+    "maybe_numeric",
     "_first_available_datetime",
     "_numeric_sort_key",
     "first_eligible_admission_mask",
     "select_first_eligible_admission_per_patient",
+    "build_timing_safeguard_cohort_membership",
+    "summarize_timing_safeguard_denominators",
+    "summarize_timing_safeguard_rfv_prevalence",
+    "compare_timing_safeguard_prevalence",
+    "build_timing_safeguard_top_category_flags",
+    "build_timing_safeguard_interpretation_flags",
+    "classify_timing_group",
+    "select_analysis_ph_with_source",
+    "select_analysis_ph",
+    "select_paired_qualifying_ph_for_figure4",
+    "select_figure4_analysis_ph",
+    "derive_ph_severity",
+    "build_acidemia_ph_source_audit",
+    "build_acidemia_severity_denominator_audit",
+    "build_acidemia_timing_denominator_audit",
     "summarize_labels_per_encounter",
     "_ordered_categories_for_comorbidity_summary",
     "summarize_rfv_prevalence_by_comorbidity",
@@ -50,6 +74,13 @@ HELPER_CONSTANTS = {
     "RFV_LABEL_ALIASES",
     "CANONICAL_TO_GROUP",
     "COMORBIDITY_FLAGS",
+    "TIMING_SAFEGUARD_COHORTS",
+    "TIMING_SAFEGUARD_SIMILARITY_THRESHOLD_PP",
+    "FIGURE4_USE_PAIRED_QUALIFYING_PH",
+    "PREVALENCE_CI_BOOTSTRAP_REPLICATES",
+    "PREVALENCE_CI_BOOTSTRAP_SEED",
+    "PREVALENCE_CI_CLUSTER_UNIT",
+    "PREVALENCE_CI_LEVEL",
 }
 
 
@@ -102,8 +133,39 @@ build_rfv_label_artifacts = HELPERS["build_rfv_label_artifacts"]
 build_rfv_membership_long = HELPERS["build_rfv_membership_long"]
 make_category_indicators = HELPERS["make_category_indicators"]
 summarize_multilabel_prevalence = HELPERS["summarize_multilabel_prevalence"]
+summarize_multilabel_prevalence_with_clustered_ci = HELPERS[
+    "summarize_multilabel_prevalence_with_clustered_ci"
+]
+ordered_rfv_display_categories = HELPERS["ordered_rfv_display_categories"]
+format_figure_n = HELPERS["format_figure_n"]
+format_figure_pct = HELPERS["format_figure_pct"]
+maybe_series = HELPERS["maybe_series"]
+maybe_numeric = HELPERS["maybe_numeric"]
 first_eligible_admission_mask = HELPERS["first_eligible_admission_mask"]
 select_first_eligible_admission_per_patient = HELPERS["select_first_eligible_admission_per_patient"]
+build_timing_safeguard_cohort_membership = HELPERS[
+    "build_timing_safeguard_cohort_membership"
+]
+summarize_timing_safeguard_denominators = HELPERS["summarize_timing_safeguard_denominators"]
+summarize_timing_safeguard_rfv_prevalence = HELPERS[
+    "summarize_timing_safeguard_rfv_prevalence"
+]
+compare_timing_safeguard_prevalence = HELPERS["compare_timing_safeguard_prevalence"]
+build_timing_safeguard_top_category_flags = HELPERS[
+    "build_timing_safeguard_top_category_flags"
+]
+build_timing_safeguard_interpretation_flags = HELPERS[
+    "build_timing_safeguard_interpretation_flags"
+]
+classify_timing_group = HELPERS["classify_timing_group"]
+select_analysis_ph_with_source = HELPERS["select_analysis_ph_with_source"]
+select_analysis_ph = HELPERS["select_analysis_ph"]
+select_paired_qualifying_ph_for_figure4 = HELPERS["select_paired_qualifying_ph_for_figure4"]
+select_figure4_analysis_ph = HELPERS["select_figure4_analysis_ph"]
+derive_ph_severity = HELPERS["derive_ph_severity"]
+build_acidemia_ph_source_audit = HELPERS["build_acidemia_ph_source_audit"]
+build_acidemia_severity_denominator_audit = HELPERS["build_acidemia_severity_denominator_audit"]
+build_acidemia_timing_denominator_audit = HELPERS["build_acidemia_timing_denominator_audit"]
 summarize_labels_per_encounter = HELPERS["summarize_labels_per_encounter"]
 summarize_rfv_prevalence_by_comorbidity = HELPERS["summarize_rfv_prevalence_by_comorbidity"]
 
@@ -339,6 +401,136 @@ def test_summarize_multilabel_prevalence_is_ge_primary_label_prevalence() -> Non
     assert (merged["pct_of_encounters_multi"] >= merged["pct_of_encounters_primary"]).all()
 
 
+def test_clustered_bootstrap_ci_is_deterministic_and_matches_point_estimates() -> None:
+    df = pd.DataFrame(
+        {
+            "subject_id": [10, 10, 20, 30, 40],
+            "hadm_id": [1, 2, 3, 4, 5],
+            "route": ["ABG", "ABG", "ABG", "VBG", "VBG"],
+            "RFV1_name": [
+                "Symptom – Respiratory",
+                "Symptom – Digestive",
+                "Symptom – Respiratory",
+                "Injuries & adverse effects",
+                "Symptom – Respiratory",
+            ],
+            "RFV2_name": ["Symptom – Nervous", "", "", "", ""],
+        }
+    )
+
+    with_ci = summarize_multilabel_prevalence_with_clustered_ci(
+        df,
+        strata="route",
+        grouped=True,
+        n_bootstrap=200,
+        seed=20260607,
+    )
+    repeated = summarize_multilabel_prevalence_with_clustered_ci(
+        df,
+        strata="route",
+        grouped=True,
+        n_bootstrap=200,
+        seed=20260607,
+    )
+    point = summarize_multilabel_prevalence(df, strata="route", grouped=True)
+
+    compared = with_ci.merge(
+        point,
+        on=["route", "category", "N_group", "n_with_category"],
+        suffixes=("_ci", "_point"),
+        validate="one_to_one",
+    )
+    assert np.allclose(compared["pct_of_encounters_ci"], compared["pct_of_encounters_point"])
+    assert with_ci["ci_lower"].between(0, 100).all()
+    assert with_ci["ci_upper"].between(0, 100).all()
+    assert (with_ci["ci_lower"] <= with_ci["pct_of_encounters"]).all()
+    assert (with_ci["ci_upper"] >= with_ci["pct_of_encounters"]).all()
+    cluster_counts = (
+        with_ci.drop_duplicates(subset=["route"])
+        .set_index("route")["n_clusters"]
+        .to_dict()
+    )
+    assert cluster_counts == {"ABG": 2, "VBG": 2}
+    assert set(cluster_counts.values()) != {df["subject_id"].nunique()}
+    pd.testing.assert_frame_equal(
+        with_ci.sort_index(axis=1),
+        repeated.sort_index(axis=1),
+        check_dtype=False,
+    )
+
+
+def test_clustered_bootstrap_ci_samples_repeated_admissions_by_patient_cluster() -> None:
+    df = pd.DataFrame(
+        {
+            "subject_id": [1, 1, 2, 3],
+            "hadm_id": [11, 12, 21, 31],
+            "route": ["All", "All", "All", "All"],
+            "RFV1_name": [
+                "Symptom – Respiratory",
+                "Symptom – Respiratory",
+                "Symptom – Digestive",
+                "Symptom – Digestive",
+            ],
+        }
+    )
+
+    with_ci = summarize_multilabel_prevalence_with_clustered_ci(
+        df,
+        strata="route",
+        grouped=True,
+        n_bootstrap=100,
+        seed=7,
+    )
+    respiratory = with_ci.loc[with_ci["category"].eq("Respiratory")].iloc[0]
+
+    assert respiratory["N_group"] == 4
+    assert respiratory["n_with_category"] == 2
+    assert respiratory["pct_of_encounters"] == 50
+    assert respiratory["n_clusters"] == 3
+    assert respiratory["cluster_unit"] == "subject_id"
+
+
+def test_clustered_bootstrap_ci_fails_closed_without_patient_cluster() -> None:
+    df = pd.DataFrame(
+        {
+            "subject_id": [1, None],
+            "hadm_id": [11, 12],
+            "route": ["All", "All"],
+            "RFV1_name": ["Symptom – Respiratory", "Symptom – Digestive"],
+        }
+    )
+
+    with pytest.raises(ValueError, match="missing subject_id"):
+        summarize_multilabel_prevalence_with_clustered_ci(
+            df,
+            strata="route",
+            grouped=True,
+            n_bootstrap=10,
+        )
+
+
+def test_figure_formatters_and_rfv_order_are_manuscript_safe() -> None:
+    assert format_figure_n(12345) == "12345"
+    assert format_figure_n(np.nan) == "0"
+    assert format_figure_pct(12.36) == "12.4%"
+    assert format_figure_pct(pd.NA) == "0.0%"
+
+    unordered = [
+        "Nervous",
+        "Other grouped RFV categories",
+        "Respiratory",
+        "Digestive",
+        "Injuries & adverse effects",
+    ]
+    assert ordered_rfv_display_categories(unordered) == [
+        "Respiratory",
+        "Digestive",
+        "Nervous",
+        "Injuries & adverse effects",
+        "Other grouped RFV categories",
+    ]
+
+
 def test_select_first_eligible_admission_per_patient_uses_deterministic_ties() -> None:
     df = pd.DataFrame(
         {
@@ -378,6 +570,227 @@ def test_select_first_eligible_admission_per_patient_requires_subject_id() -> No
     df_missing_subject = pd.DataFrame({"subject_id": [1, pd.NA], "hadm_id": [1, 2]})
     with pytest.raises(ValueError, match="missing subject_id"):
         select_first_eligible_admission_per_patient(df_missing_subject)
+
+
+def test_timing_safeguard_cohort_membership_uses_planned_windows() -> None:
+    df = pd.DataFrame(
+        {
+            "any_hypercap_icd": [1, 0, 0, 0, 1, 1, 0],
+            "pco2_threshold_any": [1, 1, 1, 1, 0, 1, 0],
+            "dt_qualifying_hypercapnia_hours": [1, 6, 24, 25, np.nan, np.nan, np.nan],
+        }
+    )
+
+    membership = build_timing_safeguard_cohort_membership(df)
+
+    assert membership["broad_ehr_ascertained"].tolist() == [
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        False,
+    ]
+    assert membership["first_gas_within_24h"].tolist() == [
+        True,
+        True,
+        True,
+        False,
+        False,
+        False,
+        False,
+    ]
+    assert membership["first_gas_within_6h"].tolist() == [
+        True,
+        False,
+        False,
+        False,
+        False,
+        False,
+        False,
+    ]
+    assert membership["icd_positive"].tolist() == [
+        True,
+        False,
+        False,
+        False,
+        True,
+        True,
+        False,
+    ]
+    assert membership["icd_plus_24h_gas"].tolist() == [
+        True,
+        False,
+        False,
+        False,
+        False,
+        False,
+        False,
+    ]
+
+
+def test_timing_safeguard_summary_is_aggregate_and_flags_drift() -> None:
+    df = pd.DataFrame(
+        {
+            "hadm_id": [1, 2, 3, 4],
+            "any_hypercap_icd": [1, 0, 0, 1],
+            "pco2_threshold_any": [1, 1, 1, 0],
+            "dt_qualifying_hypercapnia_hours": [1, 24, 30, np.nan],
+            "RFV1_name": [
+                "Symptom – Respiratory",
+                "Symptom – Digestive",
+                "Symptom – Respiratory",
+                "Symptom – Nervous",
+            ],
+        }
+    )
+
+    denominators = summarize_timing_safeguard_denominators(df)
+    prevalence = summarize_timing_safeguard_rfv_prevalence(df, grouped=True)
+    comparisons = compare_timing_safeguard_prevalence(
+        prevalence,
+        denominators,
+        representation="Grouped RFV",
+    )
+    top_flags = build_timing_safeguard_top_category_flags(comparisons)
+    interpretation = build_timing_safeguard_interpretation_flags(comparisons, top_flags)
+
+    assert denominators.set_index("cohort_key")["N_admissions"].to_dict() == {
+        "broad_ehr_ascertained": 4,
+        "first_gas_within_24h": 2,
+        "first_gas_within_6h": 1,
+        "icd_positive": 2,
+        "icd_plus_24h_gas": 1,
+    }
+    forbidden_columns = {"subject_id", "hadm_id", "ed_stay_id", "ed_triage_cc"}
+    for aggregate_frame in (denominators, prevalence, comparisons, top_flags, interpretation):
+        assert forbidden_columns.isdisjoint(aggregate_frame.columns)
+    assert comparisons["over_2pp_threshold"].any()
+    assert set(interpretation["similar_by_rule"]) == {False}
+
+
+def test_timing_safeguard_comparison_preserves_denominators_for_absent_categories() -> None:
+    df = pd.DataFrame(
+        {
+            "any_hypercap_icd": [1, 0, 1],
+            "pco2_threshold_any": [1, 1, 0],
+            "dt_qualifying_hypercapnia_hours": [1, 24, np.nan],
+            "RFV1_name": [
+                "Symptom – Respiratory",
+                "Symptom – Digestive",
+                "Symptom – Nervous",
+            ],
+        }
+    )
+
+    denominators = summarize_timing_safeguard_denominators(df)
+    prevalence = summarize_timing_safeguard_rfv_prevalence(df, grouped=True)
+    comparisons = compare_timing_safeguard_prevalence(
+        prevalence,
+        denominators,
+        representation="Grouped RFV",
+    )
+
+    broad_only = comparisons.loc[
+        comparisons["comparison_cohort_key"].eq("first_gas_within_24h")
+        & comparisons["category"].eq("Nervous")
+    ].squeeze()
+    assert broad_only["N_reference"] == 3
+    assert broad_only["n_reference"] == 1
+    assert broad_only["pct_reference"] == pytest.approx(33.33333333333333)
+    assert broad_only["N_comparison"] == 2
+    assert broad_only["n_comparison"] == 0
+    assert broad_only["pct_comparison"] == 0
+    assert broad_only["absolute_difference_pp"] == pytest.approx(33.33333333333333)
+    assert bool(broad_only["over_2pp_threshold"]) is True
+
+
+def test_figure4_ph_rule_uses_paired_ph_and_keeps_source_priority_auditable() -> None:
+    df = pd.DataFrame(
+        {
+            "lab_abg_ph": [7.11, np.nan, np.nan, np.nan],
+            "lab_vbg_ph": [7.22, 7.23, np.nan, np.nan],
+            "first_ph": [7.33, 7.34, 7.31, np.nan],
+            "min_ph_0_24h": [7.44, 7.45, 7.29, np.nan],
+            "qualifying_ph": [7.10, 7.20, 7.30, np.nan],
+        }
+    )
+
+    selected = select_analysis_ph_with_source(df)
+    assert selected["analysis_ph"].tolist()[:3] == [7.11, 7.23, 7.31]
+    assert selected["analysis_ph_source"].tolist() == [
+        "lab_abg_ph",
+        "lab_vbg_ph",
+        "first_ph_or_min_ph_0_24h",
+        "missing",
+    ]
+    assert select_analysis_ph(df).tolist()[:3] == [7.11, 7.23, 7.31]
+    assert select_paired_qualifying_ph_for_figure4(df).tolist()[:3] == [7.10, 7.20, 7.30]
+    assert select_figure4_analysis_ph(df).tolist()[:3] == [7.10, 7.20, 7.30]
+
+    with pytest.raises(KeyError, match="qualifying_ph is absent"):
+        select_paired_qualifying_ph_for_figure4(df.drop(columns=["qualifying_ph"]))
+
+    assert derive_ph_severity(df).tolist() == [
+        "Severe (pH <7.25)",
+        "Severe (pH <7.25)",
+        "Mild (7.30–7.34)",
+        None,
+    ]
+
+
+def test_acidemia_denominator_audits_are_aggregate_only() -> None:
+    df = pd.DataFrame(
+        {
+            "subject_id": [10, 10, 11, 12],
+            "hadm_id": [1, 2, 3, 4],
+            "ed_stay_id": [101, 102, 103, 104],
+            "chiefcomplaint": ["dyspnea", "fall", "confusion", "pain"],
+            "lab_abg_ph": [7.40, np.nan, np.nan, np.nan],
+            "lab_vbg_ph": [np.nan, 7.31, np.nan, np.nan],
+            "first_ph": [np.nan, np.nan, 7.22, np.nan],
+            "min_ph_0_24h": [7.40, 7.31, 7.20, np.nan],
+            "min_ph_0_6h": [7.40, 7.36, np.nan, np.nan],
+            "qualifying_ph": [7.39, 7.30, np.nan, np.nan],
+            "qualifying_ph_pairing_status": [
+                "paired_same_specimen_panel",
+                "paired_same_time_panel",
+                "qualifying_panel_missing_ph",
+                "qualifying_panel_missing_ph",
+            ],
+        }
+    )
+
+    severity_denominators = build_acidemia_severity_denominator_audit(df)
+    source_audit = build_acidemia_ph_source_audit(df)
+    timing_denominators = build_acidemia_timing_denominator_audit(df)
+
+    severity_counts = severity_denominators.set_index("audit_item")["n_admissions"].to_dict()
+    assert severity_counts["blood_gas_subset_denominator"] == 4
+    assert severity_counts["included_active_figure4_ph_available"] == 2
+    assert severity_counts["excluded_active_figure4_ph_missing"] == 2
+    assert severity_counts["included_source_priority_ph_available"] == 3
+    assert severity_counts["excluded_source_priority_ph_missing"] == 1
+    assert severity_counts["paired_qualifying_ph_available"] == 2
+    assert severity_counts["paired_qualifying_ph_missing"] == 2
+
+    pairing_status_counts = source_audit.loc[
+        source_audit["audit_group"].eq("qualifying_ph_pairing_status")
+    ].set_index("category")["n_admissions"].to_dict()
+    assert pairing_status_counts == {
+        "paired_same_specimen_panel": 1,
+        "paired_same_time_panel": 1,
+        "qualifying_panel_missing_ph": 2,
+    }
+    timing_counts = timing_denominators.set_index("audit_item")["n_admissions"].to_dict()
+    assert timing_counts["included_timing_classifiable"] == 2
+    assert timing_counts["excluded_no_ph_within_24h"] == 1
+    assert timing_counts["excluded_acidemia_within_24h_missing_0_6h_ph"] == 1
+
+    forbidden_columns = {"subject_id", "hadm_id", "ed_stay_id", "chiefcomplaint", "chief_complaint"}
+    for aggregate_frame in (severity_denominators, source_audit, timing_denominators):
+        assert forbidden_columns.isdisjoint(aggregate_frame.columns)
 
 
 def test_summarize_rfv_prevalence_by_comorbidity_uses_multilabel_sets() -> None:

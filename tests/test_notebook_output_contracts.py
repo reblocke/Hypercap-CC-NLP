@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 from pathlib import Path
 import re
 import subprocess
@@ -76,6 +77,9 @@ def test_spec_describes_the_live_output_contract() -> None:
     assert "`Drafts/` is manual-only working space" in spec_text
     assert "MIMIC tabular data/MIMICIV all with CC.xlsx" in spec_text
     assert "MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx" in spec_text
+    assert "MIMIC tabular data/annotation_benchmark_with_NLP.xlsx" in spec_text
+    assert "CLASSIFIER_ANNOTATION_BENCHMARK_MODE" in spec_text
+    assert "RATER_BENCHMARK_SOURCE" in spec_text
     assert "artifacts/qa/cohort/gas_source_diagnostics_by_ed_stay.csv" in spec_text
 
 
@@ -282,6 +286,10 @@ def test_analysis_notebook_contains_requested_outputs() -> None:
     assert '"figure_4_xlsx": "Figure 4.xlsx"' in analysis_text
     assert '"figure_s1_xlsx": "Figure S1.xlsx"' in analysis_text
     assert '"figure_s8_png": "Figure S8.png"' in analysis_text
+    assert '"figure_s9_xlsx": "Figure S9.xlsx"' in analysis_text
+    assert '"figure_s9_png": "Figure S9.png"' in analysis_text
+    assert '"candidate_compensation_matrix_plot": "Candidate_Figure_Compensation_Matrix.png"' in analysis_text
+    assert '"candidate_compensation_matrix_workbook": "Candidate_Figure_Compensation_Matrix.xlsx"' in analysis_text
     assert '"figure_manifest": "figure_manifest.csv"' in analysis_text
     assert '"baseline_characteristics_expanded": "Baseline_Characteristics_Expanded.xlsx"' in analysis_text
     assert "write_pdf_table_export(" in analysis_text
@@ -296,11 +304,16 @@ def test_analysis_notebook_contains_requested_outputs() -> None:
     assert "Figure 4.png" in analysis_text
     assert "Figure S1.png" in analysis_text
     assert "Figure S8.png" in analysis_text
+    assert "Figure S9.png" in analysis_text
+    assert "Candidate_Figure_Compensation_Matrix.png" in analysis_text
+    assert "Candidate_Figure_Compensation_Matrix.xlsx" in analysis_text
     assert "Table 1.pdf" in analysis_text
     assert "Table 2.pdf" in analysis_text
     assert "Sensitivity_Primary_Label_Table_2.xlsx" in analysis_text
-    assert "Sensitivity_Primary_Label_Route_Prevalence.png" in analysis_text
-    assert "Sensitivity_Primary_Label_Age_Prevalence.png" in analysis_text
+    assert "Sensitivity_First_Priority_RFV_Route_Prevalence.png" in analysis_text
+    assert "Sensitivity_First_Priority_RFV_Age_Prevalence.png" in analysis_text
+    assert "Sensitivity_First_Priority_RFV_Acidemia_Severity.png" in analysis_text
+    assert "Sensitivity_First_Priority_RFV_Acidemia_Timing.png" in analysis_text
     assert "Acidemia_Severity_Prevalence.png" in analysis_text
     assert "Acidemia_Timing_Prevalence.png" in analysis_text
     assert "Other grouped RFV categories" in analysis_text
@@ -363,9 +376,12 @@ def test_submission_asset_bundle_has_clean_allowlist_and_manifest() -> None:
     analysis_text = (WORK_DIR / "Hypercap CC NLP Analysis.qmd").read_text()
 
     assert 'SUBMISSION_ASSET_DIRNAME = "submission_assets"' in analysis_text
-    assert 'SUBMISSION_ASSET_MANIFEST_FILENAME = "submission_asset_manifest.csv"' in analysis_text
+    assert 'SUBMISSION_ASSET_MANIFEST_FILENAME = "submission_assets_manifest.csv"' in analysis_text
     assert 'SUBMISSION_OPTIONAL_MISSING_FILENAME = "submission_asset_optional_missing.csv"' in analysis_text
     assert "SUBMISSION_OPTIONAL_UPSTREAM_FILENAMES" in analysis_text
+    assert "SUBMISSION_REQUIRED_FILENAMES = frozenset(" in analysis_text
+    assert "SUBMISSION_LABEL_TO_FIGURE_KEY" in analysis_text
+    assert "SUBMISSION_TABLE_SPECS" in analysis_text
     assert "def build_submission_asset_allowlist(" in analysis_text
     assert "def validate_submission_asset_bundle(" in analysis_text
     assert "def build_submission_asset_bundle(" in analysis_text
@@ -378,47 +394,58 @@ def test_submission_asset_bundle_has_clean_allowlist_and_manifest() -> None:
         "def validate_submission_asset_bundle(",
         maxsplit=1,
     )[0]
+    manuscript_filename_body = analysis_text.split("MANUSCRIPT_ASSET_FILENAMES = {", maxsplit=1)[1].split(
+        "SECONDARY_OUTPUT_FILENAMES = {",
+        maxsplit=1,
+    )[0]
+    secondary_filename_body = analysis_text.split("SECONDARY_OUTPUT_FILENAMES = {", maxsplit=1)[1].split(
+        "FIGURE_SPECS = {",
+        maxsplit=1,
+    )[0]
+    assert "Candidate_Figure_Compensation_Matrix" in secondary_filename_body
+    assert "Candidate_Figure_Compensation_Matrix" not in manuscript_filename_body
+    assert "Candidate_Figure_Compensation_Matrix" not in allowlist_body
     for asset_name in (
-        "Figure 1.pdf",
-        "Figure 2.pdf",
-        "Figure 3.pdf",
-        "Figure 4.pdf",
-        "Table 1.xlsx",
-        "Table 2.xlsx",
-        "Figure 2.xlsx",
-        "Figure 3.xlsx",
-        "Figure 4.xlsx",
-        "Figure S1.pdf",
-        "Figure S2.pdf",
-        "Figure S3.pdf",
-        "Figure S4.pdf",
-        "Figure S5.pdf",
-        "Figure S6.pdf",
-        "Figure S7.pdf",
-        "Figure S8.pdf",
-        "Figure S1.xlsx",
-        "Figure S6.xlsx",
-        "Figure S7.xlsx",
-        "Figure S8.xlsx",
-        "Rater_Benchmark_Supplement_Tables.xlsx",
-        "NLP_Classifier_Supplement_Tables.xlsx",
+        "Figure_1.pdf",
+        "Figure_1.png",
+        "Figure_2.pdf",
+        "Figure_2.png",
+        "Figure_3.pdf",
+        "Figure_3.png",
+        "Figure_4.pdf",
+        "Figure_4.png",
+        "Table_1_submission.xlsx",
+        "Table_2_submission.xlsx",
+        "Figure_S1.pdf",
+        "Figure_S1.png",
+        "Figure_S2.pdf",
+        "Figure_S2.png",
+        "Figure_S3.pdf",
+        "Figure_S3.png",
+        "Figure_S4.pdf",
+        "Figure_S4.png",
+        "Figure_S5.pdf",
+        "Figure_S5.png",
+        "Figure_S6.pdf",
+        "Figure_S6.png",
+        "Figure_S7.pdf",
+        "Figure_S7.png",
+        "Figure_S8.pdf",
+        "Figure_S8.png",
+        "Figure_S9.pdf",
+        "Figure_S9.png",
     ):
         assert asset_name in allowlist_body
 
-    supplement_table_block = allowlist_body.split("supplement_table_assets = [", maxsplit=1)[1].split(
-        "    ]",
-        maxsplit=1,
-    )[0]
-    assert "Rater_Benchmark_Supplement_Tables.xlsx" in supplement_table_block
-    assert '"rater"' in supplement_table_block
-    assert "NLP_Classifier_Supplement_Tables.xlsx" in supplement_table_block
-    assert '"classifier"' in supplement_table_block
-    supplement_table_append_block = allowlist_body.split(
-        "for filename, manuscript_location, included_reason, producer_stage in supplement_table_assets:",
-        maxsplit=1,
-    )[1].split("    return rows", maxsplit=1)[0]
-    assert "required_asset=False" in supplement_table_append_block
-    assert "producer_stage=producer_stage" in supplement_table_append_block
+    assert "Figure 2.xlsx" not in allowlist_body
+    assert "Figure S6.xlsx" not in allowlist_body
+    assert "Rater_Benchmark_Supplement_Tables.xlsx" not in allowlist_body
+    assert "NLP_Classifier_Supplement_Tables.xlsx" not in allowlist_body
+    assert '"Table S1.xlsx"' in allowlist_body
+    assert '"Supplementary_Table_S1.xlsx"' in allowlist_body
+    assert 'required_asset=source_filename != "Table S1.xlsx"' in allowlist_body
+    assert '"pdf_to_png"' in allowlist_body
+    assert "pdftoppm" in analysis_text
     assert '"required_asset"' in analysis_text
     assert '"producer_stage"' in analysis_text
     assert "if bool(spec.get(\"required_asset\", True)):" in analysis_text
@@ -427,6 +454,17 @@ def test_submission_asset_bundle_has_clean_allowlist_and_manifest() -> None:
     assert "optional_upstream_asset_missing" in analysis_text
     assert "validate_submission_asset_bundle(bundle_dir, manifest_df, missing_optional_df)" in analysis_text
     assert "analysis_export_registry.pop(\"submission_asset_optional_missing\", None)" in analysis_text
+    for manifest_column in (
+        "file_name",
+        "manuscript_label",
+        "title",
+        "main_or_supplement",
+        "source_notebook",
+        "source_data_file",
+        "intended_caption",
+        "include_in_submission",
+    ):
+        assert f'"{manifest_column}"' in analysis_text
 
     for forbidden_pattern in (
         "Clinical_Outcomes",
@@ -436,10 +474,15 @@ def test_submission_asset_bundle_has_clean_allowlist_and_manifest() -> None:
         "RFV_Prevalence_by_Comorbidity",
         "Time_To_Gas_By_Symptom_Category",
         "Recognition_By_PCO2",
+        "Candidate",
+        "__MACOSX",
         "qa",
         "debug",
     ):
         assert forbidden_pattern in analysis_text
+    assert "hidden_or_archive_hits" in analysis_text
+    assert "Included submission assets have blank required fields" in analysis_text
+    assert "submission_assets missing required files" in analysis_text
     assert "Figure S7/S8 assets require explicit optional citation allowlisting" not in analysis_text
     assert "submission_assets file mismatch" in analysis_text
 
@@ -475,6 +518,12 @@ def test_supplement_sensitivity_figures_use_first_priority_admission_language() 
         figure_spec = analysis_text.split(f'"{figure_key}": {{', maxsplit=1)[1].split("    },", maxsplit=1)[0]
         assert "First-priority RFV assignment" in figure_spec
         assert "admission-level" in figure_spec
+        assert "Sensitivity analysis: first-priority RFV only" in figure_spec
+        if figure_key in {"figure_s2_png", "sensitivity_route_plot"}:
+            assert "percentages within each indicator panel sum to 100%" in figure_spec
+            assert "percentages within each stratum sum to 100%" not in figure_spec
+        else:
+            assert "percentages within each stratum sum to 100%" in figure_spec
         assert "RFV1-only" not in figure_spec
         assert "primary-label" not in figure_spec
 
@@ -487,10 +536,173 @@ def test_supplement_sensitivity_figures_use_first_priority_admission_language() 
         maxsplit=1,
     )[0]
     target_blocks = sensitivity_block + acidemia_block
-    assert target_blocks.count('ax.set_ylabel("Percent of admissions")') >= 4
-    assert target_blocks.count('ax.legend(title="First-priority RFV group"') >= 4
+    assert 'sensitivity_strip_text = "Sensitivity analysis: first-priority RFV only"' in analysis_text
+    assert target_blocks.count('y_label="First-priority presenting-concern category"') >= 4
+    assert target_blocks.count("render_manuscript_prevalence_panels(") >= 4
+    assert target_blocks.count("strip_text=sensitivity_strip_text") >= 4
+    assert target_blocks.count("muted_marks=True") >= 4
+    assert "stacked=True" not in target_blocks
+    assert 'ax.legend(title="First-priority RFV group"' not in target_blocks
     assert "Percent of encounters" not in target_blocks
     assert "Primary RFV group" not in target_blocks
+    assert "Sensitivity_Primary_Label_Route_Prevalence.png" not in analysis_text
+    assert "Sensitivity_Primary_Label_Age_Prevalence.png" not in analysis_text
+    assert "Sensitivity_Primary_Label_Acidemia_Severity.png" not in analysis_text
+    assert "Sensitivity_Primary_Label_Acidemia_Timing.png" not in analysis_text
+
+
+def test_figure_s1_acidemia_timing_matches_publication_style() -> None:
+    analysis_text = (WORK_DIR / "Hypercap CC NLP Analysis.qmd").read_text()
+    figure_s1_spec = analysis_text.split('"figure_s1_png": {', maxsplit=1)[1].split(
+        "    },",
+        maxsplit=1,
+    )[0]
+    prevalence_helper = analysis_text.split("def render_manuscript_prevalence_panels(", maxsplit=1)[1].split(
+        "def render_age_profile_panels(",
+        maxsplit=1,
+    )[0]
+    figure_s1_block = analysis_text.split(
+        "timing_prevalence_plot_path = render_manuscript_prevalence_panels(",
+        maxsplit=1,
+    )[1].split("note_export(timing_prevalence_plot_path)", maxsplit=1)[0]
+
+    assert 'ACIDEMIA_TIMING_ORDER = ["Early acidemia", "Late acidemia", "No acidemia"]' in analysis_text
+    assert "multi-label and not mutually exclusive" in figure_s1_spec
+    assert "Timing definitions are described in the caption and source workbook" in figure_s1_spec
+    assert "build_acidemia_timing_denominator_audit" in analysis_text
+    assert '"Denominator_Audit": acidemia_timing_denominator_audit' in analysis_text
+    assert "excluded_no_ph_within_24h" in analysis_text
+    assert "excluded_acidemia_within_24h_missing_0_6h_ph" in analysis_text
+    assert "facet_order=ACIDEMIA_TIMING_ORDER" in figure_s1_block
+    assert "category_order=grouped_category_order" in figure_s1_block
+    assert 'y_label="Grouped presenting-concern category"' in figure_s1_block
+    assert 'fig.supxlabel("Percent of admissions"' in prevalence_helper
+    assert "N={format_figure_n(group_sizes.get(facet, 0))}" in prevalence_helper
+    assert "0-6" not in figure_s1_block
+    assert "6-24" not in figure_s1_block
+
+
+def test_supplement_operational_figures_s6_s7_contract() -> None:
+    analysis_text = (WORK_DIR / "Hypercap CC NLP Analysis.qmd").read_text()
+    figure_s6_spec = analysis_text.split('"figure_s6_png": {', maxsplit=1)[1].split(
+        "    },",
+        maxsplit=1,
+    )[0]
+    figure_s7_spec = analysis_text.split('"figure_s7_png": {', maxsplit=1)[1].split(
+        "    },",
+        maxsplit=1,
+    )[0]
+    figure_s7_block = analysis_text.split("time_to_gas_source_df = biochemical_df.copy()", maxsplit=1)[
+        1
+    ].split("recognition_pco2_bin_order =", maxsplit=1)[0]
+    figure_s6_block = analysis_text.split("abg_idx = set(analytic_df.index[to_binary_flag", maxsplit=1)[
+        1
+    ].split("acidemia_timing_df =", maxsplit=1)[0]
+
+    assert "overlapping ABG-positive, VBG-positive, and ICD-positive ascertainment indicators" in figure_s6_spec
+    assert "Figure 1 Panel C shows a main-text compact version" in figure_s6_spec
+    assert "Figure 2 uses these overlapping indicators" in figure_s6_spec
+    assert 'matrix_set_order = ["ABG-positive", "VBG-positive", "ICD-positive"]' in figure_s6_block
+    assert "unknown_hypercap_threshold" in figure_s6_block
+    assert "Indeterminate_Source_Audit" in figure_s6_block
+    assert "Intersection_Counts" in figure_s6_block
+    assert "Set_Sizes" in figure_s6_block
+    assert '["count", "intersection_label"]' in figure_s6_block
+    assert "ascending=[False, True]" in figure_s6_block
+    assert "format_figure_n(count)" in figure_s6_block
+    assert "icd_intersection_total" in figure_s6_block
+    assert "figure1_source_counts[\"ICD-positive\"]" in figure_s6_block
+    assert "Ascertainment indicator intersection" in figure_s6_block
+    assert "UNKNOWN" not in figure_s6_block
+
+    assert "blood-gas documentation" in figure_s7_spec
+    assert "diagnostic delay" in figure_s7_spec
+    assert "delay" not in figure_s7_block.lower()
+    assert '.sort_values(["median", "category"], ascending=[True, True])' in figure_s7_block
+    assert "ax.axvline(6.0" in figure_s7_block
+    assert 'color=ANALYSIS_COLORS["dark"]' in figure_s7_block
+    assert "rfv_display_color" not in figure_s7_block
+    assert "median_q1_q3_hours_label" in figure_s7_block
+    assert "category_n" in figure_s7_block
+    assert "valid_timing_n" in figure_s7_block
+    assert "missing_timing_n" in figure_s7_block
+    assert "excluded_out_of_range_timing_n" in figure_s7_block
+    assert "Time_To_Gas" in figure_s7_block
+    assert "Timing_Missingness" in figure_s7_block
+
+
+def test_figure_s8_icd_recognition_uses_grouped_heatmap_contract() -> None:
+    analysis_text = (WORK_DIR / "Hypercap CC NLP Analysis.qmd").read_text()
+    figure_s8_spec = analysis_text.split('"figure_s8_png": {', maxsplit=1)[1].split(
+        "    },",
+        maxsplit=1,
+    )[0]
+    s8_helper = analysis_text.split("def render_recognition_by_pco2_heatmap(", maxsplit=1)[1].split(
+        "def direct_label_lines(",
+        maxsplit=1,
+    )[0]
+    s8_block = analysis_text.split("recognition_pco2_bin_order =", maxsplit=1)[1].split(
+        "abg_idx = set(analytic_df.index[to_binary_flag",
+        maxsplit=1,
+    )[0]
+    s8_text = figure_s8_spec + s8_helper + s8_block
+
+    assert "Matrix heatmap" in figure_s8_spec
+    assert "diagnostic accuracy without chart review" in figure_s8_spec
+    assert "def render_recognition_by_pco2_heatmap(" in analysis_text
+    assert "sns.heatmap(" in s8_helper
+    assert "LinearSegmentedColormap.from_list(" in s8_helper
+    assert "icd_recognition_grayscale" in s8_helper
+    assert "ordered_rfv_display_categories(RFV_GROUP_ORDER)" in s8_helper
+    assert "format_figure_pct" in s8_helper
+    assert "format_figure_n(numerator)" in s8_helper
+    assert "format_figure_n(denominator)" in s8_helper
+    assert "cbar=False" in s8_helper
+    assert "colorbar" not in s8_helper.lower()
+    assert "legend" not in s8_helper.lower()
+    assert 'ax.set_xlabel("Qualifying PCO2 stratum")' in s8_helper
+    assert 'ax.set_ylabel("Grouped presenting-concern category")' in s8_helper
+
+    assert "rfv_group_membership_long" in s8_block
+    assert "grouped_presenting_concern_category" in s8_block
+    assert "Recognition_Tidy" in s8_block
+    assert "ChartReady_Matrix" in s8_block
+    assert "PCO2_Bin_N" in s8_block
+    for column_name in (
+        "numerator",
+        "denominator",
+        "percent_icd_positive",
+        "ci_lower",
+        "ci_upper",
+    ):
+        assert column_name in s8_block
+    assert "proportion_confint(" in s8_block
+    assert "direct_label_lines(" not in s8_block
+    assert "Symptom –" not in s8_text
+
+
+def test_publication_figure_style_contract_is_unified_and_title_free() -> None:
+    analysis_text = (WORK_DIR / "Hypercap CC NLP Analysis.qmd").read_text()
+
+    for helper_name in (
+        "theme_rr_minimal",
+        "finish_rr_axis",
+        "format_figure_pct",
+        "format_figure_n",
+        "ordered_rfv_display_categories",
+        "rfv_display_color",
+    ):
+        assert f"def {helper_name}(" in analysis_text
+
+    assert "savefig.dpi" in analysis_text
+    assert '"Respiratory": ANALYSIS_COLORS["respiratory"]' in analysis_text
+    assert '"Injuries & adverse effects": ANALYSIS_COLORS["injury"]' in analysis_text
+    assert "fig.suptitle(" not in analysis_text
+    assert "plt.suptitle(" not in analysis_text
+    assert "ax.set_title(FIGURE_SPECS" not in analysis_text
+    assert "bar_ax.set_title(FIGURE_SPECS" not in analysis_text
+    assert 'grouped_category_order = list(RFV_GROUP_ORDER)' in analysis_text
+    assert "RVC" not in analysis_text
 
 
 def test_first_admission_sensitivity_is_secondary_aggregate_workbook() -> None:
@@ -512,6 +724,133 @@ def test_first_admission_sensitivity_is_secondary_aggregate_workbook() -> None:
         assert sheet_name in analysis_text
     assert "row-level identifiers and raw chief complaint text are not exported" in analysis_text
     assert "manuscript_asset_name=\"First_Admission_Sensitivity.xlsx\"" not in analysis_text
+
+
+def test_timing_safeguard_is_secondary_aggregate_workbook() -> None:
+    analysis_text = (WORK_DIR / "Hypercap CC NLP Analysis.qmd").read_text()
+
+    assert (
+        '"timing_safeguard_rfv_comparison": "Timing_Safeguard_RFV_Comparison.xlsx"'
+        in analysis_text
+    )
+    assert "build_timing_safeguard_cohort_membership" in analysis_text
+    assert "TIMING_SAFEGUARD_SIMILARITY_THRESHOLD_PP = 2.0" in analysis_text
+    for cohort_label in (
+        "Any-admission qualifying hypercapnia",
+        "First qualifying gas within 24h",
+        "First qualifying gas within 6h",
+        "ICD-positive only",
+        "ICD + early gas",
+    ):
+        assert cohort_label in analysis_text
+    for sheet_name in (
+        "Cohort_Denominators",
+        "Main_Text_Table",
+        "Grouped_RFV_Prevalence",
+        "Canonical_RFV_Prevalence",
+        "Prevalence_Comparisons",
+        "Top_Category_Flags",
+        "Interpretation_Flags",
+        "Notes",
+    ):
+        assert sheet_name in analysis_text
+    assert "Primary analysis remains the broad EHR-ascertained admission-level cohort." in analysis_text
+    assert "row-level identifiers and raw chief complaint text are not exported" in analysis_text
+    assert "manuscript_asset_name=\"Timing_Safeguard_RFV_Comparison.xlsx\"" not in analysis_text
+
+
+def test_cohort_exports_paired_qualifying_ph_and_aggregate_audit() -> None:
+    cohort_text = (WORK_DIR / "MIMICIV_hypercap_EXT_cohort.qmd").read_text()
+    contract_text = (WORK_DIR / "src" / "hypercap_cc_nlp" / "pipeline_contracts.py").read_text()
+    spec_text = (WORK_DIR / "docs" / "SPEC.md").read_text()
+    decisions_text = (WORK_DIR / "docs" / "DECISIONS.md").read_text()
+    dictionary_text = (WORK_DIR / "data_dictionary.csv").read_text()
+
+    for field_name in (
+        "qualifying_ph",
+        "qualifying_ph_time",
+        "qualifying_ph_source_branch",
+        "qualifying_ph_site",
+        "qualifying_ph_pairing_status",
+    ):
+        assert field_name in cohort_text
+    for status_label in (
+        "paired_same_specimen_panel",
+        "paired_same_time_panel",
+        "qualifying_panel_missing_ph",
+    ):
+        assert status_label in cohort_text
+    for scope_key in (
+        "broad_gas_positive",
+        "first_qualifying_gas_within_24h",
+        "first_qualifying_gas_within_6h",
+        "late_gas_after_24h",
+        "icd_plus_gas",
+        "icd_only",
+    ):
+        assert scope_key in cohort_text
+    assert "qualifying_ph_pairing_completeness_audit.csv" in cohort_text
+    assert "qualifying_ph_pairing_completeness_audit.csv" in contract_text
+    assert "source branch, site, and panel time" in spec_text
+    assert "source branch, site, and panel time" in dictionary_text
+    with (WORK_DIR / "data_dictionary.csv").open(newline="") as dictionary_file:
+        dictionary_rows = {row["variable_name"]: row for row in csv.DictReader(dictionary_file)}
+    source_branch_row = dictionary_rows["qualifying_ph_source_branch"]
+    site_row = dictionary_rows["qualifying_ph_site"]
+    assert source_branch_row["allowed_values"] == "LAB|POC"
+    assert site_row["allowed_values"] == "arterial|venous|unknown"
+    paired_ph_contract_text = "\n".join(
+        (
+            source_branch_row["definition"],
+            source_branch_row["description"],
+            source_branch_row["allowed_values"],
+            source_branch_row["derivation_or_transformation"],
+            source_branch_row["validation_rules"],
+            source_branch_row["notes"],
+            site_row["definition"],
+            site_row["description"],
+            site_row["allowed_values"],
+            site_row["derivation_or_transformation"],
+            site_row["validation_rules"],
+            site_row["notes"],
+        )
+    )
+    for stale_token in ("hosp_lab", "icu_bg", "poc_bg", "ABG|VBG|UNKNOWN"):
+        assert stale_token not in paired_ph_contract_text
+    assert "before stricter ICU site-compatible pairing" in decisions_text
+    assert "requires a new private cohort rerun" in decisions_text
+    assert "supporting a switch from source-priority pH" not in decisions_text
+    icu_ph_clean_block = cohort_text.split("icu_ph_clean AS (", maxsplit=1)[1].split(
+        "),\nicu_pco2_raw AS",
+        maxsplit=1,
+    )[0]
+    icu_pco2_clean_block = cohort_text.split("icu_pco2_clean AS (", maxsplit=1)[1].split(
+        "),\nall_pco2 AS",
+        maxsplit=1,
+    )[0]
+    stay_pco2_block = cohort_text.split("stay_pco2 AS (", maxsplit=1)[1].split(
+        "),\nqualifying_candidates AS",
+        maxsplit=1,
+    )[0]
+    qualifying_candidates_block = cohort_text.split("qualifying_candidates AS (", maxsplit=1)[1].split(
+        "),\nqualifying_ranked AS",
+        maxsplit=1,
+    )[0]
+    assert "FROM icu_ph_ranked" in icu_ph_clean_block
+    assert "END AS site" in icu_ph_clean_block
+    assert "specimen_type_text" in icu_ph_clean_block
+    assert "AND h.site = p.site" in icu_pco2_clean_block
+    assert "WHEN h.ph_value IS NOT NULL THEN h.site" in icu_pco2_clean_block
+    assert "WHEN h.ph_value IS NOT NULL THEN 'POC'" in icu_pco2_clean_block
+    assert "p.qualifying_ph_source_branch" in stay_pco2_block
+    assert "p.qualifying_ph_site" in stay_pco2_block
+    assert "qualifying_ph_source_branch" in qualifying_candidates_block
+    assert "qualifying_ph_site" in qualifying_candidates_block
+    assert "site AS qualifying_ph_site" not in qualifying_candidates_block
+    assert "source_branch AS qualifying_ph_source_branch" not in qualifying_candidates_block
+    assert "subject_id" not in cohort_text.split("qualifying_ph_pairing_completeness_audit = pd.DataFrame(")[
+        1
+    ].split("qualifying_ph_pairing_completeness_audit_path", maxsplit=1)[0]
 
 
 def test_generated_supplement_table_assets_are_notebook_native() -> None:
@@ -536,6 +875,14 @@ def test_generated_supplement_table_assets_are_notebook_native() -> None:
         "grouped_mapping",
         "matched_denominators",
         "agreement_summary",
+        "set_agreement_ci",
+        "per_category_metrics",
+        "per_category_ci",
+        "confusion_canonical",
+        "confusion_grouped",
+        "disagreement_examples",
+        "cohort_overlap_audit",
+        "benchmark_notes",
         "threshold_summary",
     ):
         assert sheet_name in rater_text
@@ -547,15 +894,38 @@ def test_generated_supplement_table_assets_are_notebook_native() -> None:
 
 def test_figure_1_uses_current_manuscript_labels_and_counts() -> None:
     analysis_text = (WORK_DIR / "Hypercap CC NLP Analysis.qmd").read_text()
+    figure1_helpers = analysis_text.split("def draw_nlp_workflow_panel(", maxsplit=1)[1].split(
+        "def render_manuscript_prevalence_panels(",
+        maxsplit=1,
+    )[0]
+    figure1_generation = analysis_text.split("#| label: hypercap-cc-nlp-analysis-cell-011b", maxsplit=1)[1].split(
+        "plot_time_df =",
+        maxsplit=1,
+    )[0]
+    figure1_text = figure1_helpers + figure1_generation
 
-    assert "Analytic cohort construction and triage chief complaint field NLP workflow" in analysis_text
-    assert "Blood-gas subset\\n(qualifying gas criteria)" in analysis_text
-    assert "Overlapping source evidence" in analysis_text
+    assert "Analytic cohort, ascertainment definitions, and chief-concern NLP classification" in analysis_text
+    assert "Three-panel figure showing mutually exclusive ascertainment strata" in analysis_text
+    assert "A. Cohort and ascertainment strata" in figure1_text
+    assert "B. Chief-concern NLP classification" in figure1_text
+    assert "C. Overlapping ascertainment indicators" in figure1_text
+    assert "Admissions linked to ED presentation\\nwith nonmissing triage chief complaint" in figure1_text
+    assert "Overlapping ascertainment indicators" in figure1_text
+    assert "Mutually exclusive ascertainment strata" in figure1_text
+    assert "draw_compact_ascertainment_indicator_overlap_panel" in figure1_text
+    assert "ABG, VBG, and ICD indicators are overlapping" in figure1_text
     assert "Both ICD and blood-gas criteria" in analysis_text
-    assert "Embedding + prototype scoring\\n(NHAMCS RFV prototypes)" in analysis_text
-    assert "Up to 5 RFV categories per admission" in analysis_text
-    assert "Sensitivity: first-priority RFV assignment only" in analysis_text
-    assert "NHAMCS RFV categories; N" in analysis_text
+    assert "Both ICD + gas" in figure1_text
+    assert "Triage chief\\ncomplaint field" in figure1_text
+    assert "Normalize and\\nsegment text" in figure1_text
+    assert "Embed fragments" in figure1_text
+    assert "Score against\\nNHAMCS RFV prototypes" in figure1_text
+    assert "Apply deterministic\\noverrides" in figure1_text
+    assert "Assign up to five\\nRFV categories per admission" in figure1_text
+    assert "Sensitivity:\\nfirst-priority RFV assignment only" in figure1_text
+    assert "NHAMCS RFV categories\\nN=" in figure1_text
+    assert '"Admissions linked to ED presentation with nonmissing triage chief complaint": 11941' in figure1_text
+    assert '"Analytic cohort": 11941' in figure1_text
     assert '"Gas-only": 9958' in analysis_text
     assert '"Both ICD and blood-gas criteria": 1542' in analysis_text
     assert '"ICD-only": 441' in analysis_text
@@ -563,14 +933,19 @@ def test_figure_1_uses_current_manuscript_labels_and_counts() -> None:
     assert '"VBG criteria met": 6388' in analysis_text
     assert '"ICD-positive": 1983' in analysis_text
     assert '"count_scope": count_scope' in analysis_text
-    assert '"mutually_exclusive_route"' in analysis_text
-    assert '"overlapping_source_evidence"' in analysis_text
+    assert '"cohort_frame"' in analysis_text
+    assert '"mutually_exclusive_ascertainment_stratum"' in analysis_text
+    assert '"overlapping_ascertainment_indicator"' in analysis_text
 
-    assert "Biochemical subset\\n(qualifying gas criteria)" not in analysis_text
-    assert "Yale chief complaint labels" not in analysis_text
-    assert "Up to 5 RFV categories per encounter" not in analysis_text
-    assert "Sensitivity: RFV1 only" not in analysis_text
-    assert "symptom categories; N" not in analysis_text
+    assert "biochemical criteria" not in figure1_text.lower()
+    assert "Overlapping source-specific ascertainment" not in figure1_text
+    assert "Mutually exclusive inclusion groups" not in figure1_text
+    assert "Yale chief complaint labels" not in figure1_text
+    assert "Up to 5 RFV categories per encounter" not in figure1_text
+    assert "RFV1 only" not in figure1_text
+    assert "17 symptom categories" not in figure1_text
+    assert "Spell-correction applied" not in figure1_text
+    assert "fig.suptitle(" not in figure1_text
 
 
 def test_manuscript_prevalence_figures_use_admission_display_language() -> None:
@@ -580,16 +955,420 @@ def test_manuscript_prevalence_figures_use_admission_display_language() -> None:
         "def direct_label_lines(",
         maxsplit=1,
     )[0]
-    assert 'axis.set_xlabel("Percent of admissions")' in helper_body
+    assert 'fig.supxlabel("Percent of admissions"' in helper_body
     assert "Percent of encounters" not in helper_body
     assert 'y_label: str = "Grouped presenting-concern category"' in helper_body
     assert "Grouped complaint category" not in helper_body
 
-    for figure_key in ("figure_2_png", "figure_3_png", "figure_4_png", "figure_s1_png"):
+    for figure_key in ("figure_2_png", "figure_3_png", "figure_4_png", "figure_s1_png", "figure_s9_png"):
         figure_spec = analysis_text.split(f'"{figure_key}": {{', maxsplit=1)[1].split("    },", maxsplit=1)[0]
         assert '"caption_stub":' in figure_spec
         assert "admission-level" in figure_spec
         assert "presenting-concern" in figure_spec
+
+
+def test_manuscript_prevalence_outputs_include_clustered_ci_contract() -> None:
+    analysis_text = (WORK_DIR / "Hypercap CC NLP Analysis.qmd").read_text()
+    helper_body = analysis_text.split(
+        "def summarize_multilabel_prevalence_with_clustered_ci(",
+        maxsplit=1,
+    )[1].split("def _first_available_datetime(", maxsplit=1)[0]
+    figure2_workbook_block = analysis_text.split("figure_2_xlsx_path = write_excel_export(", maxsplit=1)[
+        1
+    ].split("note_export(figure_2_xlsx_path)", maxsplit=1)[0]
+    figure3_workbook_block = analysis_text.split("figure_3_xlsx_path = write_excel_export(", maxsplit=1)[
+        1
+    ].split("note_export(figure_3_xlsx_path)", maxsplit=1)[0]
+    figure4_workbook_block = analysis_text.split("figure_4_xlsx_path = write_excel_export(", maxsplit=1)[
+        1
+    ].split("note_export(figure_4_xlsx_path)", maxsplit=1)[0]
+    table2_block = analysis_text.split("rfv_counts = (", maxsplit=1)[1].split(
+        "rfv_primary_counts = (",
+        maxsplit=1,
+    )[0]
+    uncertainty_block = analysis_text.split("prevalence_uncertainty_path = write_excel_export(", maxsplit=1)[
+        1
+    ].split("note_export(prevalence_uncertainty_path)", maxsplit=1)[0]
+
+    assert "PREVALENCE_CI_BOOTSTRAP_REPLICATES = 2000" in analysis_text
+    assert "PREVALENCE_CI_BOOTSTRAP_SEED = 20260607" in analysis_text
+    assert "PREVALENCE_CI_CLUSTER_UNIT = \"subject_id\"" in analysis_text
+    assert "cluster_weights = np.bincount(sampled_clusters" in helper_body
+    assert "row_weights = cluster_weights[cluster_codes]" in helper_body
+    assert "resolve_encounter_id(base)" in helper_body
+    assert "missing {cluster_col}" in analysis_text
+
+    for workbook_block in (figure2_workbook_block, figure3_workbook_block, figure4_workbook_block):
+        assert '"Prevalence_Tidy"' in workbook_block
+        assert '"ChartReady_CI_Lower"' in workbook_block
+        assert '"ChartReady_CI_Upper"' in workbook_block
+
+    for column_name in (
+        "ci_lower",
+        "ci_upper",
+        "bootstrap_replicates",
+        "bootstrap_seed",
+        "cluster_unit",
+        "n_clusters",
+    ):
+        assert column_name in table2_block
+
+    assert '"prevalence_uncertainty": "Prevalence_Uncertainty.xlsx"' in analysis_text
+    assert '"Table2_Canonical": rfv_counts' in uncertainty_block
+    assert '"Figure2_Grouped": route_prevalence_summary' in uncertainty_block
+    assert '"Figure3_Grouped": age_prevalence_summary' in uncertainty_block
+    assert '"Figure4_Grouped": ph_prevalence' in uncertainty_block
+    assert '"Timing_Grouped": timing_safeguard_grouped_prevalence' in uncertainty_block
+    assert '"Timing_Canonical": timing_safeguard_canonical_prevalence' in uncertainty_block
+    assert "include_clustered_ci=True" in analysis_text
+    assert "subject_id, hadm_id, ed_stay_id, and raw chief complaint text" in analysis_text
+
+
+def test_prevalence_figure_helpers_render_ci_whiskers_when_supplied() -> None:
+    analysis_text = (WORK_DIR / "Hypercap CC NLP Analysis.qmd").read_text()
+    figure2_helper = analysis_text.split("def render_manuscript_prevalence_panels(", maxsplit=1)[1].split(
+        "def render_age_profile_panels(",
+        maxsplit=1,
+    )[0]
+    figure3_helper = analysis_text.split("def render_age_profile_panels(", maxsplit=1)[1].split(
+        "def render_ph_severity_profile_panels(",
+        maxsplit=1,
+    )[0]
+    figure4_helper = analysis_text.split("def render_ph_severity_profile_panels(", maxsplit=1)[1].split(
+        "def render_bicarbonate_profile_panels(",
+        maxsplit=1,
+    )[0]
+
+    assert "ci_lower_df: pd.DataFrame | None = None" in figure2_helper
+    assert "ci_upper_df: pd.DataFrame | None = None" in figure2_helper
+    assert "xerr=xerr" in figure2_helper
+    assert "axis.errorbar(" in figure2_helper
+    assert "fmt=\"none\"" in figure2_helper
+
+    for helper_body in (figure3_helper, figure4_helper):
+        assert "ci_lower_df: pd.DataFrame | None = None" in helper_body
+        assert "ci_upper_df: pd.DataFrame | None = None" in helper_body
+        assert "yerr=yerr" in helper_body
+        assert "axis.errorbar(" in helper_body
+        assert "fmt=\"none\"" in helper_body
+
+
+def test_figure_2_emphasizes_ascertainment_route_gradient() -> None:
+    analysis_text = (WORK_DIR / "Hypercap CC NLP Analysis.qmd").read_text()
+    figure2_spec = analysis_text.split('"figure_2_png": {', maxsplit=1)[1].split("    },", maxsplit=1)[0]
+    figure2_block = analysis_text.split("figure_2_png_path = render_manuscript_prevalence_panels(", maxsplit=1)[
+        1
+    ].split("note_export(figure_2_png_path)", maxsplit=1)[0]
+
+    assert 'figure2_route_group_order = [\n    "ICD-positive",\n    "VBG (PCO2 >= 50 mmHg)",\n    "ABG (PCO2 >= 45 mmHg)",\n]' in analysis_text
+    assert 'route_group_order = [\n    "ABG (PCO2 >= 45 mmHg)",\n    "VBG (PCO2 >= 50 mmHg)",\n    "ICD-positive",\n]' in analysis_text
+    assert "figure2_expected_route_group_sizes" in analysis_text
+    assert '"ICD-positive": 1983' in analysis_text
+    assert '"VBG (PCO2 >= 50 mmHg)": 6388' in analysis_text
+    assert '"ABG (PCO2 >= 45 mmHg)": 7454' in analysis_text
+    assert "figure2_route_strip_labels" in analysis_text
+    assert "(N = {format_figure_n(route_group_sizes.get(group_name, 0))})" in analysis_text
+
+    assert "overlapping ascertainment indicators" in figure2_spec
+    assert "admissions may contribute to more than one panel" in figure2_spec
+    assert "multi-label and not mutually exclusive" in figure2_spec
+    assert "patient-cluster bootstrap 95% confidence intervals" in figure2_spec
+    assert "narrative overlapping-indicator order" in figure2_spec
+    assert "source-specific ascertainment routes" not in figure2_spec
+    assert "source-specific ascertainment strata" not in figure2_spec
+    assert '"export_type": "double-column"' in figure2_spec
+    assert '"Notes": pd.DataFrame' in analysis_text
+    assert "Figure 2 panels are overlapping ascertainment indicators" in analysis_text
+    assert "facet_order=figure2_route_group_order" in figure2_block
+    assert "facet_strip_label_map=figure2_route_strip_labels" in figure2_block
+    assert "ci_lower_df=route_ci_lower_plot_df" in figure2_block
+    assert "ci_upper_df=route_ci_upper_plot_df" in figure2_block
+    assert 'highlight_categories={"Respiratory"}' in figure2_block
+    assert 'highlight_color=ANALYSIS_COLORS["accent"]' in figure2_block
+    assert "x_max=55.0" in figure2_block
+    assert "legend" not in figure2_block.lower()
+
+
+def test_ascertainment_indicator_and_stratum_vocabulary_is_documented() -> None:
+    spec_text = (WORK_DIR / "docs" / "SPEC.md").read_text()
+    decisions_text = (WORK_DIR / "docs" / "DECISIONS.md").read_text()
+    mapping_text = (WORK_DIR / "docs" / "MANUSCRIPT_MAPPING.md").read_text()
+
+    assert "**Ascertainment indicators** are overlapping ABG-positive, VBG-positive, and ICD-positive indicators" in spec_text
+    assert "**Ascertainment strata** are mutually exclusive gas-only, ICD-only, and both ICD + gas groups" in spec_text
+    assert "Figure 1 Panel C" in spec_text
+    assert "Figure 2 use this overlapping indicator vocabulary" in spec_text
+
+    assert "combined three-panel analytic cohort construction" in decisions_text
+    assert "overlapping ascertainment-indicator matrix" in decisions_text
+    assert "Figure 2.png/.xlsx` = grouped presenting category prevalence across overlapping ascertainment indicators" in decisions_text
+    assert "expanded ascertainment-overlap figure remains supplement-only as `Figure S6`" in decisions_text
+
+    assert "Figure 1: analytic cohort construction, ascertainment definitions, and NLP workflow" in mapping_text
+    assert "Figure 2: presenting-concern prevalence by overlapping ascertainment indicator" in mapping_text
+    assert "Figure 2: presenting-concern prevalence by ascertainment route" not in mapping_text
+
+
+def test_figure_3_uses_ordered_age_profile_small_multiples() -> None:
+    analysis_text = (WORK_DIR / "Hypercap CC NLP Analysis.qmd").read_text()
+    figure3_spec = analysis_text.split('"figure_3_png": {', maxsplit=1)[1].split("    },", maxsplit=1)[0]
+    figure3_helper = analysis_text.split("def render_age_profile_panels(", maxsplit=1)[1].split(
+        "def direct_label_lines(",
+        maxsplit=1,
+    )[0]
+    figure3_block = analysis_text.split("figure_3_png_path = render_age_profile_panels(", maxsplit=1)[1].split(
+        "note_export(figure_3_png_path)",
+        maxsplit=1,
+    )[0]
+
+    assert "def render_age_profile_panels(" in analysis_text
+    assert "figure_3_png_path = render_manuscript_prevalence_panels(" not in analysis_text
+    assert "ordered age groups" in figure3_spec
+    assert "multi-label and not mutually exclusive" in figure3_spec
+    assert "patient-cluster bootstrap 95% confidence intervals" in figure3_spec
+    assert "respiratory presenting concerns increase with age" in figure3_spec
+
+    assert 'age_group_order = ["18–39", "40–64", "65–79", "≥80"]' in analysis_text
+    assert '"18–39": 966' in analysis_text
+    assert '"40–64": 4088' in analysis_text
+    assert '"65–79": 4162' in analysis_text
+    assert '"≥80": 2725' in analysis_text
+    assert 'fig.supxlabel("Age group, years"' in figure3_helper
+    assert 'fig.supylabel("Percent of admissions"' in figure3_helper
+    assert "y_max=55.0" in figure3_block
+    assert "ci_lower_df=age_ci_lower_plot_df" in figure3_block
+    assert "ci_upper_df=age_ci_upper_plot_df" in figure3_block
+    assert 'highlight_categories={"Respiratory", "Injuries & adverse effects"}' in figure3_block
+    assert '"Respiratory": ANALYSIS_COLORS["accent"]' in figure3_helper
+    assert '"Injuries & adverse effects": ANALYSIS_COLORS["injury"]' in figure3_helper
+    assert "figure3_respiratory_values.is_monotonic_increasing" in analysis_text
+    assert "figure3_injury_values.iloc[0] <= figure3_injury_values.iloc[1:].max()" in analysis_text
+    assert "legend" not in figure3_block.lower()
+    assert "legend(" not in figure3_helper
+
+    for disallowed_age_label in ("80+", "Young", "Middle-aged", "Older", "Elderly"):
+        assert disallowed_age_label not in analysis_text
+
+
+def test_figure_4_uses_prespecified_ph_profile_small_multiples() -> None:
+    analysis_text = (WORK_DIR / "Hypercap CC NLP Analysis.qmd").read_text()
+    figure4_spec = analysis_text.split('"figure_4_png": {', maxsplit=1)[1].split("    },", maxsplit=1)[0]
+    figure4_helper = analysis_text.split("def render_ph_severity_profile_panels(", maxsplit=1)[1].split(
+        "def direct_label_lines(",
+        maxsplit=1,
+    )[0]
+    figure4_block = analysis_text.split("figure_4_png_path = render_ph_severity_profile_panels(", maxsplit=1)[
+        1
+    ].split("note_export(figure_4_png_path)", maxsplit=1)[0]
+    figure4_context = figure4_spec + figure4_helper + figure4_block
+    figure4_workbook_block = analysis_text.split("figure_4_xlsx_path = write_excel_export(", maxsplit=1)[
+        1
+    ].split("note_export(figure_4_xlsx_path)", maxsplit=1)[0]
+
+    assert "def render_ph_severity_profile_panels(" in analysis_text
+    assert "FIGURE4_USE_PAIRED_QUALIFYING_PH = True" in analysis_text
+    assert "def select_paired_qualifying_ph_for_figure4(" in analysis_text
+    assert "def select_figure4_analysis_ph(" in analysis_text
+    assert "qualifying_ph is absent from the cohort handoff" in analysis_text
+    assert "build_acidemia_severity_denominator_audit" in analysis_text
+    assert "build_acidemia_ph_source_audit" in analysis_text
+    for sheet_name in (
+        "Denominator_Audit",
+        "pH_Source_Audit",
+    ):
+        assert sheet_name in figure4_workbook_block
+    assert "figure_4_png_path = render_manuscript_prevalence_panels(" not in analysis_text
+    assert "prespecified descriptive acidemia severity strata" in figure4_spec
+    assert "multi-label and not mutually exclusive" in figure4_spec
+    assert "patient-cluster bootstrap 95% confidence intervals" in figure4_spec
+    assert "prespecified pH severity strata" in figure4_spec
+    assert "ci_lower_df=ph_ci_lower" in figure4_block
+    assert "ci_upper_df=ph_ci_upper" in figure4_block
+
+    assert (
+        'ph_severity_order = [\n'
+        '    "Normal/compensated (pH ≥7.35)",\n'
+        '    "Mild (7.30–7.34)",\n'
+        '    "Moderate (7.25–7.29)",\n'
+        '    "Severe (pH <7.25)",\n'
+        "]"
+    ) in analysis_text
+    assert '"Normal/compensated (pH ≥7.35)": 4409' in analysis_text
+    assert '"Mild (7.30–7.34)": 2772' in analysis_text
+    assert '"Moderate (7.25–7.29)": 1838' in analysis_text
+    assert '"Severe (pH <7.25)": 2480' in analysis_text
+    assert 'fig.supxlabel("Acidemia severity stratum"' in figure4_helper
+    assert 'fig.supylabel("Percent of admissions"' in figure4_helper
+    assert "y_max=55.0" in figure4_block
+    assert 'highlight_categories={"Respiratory", "Injuries & adverse effects"}' in figure4_block
+    assert '"Respiratory": ANALYSIS_COLORS["accent"]' in figure4_helper
+    assert '"Injuries & adverse effects": ANALYSIS_COLORS["injury"]' in figure4_helper
+    assert "figure4_required_ph_labels" in analysis_text
+    assert "figure4_expected_ph_group_sizes" in analysis_text
+    assert "legend" not in figure4_block.lower()
+    assert "legend(" not in figure4_helper
+
+    for forbidden in ("mortality", "outcome", "phenotype", "phenotypes", "pH <7.20"):
+        assert forbidden not in figure4_context
+
+
+def test_figure_s9_uses_bicarbonate_profile_contract() -> None:
+    analysis_text = (WORK_DIR / "Hypercap CC NLP Analysis.qmd").read_text()
+    figure_s9_spec = analysis_text.split('"figure_s9_png": {', maxsplit=1)[1].split("    },", maxsplit=1)[0]
+    figure_s9_helper = analysis_text.split("def render_bicarbonate_profile_panels(", maxsplit=1)[1].split(
+        "def direct_label_lines(",
+        maxsplit=1,
+    )[0]
+    figure_s9_block = analysis_text.split("bicarbonate_df = biochemical_df.copy()", maxsplit=1)[1].split(
+        "candidate_compensation_base_df = biochemical_df.copy()",
+        maxsplit=1,
+    )[0]
+
+    assert "def render_bicarbonate_profile_panels(" in analysis_text
+    assert "figure_s9_png_path = render_bicarbonate_profile_panels(" in figure_s9_block
+    assert "figure_s9_xlsx_path = write_excel_export(" in figure_s9_block
+    assert "blood-gas-ascertained admissions with available bicarbonate" in figure_s9_spec
+    assert "multi-label and not mutually exclusive" in figure_s9_spec
+    assert "descriptive evidence of acid-base compensation" in figure_s9_spec
+    assert "definitive chronicity classification" in figure_s9_spec
+
+    assert (
+        'bicarbonate_stratum_order = [\n'
+        '    "Low/normal bicarbonate (HCO3 <28)",\n'
+        '    "Mildly elevated bicarbonate (HCO3 28–31)",\n'
+        '    "Markedly elevated bicarbonate (HCO3 ≥32)",\n'
+        "]"
+    ) in analysis_text
+    assert "bins=[-np.inf, 28.0, 32.0, np.inf]" in figure_s9_block
+    assert "right=False" in figure_s9_block
+    assert "first_hco3" in figure_s9_block
+    assert "first_hco3_source" in figure_s9_block
+    assert "first_hco3_qc_pass_mask(bicarbonate_df)" in figure_s9_block
+    assert "first_hco3_qc_flag" in analysis_text
+    assert "hco3_band" not in figure_s9_spec + figure_s9_helper + figure_s9_block
+
+    assert 'fig.supxlabel("Bicarbonate stratum, mmol/L"' in figure_s9_helper
+    assert 'fig.supylabel("Percent of admissions"' in figure_s9_helper
+    assert "ordered_rfv_display_categories(category_order)" in figure_s9_helper
+    assert 'highlight_categories={"Respiratory", "Injuries & adverse effects"}' in figure_s9_block
+    assert '"Respiratory": ANALYSIS_COLORS["accent"]' in figure_s9_helper
+    assert '"Injuries & adverse effects": ANALYSIS_COLORS["injury"]' in figure_s9_helper
+    assert "legend" not in figure_s9_block.lower()
+    assert "legend(" not in figure_s9_helper
+
+    for sheet_name in (
+        "Prevalence_Tidy",
+        "ChartReady_Pivot",
+        "Bicarbonate_Source_Summary",
+        "Bicarbonate_Strata_N",
+    ):
+        assert sheet_name in figure_s9_block
+    for column_name in ("numerator", "denominator", "percent_of_admissions", "first_hco3_source_summary"):
+        assert column_name in figure_s9_block
+    assert '"figure_s9_png": len(bicarbonate_df)' in analysis_text
+
+
+def test_candidate_compensation_matrix_is_review_only_heatmap() -> None:
+    analysis_text = (WORK_DIR / "Hypercap CC NLP Analysis.qmd").read_text()
+    manuscript_filename_body = analysis_text.split("MANUSCRIPT_ASSET_FILENAMES = {", maxsplit=1)[1].split(
+        "SECONDARY_OUTPUT_FILENAMES = {",
+        maxsplit=1,
+    )[0]
+    secondary_filename_body = analysis_text.split("SECONDARY_OUTPUT_FILENAMES = {", maxsplit=1)[1].split(
+        "FIGURE_SPECS = {",
+        maxsplit=1,
+    )[0]
+    allowlist_body = analysis_text.split("def build_submission_asset_allowlist(", maxsplit=1)[1].split(
+        "def validate_submission_asset_bundle(",
+        maxsplit=1,
+    )[0]
+    candidate_spec = analysis_text.split('"candidate_compensation_matrix_plot": {', maxsplit=1)[1].split(
+        "    },",
+        maxsplit=1,
+    )[0]
+    candidate_helper = analysis_text.split("def render_compensation_matrix_heatmap(", maxsplit=1)[1].split(
+        "def direct_label_lines(",
+        maxsplit=1,
+    )[0]
+    candidate_block = analysis_text.split("candidate_compensation_base_df = biochemical_df.copy()", maxsplit=1)[
+        1
+    ].split("ph_sensitivity_counts = (", maxsplit=1)[0]
+
+    assert '"candidate_compensation_matrix_plot": "Candidate_Figure_Compensation_Matrix.png"' in secondary_filename_body
+    assert (
+        '"candidate_compensation_matrix_workbook": "Candidate_Figure_Compensation_Matrix.xlsx"'
+        in secondary_filename_body
+    )
+    assert "Candidate_Figure_Compensation_Matrix" not in manuscript_filename_body
+    assert "Candidate_Figure_Compensation_Matrix" not in allowlist_body
+
+    assert "descriptive pH and bicarbonate evidence groups" in candidate_spec
+    assert "multi-label and not mutually exclusive" in candidate_spec
+    assert "definitive chronicity classification" in candidate_spec
+    assert "causal" not in candidate_spec.lower()
+    assert "Figure 5" not in candidate_spec
+    assert "Figure S10" not in candidate_spec
+
+    assert "def select_analysis_ph(" in analysis_text
+    assert "def select_analysis_ph_with_source(" in analysis_text
+    assert "def first_hco3_qc_pass_mask(" in analysis_text
+    assert "def render_compensation_matrix_heatmap(" in analysis_text
+    assert 'lab_abg_ph = maybe_numeric(df, ["lab_abg_ph"])' in analysis_text
+    assert 'maybe_numeric(df, ["lab_vbg_ph"])' in analysis_text
+    assert 'maybe_numeric(df, ["first_ph", "min_ph_0_24h"])' in analysis_text
+    assert "first_hco3_qc_flag" in analysis_text
+
+    assert (
+        'candidate_compensation_matrix_group_order = [\n'
+        '    "Acidemic, HCO3 <28",\n'
+        '    "Acidemic, HCO3 ≥28",\n'
+        '    "Normal/alkalemic, HCO3 <28",\n'
+        '    "Normal/alkalemic, HCO3 ≥28",\n'
+        "]"
+    ) in analysis_text
+    for criterion in (
+        "pH <7.35 and HCO3 <28",
+        "pH <7.35 and HCO3 ≥28",
+        "pH ≥7.35 and HCO3 <28",
+        "pH ≥7.35 and HCO3 ≥28",
+    ):
+        assert criterion in analysis_text
+
+    assert "sns.heatmap(" in candidate_helper
+    assert "LinearSegmentedColormap.from_list(" in candidate_helper
+    assert "ordered_rfv_display_categories(RFV_GROUP_ORDER)" in candidate_helper
+    assert "format_figure_pct" in candidate_helper
+    assert "annot=cell_labels.to_numpy()" in candidate_helper
+    assert "cbar=False" in candidate_helper
+    assert "legend" not in candidate_helper.lower()
+    assert 'ax.set_xlabel("Descriptive acid-base group")' in candidate_helper
+    assert 'ax.set_ylabel("Grouped presenting-concern category")' in candidate_helper
+
+    assert "candidate_compensation_matrix_workbook_path = write_excel_export(" in candidate_block
+    for sheet_name in (
+        "Prevalence_Tidy",
+        "ChartReady_Matrix",
+        "Group_Denominators",
+        "Missingness_Summary",
+        "HCO3_Source_Summary",
+    ):
+        assert sheet_name in candidate_block
+    for column_name in (
+        "numerator",
+        "denominator",
+        "percent_of_admissions",
+        "pH_criterion",
+        "HCO3_criterion",
+        "blood_gas_subset_denominator",
+        "first_hco3_source",
+    ):
+        assert column_name in candidate_block
+    assert "candidate_compensation_df.empty" in candidate_block
+    assert "candidate_compensation_missingness categories do not reconcile" not in candidate_block
+    assert "Candidate compensation matrix missingness categories do not reconcile" in candidate_block
+    assert "Candidate compensation matrix group denominators do not sum" in candidate_block
+    assert "Candidate compensation matrix plot values drifted from Prevalence_Tidy" in candidate_block
+    assert '"candidate_compensation_matrix_plot": len(candidate_compensation_df)' in analysis_text
 
 
 def test_grouped_rfv_figure_specs_use_presenting_concern_language() -> None:
@@ -601,9 +1380,11 @@ def test_grouped_rfv_figure_specs_use_presenting_concern_language() -> None:
         "figure_s1_png",
         "figure_s7_png",
         "figure_s8_png",
+        "figure_s9_png",
         "time_to_gas_plot",
         "recognition_by_pco2_plot",
         "etiology_plot",
+        "candidate_compensation_matrix_plot",
         "ventilation_regression_plot",
     )
     disallowed_display_terms = (
@@ -623,7 +1404,7 @@ def test_grouped_rfv_figure_specs_use_presenting_concern_language() -> None:
 
     assert 'ax.set_ylabel("Grouped presenting-concern category")' in analysis_text
     assert 'ax.set_ylabel("Grouped symptom category")' not in analysis_text
-    assert "chief complaint field" in analysis_text
+    assert "chief-concern NLP" in analysis_text
 
 
 def test_analysis_notebook_replaces_reyan_as_the_canonical_manuscript_stage() -> None:
@@ -794,25 +1575,100 @@ def test_classifier_notebook_contains_spell_mode_comparison_and_audit() -> None:
     assert "classifier_export_drop_columns" in classifier_text
     assert "visit_candidate_scores.csv" in classifier_text
     assert "segment_candidate_scores.csv" in classifier_text
+    assert "CLASSIFIER_ANNOTATION_BENCHMARK_MODE" in classifier_text
+    assert "CLASSIFIER_ANNOTATION_BENCHMARK_PATH" in classifier_text
+    assert "CLASSIFIER_ANNOTATION_BENCHMARK_SHEET" in classifier_text
+    assert "CLASSIFIER_ANNOTATION_CC_COLUMN" in classifier_text
+    assert "annotation_benchmark_with_NLP.xlsx" in classifier_text
+    assert "annotation_visit_candidate_scores.csv" in classifier_text
+    assert "annotation_segment_candidate_scores.csv" in classifier_text
+    assert 'early_annotation_benchmark_mode == "required"' in classifier_text
+    assert "assign_annotation_row_id(" in classifier_text
+    assert "annotation_benchmark_status" in classifier_text
     assert "validate_candidate_sidecars(" in classifier_text
     assert '"cc_missing_flag"' in classifier_text
     assert '"cc_pseudomissing_flag"' in classifier_text
 
 
+def test_rater_direct_benchmark_does_not_require_cohort_workbook() -> None:
+    rater_text = (WORK_DIR / "Rater Agreement Analysis.qmd").read_text()
+    config_block = rater_text.split(
+        "CANONICAL_NLP_FILENAME = ",
+        maxsplit=1,
+    )[1].split("# Fail fast for the benchmark source that will actually be used.", maxsplit=1)[0]
+    preflight_block = rater_text.split(
+        "# Fail fast for the benchmark source that will actually be used.",
+        maxsplit=1,
+    )[1].split("# Ensure output folders exist before writing artifacts.", maxsplit=1)[0]
+    cohort_audit_block = rater_text.split(
+        "def _cohort_overlap_not_run(",
+        maxsplit=1,
+    )[1].split('cohort_overlap_join_audit["benchmark_source"] = "cohort_overlap"', maxsplit=1)[0]
+
+    assert "def resolve_rater_data_path(" in config_block
+    assert "resolve_rater_nlp_input_path(" not in rater_text
+    assert "resolve_rater_candidate_sidecar_path(" not in rater_text
+    assert "Expected rater NLP input workbook was not found" not in rater_text
+    assert "Expected classifier candidate sidecar was not found" not in rater_text
+    assert "nlp_path = resolve_rater_data_path(" in config_block
+    assert "visit_candidate_scores_path = resolve_rater_data_path(" in config_block
+    assert "segment_candidate_scores_path = resolve_rater_data_path(" in config_block
+    assert "DIRECT_ANNOTATION_BENCHMARK_PATHS" in preflight_block
+    assert "COHORT_OVERLAP_BENCHMARK_PATHS" in preflight_block
+    assert 'BENCHMARK_SOURCE_REQUESTED == "annotation_direct"' in preflight_block
+    annotation_direct_block = preflight_block.split(
+        'if BENCHMARK_SOURCE_REQUESTED == "annotation_direct":',
+        maxsplit=1,
+    )[1].split('elif BENCHMARK_SOURCE_REQUESTED == "cohort_overlap":', maxsplit=1)[0]
+    assert "required_paths = DIRECT_ANNOTATION_BENCHMARK_PATHS" in annotation_direct_block
+    assert "COHORT_OVERLAP_BENCHMARK_PATHS" not in annotation_direct_block
+    assert "elif DIRECT_BENCHMARK_COMPLETE:" in preflight_block
+    assert "for path in (ANNOTATION_PATH, NLP_PATH" not in preflight_block
+    assert "Required benchmark input file not found" in preflight_block
+
+    assert "cohort_overlap_not_run_for_direct_benchmark" in cohort_audit_block
+    assert '"coverage_status": "not_run"' in cohort_audit_block
+    assert "except Exception as exc:" in cohort_audit_block
+    assert "if not use_direct_annotation_benchmark:" in cohort_audit_block
+    assert "raise" in cohort_audit_block
+
+
 def test_rater_notebook_contains_key_inventory_and_canonical_mapping() -> None:
     rater_text = (WORK_DIR / "Rater Agreement Analysis.qmd").read_text()
     assert "R3_vs_NLP_key_inventory.csv" in rater_text
+    assert "R3_vs_NLP_cohort_overlap_key_inventory.csv" in rater_text
     assert "R3_vs_NLP_label_mapping_audit.csv" in rater_text
     assert "join_key_diagnostics.csv" in rater_text
+    assert "cohort_overlap_join_key_diagnostics.csv" in rater_text
     assert "join_audit_summary.csv" in rater_text
+    assert "cohort_overlap_join_audit_summary.csv" in rater_text
     assert "unmatched_adjudicated_rows.csv" in rater_text
     assert "unmatched_nlp_rows_sample.csv" in rater_text
     assert "target_sample_n" in rater_text
     assert "warn_below_target_fail_on_zero" in rater_text
     assert "build_join_key_diagnostics(" in rater_text
+    assert "build_annotation_direct_join(" in rater_text
+    assert "annotation_row_id" in rater_text
     assert "canonicalize_rvc_code" in rater_text
     assert "Human inter-rater agreement was evaluated in the full adjudicated sample" in rater_text
-    assert "NLP-vs-adjudicator benchmarking was evaluated in the matched subset" in rater_text
+    assert "direct annotation benchmark" in rater_text
+    assert "final-cohort overlap join remains a secondary diagnostic" in rater_text
+    assert "RATER_BENCHMARK_SOURCE" in rater_text
+    assert "R3_vs_NLP_cohort_overlap_join_audit.json" in rater_text
+    assert "R3_vs_NLP_per_category_prf.csv" in rater_text
+    assert "R3_vs_NLP_per_category_bootstrap_ci.csv" in rater_text
+    assert "R3_vs_NLP_set_agreement_bootstrap_ci.csv" in rater_text
+    assert "R3_vs_NLP_confusion_matrix_canonical.csv" in rater_text
+    assert "R3_vs_NLP_confusion_matrix_grouped.csv" in rater_text
+    assert "R3_vs_NLP_disagreement_examples_redacted.csv" in rater_text
+    assert "BOOTSTRAP_SEED = 20260607" in rater_text
+    assert "Partial agreement is defined as non-exact agreement" in rater_text
+    disagreement_block = rater_text.split("disagreement_candidates = pd.DataFrame(", maxsplit=1)[
+        1
+    ].split("for forbidden_column", maxsplit=1)[0]
+    for forbidden_column in ("subject_id", "hadm_id", "ed_stay_id"):
+        assert forbidden_column not in disagreement_block
+    assert "chief_complaint_redacted" in disagreement_block
     assert "display_path(" in rater_text
     assert "non_exact_visit_n" in rater_text
     assert "binary_disagreement_n" in rater_text
@@ -824,6 +1680,19 @@ def test_rater_notebook_contains_key_inventory_and_canonical_mapping() -> None:
     assert "R3_vs_NLP_stratified_validation.xlsx" in rater_text
     assert "R3_vs_NLP_threshold_sweep.csv" in rater_text
     assert "topk_metrics_by_visit(" in rater_text
+    visit_candidate_helper = rater_text.split(
+        "def _prediction_sets_from_visit_candidates(",
+        maxsplit=1,
+    )[1].split("def _prediction_sets_from_segment_candidates(", maxsplit=1)[0]
+    assert "uncodable_threshold: float | None = None" in visit_candidate_helper
+    assert "uncodable_candidates" in visit_candidate_helper
+    assert "if not emitted and uncodable_threshold is not None:" in visit_candidate_helper
+    assert "emitted = {UNCODABLE_RVC_CODE}" in visit_candidate_helper
+    visit_uncodable_block = rater_text.split(
+        "for uncodable_threshold in VISIT_UNCODABLE_THRESHOLDS:",
+        maxsplit=1,
+    )[1].split("sweep = pd.DataFrame(rows)", maxsplit=1)[0]
+    assert "uncodable_threshold=uncodable_threshold" in visit_uncodable_block
 
 
 def test_chart_review_notebook_avoids_runtime_package_installs() -> None:

@@ -26,8 +26,8 @@ Stage ownership is fixed to those notebooks. `make quarto-reyan-figures` remains
 | Stage | Private inputs | Local outputs |
 |---|---|---|
 | `MIMICIV_hypercap_EXT_cohort.qmd` | BigQuery-backed MIMIC-IV HOSP/ICU/ED data plus local `.env` settings | `MIMIC tabular data/MIMICIV all with CC.xlsx`; dated manifests/audits under `MIMIC tabular data/prior runs/`; QA payloads under `artifacts/qa/cohort/` |
-| `Hypercap CC NLP Classifier.qmd` | `MIMIC tabular data/MIMICIV all with CC.xlsx` unless overridden by `CLASSIFIER_INPUT_FILENAME` | `MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx`; dated manifests/audits under `MIMIC tabular data/prior runs/` |
-| `Rater Agreement Analysis.qmd` | Canonical NLP workbook plus private annotation workbook (`RATER_ANNOTATION_PATH` when overridden) | Agreement audits and summaries under `artifacts/qa/rater_agreement/` |
+| `Hypercap CC NLP Classifier.qmd` | `MIMIC tabular data/MIMICIV all with CC.xlsx` unless overridden by `CLASSIFIER_INPUT_FILENAME`; optional private annotation workbook when `CLASSIFIER_ANNOTATION_BENCHMARK_MODE` is `auto` or `required` | `MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx`; optional direct annotation benchmark workbooks/sidecars under `MIMIC tabular data/`; dated manifests/audits under `MIMIC tabular data/prior runs/` |
+| `Rater Agreement Analysis.qmd` | Canonical NLP workbook plus private annotation workbook (`RATER_ANNOTATION_PATH` when overridden); optional direct annotation NLP benchmark workbook and candidate sidecars | Agreement audits, direct-vs-cohort benchmark diagnostics, and summaries under `artifacts/qa/rater_agreement/` |
 | `Hypercap CC NLP Analysis.qmd` | `MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx` unless overridden by `ANALYSIS_INPUT_FILENAME` | Figures, tables, PDFs, submission bundle, and analysis exports under `Results/YYYY-MM-DD/`; QA checks under `artifacts/qa/analysis/` |
 | `Chart Review Sample Calc.qmd` | Local R package environment plus notebook inputs | `Results/YYYY-MM-DD/Chart Review Sample Calc.html` and `Results/YYYY-MM-DD/Chart Review Sample Calc_files/` |
 
@@ -45,8 +45,15 @@ Generated outputs are local/private by default:
 - submission bundle: `Results/YYYY-MM-DD/submission_assets/`
 - QA/debug/manifests: `artifacts/qa/cohort/`, `artifacts/qa/rater_agreement/`, `artifacts/qa/analysis/`, `artifacts/qa/baselines/`, and `debug/...`
 - private handoff workbooks: `MIMIC tabular data/MIMICIV all with CC.xlsx` and `MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx`
+- optional private direct annotation benchmark outputs: `MIMIC tabular data/annotation_benchmark_with_NLP.xlsx`, `annotation_visit_candidate_scores.csv`, and `annotation_segment_candidate_scores.csv`
+- rater supplement validation outputs include direct-benchmark denominator notes, per-category support/precision/recall/F1, bootstrap confidence intervals, canonical/grouped confusion matrices, and redacted disagreement examples; encounter identifiers remain excluded from supplement-facing disagreement sheets
 
 `Drafts/` is manual-only working space and must not be modified by automated render or migration steps. Public release branches must not include `Drafts/`, `Results/`, `MIMIC tabular data/`, `artifacts/`, `debug/`, `outputs/`, `tmp/`, or `Legacy Code/`.
+
+Manuscript-facing ascertainment terminology is fixed:
+
+- **Ascertainment indicators** are overlapping ABG-positive, VBG-positive, and ICD-positive indicators; admissions may satisfy more than one indicator. Figure 1 Panel C and Figure 2 use this overlapping indicator vocabulary.
+- **Ascertainment strata** are mutually exclusive gas-only, ICD-only, and both ICD + gas groups. Figure 1 Panel A and Table 1 use this strata vocabulary.
 
 ## Notebook Runtime Contract
 
@@ -71,8 +78,16 @@ These environment variables change the contract-relevant execution surface:
 | `RESULTS_DATE` | Selects the dated output folder under `Results/YYYY-MM-DD/` |
 | `RESULTS_DIR` | Overrides the concrete results path; defaults to `Results/<date>` |
 | `CLASSIFIER_INPUT_FILENAME` | Overrides the classifier's cohort-workbook handoff input |
+| `CLASSIFIER_ANNOTATION_BENCHMARK_MODE` | Controls direct annotation scoring: `auto` skips when absent, `required` fails when absent, and `off` disables it |
+| `CLASSIFIER_ANNOTATION_BENCHMARK_PATH` | Overrides the private annotation workbook scored by the classifier for direct NLP validation |
+| `CLASSIFIER_ANNOTATION_BENCHMARK_SHEET` | Overrides the annotation workbook sheet for direct classifier scoring |
+| `CLASSIFIER_ANNOTATION_CC_COLUMN` | Overrides chief-complaint column detection for direct annotation scoring |
 | `RATER_NLP_INPUT_FILENAME` | Overrides the rater stage NLP-workbook handoff input |
 | `RATER_ANNOTATION_PATH` | Overrides the annotation workbook used by the rater stage |
+| `RATER_BENCHMARK_SOURCE` | Selects NLP validation denominator: `auto`, `annotation_direct`, or `cohort_overlap` |
+| `RATER_ANNOTATION_BENCHMARK_NLP_FILENAME` | Overrides the direct annotation NLP workbook consumed by the rater stage |
+| `RATER_ANNOTATION_VISIT_CANDIDATE_SCORES_FILENAME` | Overrides the direct annotation visit-candidate sidecar consumed by the rater stage |
+| `RATER_ANNOTATION_SEGMENT_CANDIDATE_SCORES_FILENAME` | Overrides the direct annotation segment-candidate sidecar consumed by the rater stage |
 | `ANALYSIS_INPUT_FILENAME` | Overrides the analysis stage NLP-workbook handoff input |
 | `BQ_QUERY_TIMEOUT_SECS` | Overrides the cohort-stage BigQuery timeout |
 | `WRITE_ARCHIVE_XLSX_EXPORTS` | Enables additional dated private workbook archives in `MIMIC tabular data/prior runs/` without changing canonical outputs |
@@ -116,9 +131,22 @@ Current cohort-stage invariants:
 - ABG/VBG/UNKNOWN are the canonical source classes for definitive pCO2 values.
 - UNKNOWN remains cohort-eligible for threshold inclusion.
 - Gas qualification for enrollment is any-time during stay via `pco2_threshold_any`; `pco2_threshold_0_24h` is retained as a timing marker only.
+- The analysis notebook treats gas timing as an inferential safeguard, not a cohort-enrollment gate: it compares RFV distributions across the broad EHR-ascertained cohort, first qualifying gas within 24h, first qualifying gas within 6h, any ICD-positive admissions, and ICD-positive admissions with qualifying gas within 24h.
 - POC itemid QC telemetry does not itself gate cohort enrollment logic.
 - Gas-source row diagnostics are written to `artifacts/qa/cohort/gas_source_diagnostics_by_ed_stay.csv`.
 - Canonical cohort export fields use `qualifying_pco2_mmhg` rather than `first_pco2`.
+- Canonical cohort export fields include paired qualifying-gas pH audit fields
+  (`qualifying_ph`, `qualifying_ph_time`, `qualifying_ph_source_branch`,
+  `qualifying_ph_site`, and `qualifying_ph_pairing_status`) matched to the
+  earliest qualifying pCO2 by admission, source branch, site, and panel time.
+  These fields support acidemia denominator audits and do not change cohort
+  enrollment.
+- The cohort stage writes an aggregate-only
+  `qualifying_ph_pairing_completeness_audit.csv` covering broad gas-positive,
+  24h gas, 6h gas, late gas, ICD+gas, and ICD-only scopes.
+- Figure 4 acidemia severity uses paired qualifying-gas pH from the same
+  specimen/panel as the earliest qualifying pCO2 when available; the older
+  source-priority pH rule is retained only as a denominator/context audit.
 - The first-by-site pO2 exports are `first_abg_po2`, `first_vbg_po2`, and `first_other_po2`.
 - `first_hco3` is selected by qualifying panel bicarbonate first, then nearest serum bicarbonate/total CO2 fallback.
 

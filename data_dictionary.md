@@ -26,6 +26,10 @@ The canonical private workbooks are:
 
 - `MIMIC tabular data/MIMICIV all with CC.xlsx`
 - `MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx`
+- optional direct annotation benchmark outputs:
+  `MIMIC tabular data/annotation_benchmark_with_NLP.xlsx`,
+  `MIMIC tabular data/annotation_visit_candidate_scores.csv`, and
+  `MIMIC tabular data/annotation_segment_candidate_scores.csv`
 
 These workbooks include restricted row-level encounter identifiers, chief
 complaint text, blood gas variables, and derived NLP outputs. They are ignored by
@@ -36,12 +40,19 @@ git and required only for authorized local reproduction.
 - Cohort flags: `pco2_threshold_any`, `pco2_threshold_0_24h`,
   `qualifying_pco2_mmhg`, `gas_source`, and route-specific indicators for ICD,
   ABG, and VBG ascertainment.
+- Paired qualifying-gas pH audit fields: `qualifying_ph`,
+  `qualifying_ph_time`, `qualifying_ph_source_branch`, `qualifying_ph_site`, and
+  `qualifying_ph_pairing_status`, used to assess whether pH from the same
+  specimen/panel as the earliest qualifying PCO2 is complete enough for stricter
+  acidemia analyses.
 - Classifier outputs: `RFV1` through `RFV5`, corresponding `_name`, `_support`,
   and `_sim` columns, plus segment-level prediction payloads.
 - Analysis strata: age groups, acidemia severity groups, ascertainment routes,
   and grouped presenting-concern categories.
 - Benchmark metrics: mean F1, Cohen's kappa, exact agreement, and partial
-  agreement against adjudicated human labels.
+  agreement against adjudicated human labels. Direct annotation benchmarking uses
+  `annotation_row_id`, a deterministic non-MIMIC row key, to align adjudicated
+  labels with classifier predictions across the full private annotation sample.
 
 ## Public Output Boundary
 

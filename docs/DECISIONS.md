@@ -1,5 +1,46 @@
 # Decisions
 
+## 2026-06-07 - Paired qualifying-gas pH audit precedes acidemia contract change
+
+Status: accepted
+
+Context:
+- The manuscript acidemia figures are useful but can be misleading if pH is not paired to the same specimen or panel as the qualifying pCO2.
+- Local early-gas review showed near-complete same-panel pH for within-24h qualifying-gas admissions, but the broad any-time gas cohort still needs a formal paired-pH completeness audit.
+- Silently switching Figure 4 to paired qualifying-gas pH before that audit could drop an unknown fraction of broad gas-positive admissions.
+
+Decision:
+- The cohort notebook now exports paired qualifying-gas pH fields for the earliest qualifying pCO2 across the full any-time gas cohort.
+- Pairing is based on admission, source branch, site, and panel time, preferring exact matches and then nearest matches within a narrow tolerance; pH availability does not determine the qualifying gas selection.
+- The cohort stage writes an aggregate-only paired-pH completeness audit by broad gas-positive, 24h gas, 6h gas, late gas, ICD+gas, and ICD-only scopes.
+- A 2026-06-06 private rerun before stricter ICU site-compatible pairing suggested near-complete broad paired-pH availability (11,520 of 11,521 broad gas-positive admissions). Those counts are pre-strict-site-pairing evidence only; the stricter contract requires a new private cohort rerun before using paired-pH completeness counts as current support for manuscript claims.
+- Figure 4 now uses pH from the same specimen/panel as the earliest qualifying pCO2 when available; the source-priority pH rule remains only as a denominator/context audit.
+- Figure 4 and Figure S1 source workbooks include denominator and missingness sheets.
+
+Consequences:
+- Manuscript wording should describe the paired qualifying-gas pH rule plainly and report denominator/missingness support for Figure 4 and Figure S1.
+- Because the analysis notebook is configured to use paired qualifying-gas pH for Figure 4, it fails closed when `qualifying_ph` is absent from the private handoff workbook.
+- Public outputs remain aggregate-only; paired pH fields are restricted row-level handoff fields and must not be committed.
+
+## 2026-06-07 - Gas timing safeguard supports ED-triage chief complaint interpretation
+
+Status: accepted
+
+Context:
+- Chief complaint text is measured at ED triage, while gas-based hypercapnia ascertainment can occur later in the admission.
+- The cohort-stage contract intentionally keeps broad EHR ascertainment by ICD code or qualifying pCO2 after ED presentation through discharge.
+- Reviewers may question whether chief complaint distributions describe presentation-time hypercapnia when the first qualifying gas occurs many hours after ED arrival.
+
+Decision:
+- The broad EHR-ascertained admission-level cohort remains the primary analysis cohort.
+- `Hypercap CC NLP Analysis.qmd` elevates gas timing to an analysis-stage inferential safeguard by comparing RFV prevalence across the broad cohort, first qualifying gas within 24h, first qualifying gas within 6h, any ICD-positive admissions, and ICD-positive admissions with qualifying gas within 24h.
+- The timing comparison is exported as an aggregate-only secondary workbook and summarized in the working manuscript draft as a main-text safeguard.
+- The cohort-stage enrollment logic is not changed by this safeguard.
+
+Consequences:
+- Manuscript wording should distinguish broad EHR ascertainment from presentation-linked early-gas sensitivity cohorts.
+- Static tests should enforce the timing-safeguard output contract and the 6h/24h cohort definitions without requiring private MIMIC data.
+
 ## 2026-05-30 - Public release branches exclude restricted/generated artifacts
 
 Status: accepted
@@ -98,13 +139,14 @@ Context:
 
 Decision:
 - The canonical main-manuscript figure contract is now:
-  - `Figure 1.pdf` = combined two-panel analytic cohort construction plus chief complaint NLP workflow
-  - `Figure 2.png/.xlsx` = grouped presenting category prevalence across ascertainment routes
+  - `Figure 1.pdf` = combined three-panel analytic cohort construction, mutually exclusive ascertainment strata, overlapping ascertainment-indicator matrix, and chief complaint NLP workflow
+  - `Figure 2.png/.xlsx` = grouped presenting category prevalence across overlapping ascertainment indicators
   - `Figure 3.png/.xlsx` = grouped presenting category prevalence across age groups
   - `Figure 4.png/.xlsx` = grouped presenting category prevalence across acidemia severity bands
 - Acidemia timing is demoted to supplement as `Figure S1.png/.xlsx`.
 - RFV1-only stacked-bar sensitivity figures are supplement-only as `Figure S2-S5`.
-- Overlap, time-to-gas, and recognition figures are supplement-only as `Figure S6-S8`.
+- The expanded ascertainment-overlap figure remains supplement-only as `Figure S6`, but Figure 1 Panel C now exposes the core ABG/VBG/ICD overlap in the main text.
+- Time-to-gas and recognition figures are supplement-only as `Figure S7-S8`.
 - Primary multi-label prevalence figures share a common grouped-category order, a common x-axis scale, and the grouped label `Other grouped RFV categories`.
 
 Consequences:
