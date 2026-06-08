@@ -139,13 +139,13 @@ Context:
 
 Decision:
 - The canonical main-manuscript figure contract is now:
-  - `Figure 1.pdf` = combined three-panel analytic cohort construction, mutually exclusive ascertainment strata, overlapping ascertainment-indicator matrix, and chief complaint NLP workflow
+  - `Figure 1.pdf` = combined three-panel analytic cohort construction, mutually exclusive ascertainment strata, source-specific ABG/VBG/ICD/UNKNOWN-source gas overlap matrix, and chief complaint NLP workflow
   - `Figure 2.png/.xlsx` = grouped presenting category prevalence across overlapping ascertainment indicators
   - `Figure 3.png/.xlsx` = grouped presenting category prevalence across age groups
   - `Figure 4.png/.xlsx` = grouped presenting category prevalence across acidemia severity bands
 - Acidemia timing is demoted to supplement as `Figure S1.png/.xlsx`.
 - RFV1-only stacked-bar sensitivity figures are supplement-only as `Figure S2-S5`.
-- The expanded ascertainment-overlap figure remains supplement-only as `Figure S6`, but Figure 1 Panel C now exposes the core ABG/VBG/ICD overlap in the main text.
+- The expanded ascertainment-overlap figure remains supplement-only as `Figure S6`, and Figure 1 Panel C now exposes the same full source-specific ABG/VBG/ICD/UNKNOWN-source gas overlap in the main text so indeterminate-source gas is not hidden behind an ABG/VBG/ICD-only display.
 - Time-to-gas and recognition figures are supplement-only as `Figure S7-S8`.
 - Primary multi-label prevalence figures share a common grouped-category order, a common x-axis scale, and the grouped label `Other grouped RFV categories`.
 

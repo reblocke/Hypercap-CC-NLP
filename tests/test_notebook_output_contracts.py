@@ -628,25 +628,36 @@ def test_supplement_operational_figures_s6_s7_contract() -> None:
     figure_s7_block = analysis_text.split("time_to_gas_source_df = biochemical_df.copy()", maxsplit=1)[
         1
     ].split("recognition_pco2_bin_order =", maxsplit=1)[0]
-    figure_s6_block = analysis_text.split("abg_idx = set(analytic_df.index[to_binary_flag", maxsplit=1)[
-        1
-    ].split("acidemia_timing_df =", maxsplit=1)[0]
+    source_overlap_helpers = analysis_text.split("SOURCE_OVERLAP_SOURCES =", maxsplit=1)[1].split(
+        "def render_manuscript_prevalence_panels(",
+        maxsplit=1,
+    )[0]
+    figure_s6_block = analysis_text.rsplit("for source_label, expected_count in {", maxsplit=1)[1].split(
+        "acidemia_timing_df =",
+        maxsplit=1,
+    )[0]
 
-    assert "overlapping ABG-positive, VBG-positive, and ICD-positive ascertainment indicators" in figure_s6_spec
-    assert "Figure 1 Panel C shows a main-text compact version" in figure_s6_spec
-    assert "Figure 2 uses these overlapping indicators" in figure_s6_spec
-    assert 'matrix_set_order = ["ABG-positive", "VBG-positive", "ICD-positive"]' in figure_s6_block
-    assert "unknown_hypercap_threshold" in figure_s6_block
+    assert "ABG, VBG, ICD, and UNKNOWN-source gas" in figure_s6_spec
+    assert "Figure 1 Panel C shows the same full source-specific overlap matrix" in figure_s6_spec
+    assert "Figure 2 remains limited to ABG/VBG/ICD overlapping ascertainment indicators" in figure_s6_spec
+    assert 'SOURCE_OVERLAP_SOURCES = ["ABG", "VBG", "ICD", "UNKNOWN"]' in analysis_text
+    assert '"UNKNOWN": "unknown_hypercap_threshold"' in source_overlap_helpers
+    assert 'matrix_set_order = list(SOURCE_OVERLAP_MATRIX_COLUMNS.values())' in figure_s6_block
+    assert "UNKNOWN-positive" in figure_s6_block
+    assert "UNKNOWN gas" in figure_s6_block
+    assert "unknown_intersection_total" in figure_s6_block
     assert "Indeterminate_Source_Audit" in figure_s6_block
     assert "Intersection_Counts" in figure_s6_block
     assert "Set_Sizes" in figure_s6_block
-    assert '["count", "intersection_label"]' in figure_s6_block
-    assert "ascending=[False, True]" in figure_s6_block
+    assert "Indeterminate gas only" in source_overlap_helpers
+    assert "ICD + no gas" in source_overlap_helpers
+    assert "ICD only" not in source_overlap_helpers
+    assert "ascending=[False, True]" in source_overlap_helpers
     assert "format_figure_n(count)" in figure_s6_block
     assert "icd_intersection_total" in figure_s6_block
     assert "figure1_source_counts[\"ICD-positive\"]" in figure_s6_block
-    assert "Ascertainment indicator intersection" in figure_s6_block
-    assert "UNKNOWN" not in figure_s6_block
+    assert "source-specific intersections sum" in figure_s6_block
+    assert "Source-specific ascertainment intersection" in figure_s6_block
 
     assert "blood-gas documentation" in figure_s7_spec
     assert "diagnostic delay" in figure_s7_spec
@@ -938,15 +949,18 @@ def test_figure_1_uses_current_manuscript_labels_and_counts() -> None:
     figure1_text = figure1_helpers + figure1_generation
 
     assert "Analytic cohort, ascertainment definitions, and chief-concern NLP classification" in analysis_text
-    assert "Three-panel figure showing mutually exclusive ascertainment strata" in analysis_text
+    assert "Three-panel figure showing mutually exclusive ascertainment strata, source-specific ABG/VBG/ICD/UNKNOWN-source gas overlap" in analysis_text
     assert "A. Cohort and ascertainment strata" in figure1_text
     assert "B. Chief-concern NLP classification" in figure1_text
-    assert "C. Overlapping ascertainment indicators" in figure1_text
+    assert "C. Source-specific ascertainment overlap" in figure1_text
     assert "Admissions linked to ED presentation\\nwith nonmissing triage chief complaint" in figure1_text
     assert "Overlapping ascertainment indicators" in figure1_text
     assert "Mutually exclusive ascertainment strata" in figure1_text
     assert "draw_compact_ascertainment_indicator_overlap_panel" in figure1_text
-    assert "ABG, VBG, and ICD indicators are overlapping" in figure1_text
+    assert "Panel C shows source-specific overlap across ABG, VBG, ICD, and UNKNOWN-source gas" in figure1_text
+    assert "Indeterminate gas only" in figure1_text
+    assert "ICD + no gas" in figure1_text
+    assert "UNKNOWN-positive" in figure1_text
     assert "Both ICD and blood-gas criteria" in analysis_text
     assert "Both ICD + gas" in figure1_text
     assert "Triage chief\\ncomplaint field" in figure1_text
@@ -965,6 +979,7 @@ def test_figure_1_uses_current_manuscript_labels_and_counts() -> None:
     assert '"ABG criteria met": 7454' in analysis_text
     assert '"VBG criteria met": 6388' in analysis_text
     assert '"ICD-positive": 1983' in analysis_text
+    assert '"UNKNOWN-source gas": 1346' in analysis_text
     assert '"count_scope": count_scope' in analysis_text
     assert '"cohort_frame"' in analysis_text
     assert '"mutually_exclusive_ascertainment_stratum"' in analysis_text
@@ -1134,16 +1149,19 @@ def test_ascertainment_indicator_and_stratum_vocabulary_is_documented() -> None:
     mapping_text = (WORK_DIR / "docs" / "MANUSCRIPT_MAPPING.md").read_text()
 
     assert "**Ascertainment indicators** are overlapping ABG-positive, VBG-positive, and ICD-positive indicators" in spec_text
+    assert "**Source-specific overlap displays** are reconciliation views across ABG, VBG, ICD, and UNKNOWN-source gas" in spec_text
+    assert "Figure 1 Panel C and Figure S6 show all nonzero source-specific intersections" in spec_text
     assert "**Ascertainment strata** are mutually exclusive gas-only, ICD-only, and both ICD + gas groups" in spec_text
     assert "Figure 1 Panel C" in spec_text
-    assert "Figure 2 use this overlapping indicator vocabulary" in spec_text
+    assert "Figure 2 uses this overlapping indicator vocabulary" in spec_text
 
     assert "combined three-panel analytic cohort construction" in decisions_text
-    assert "overlapping ascertainment-indicator matrix" in decisions_text
+    assert "source-specific ABG/VBG/ICD/UNKNOWN-source gas overlap matrix" in decisions_text
     assert "Figure 2.png/.xlsx` = grouped presenting category prevalence across overlapping ascertainment indicators" in decisions_text
     assert "expanded ascertainment-overlap figure remains supplement-only as `Figure S6`" in decisions_text
+    assert "full source-specific ABG/VBG/ICD/UNKNOWN-source gas overlap" in decisions_text
 
-    assert "Figure 1: analytic cohort construction, ascertainment definitions, and NLP workflow" in mapping_text
+    assert "Figure 1: analytic cohort construction, source-specific overlap, ascertainment definitions, and NLP workflow" in mapping_text
     assert "Figure 2: presenting-concern prevalence by overlapping ascertainment indicator" in mapping_text
     assert "Figure S1-S9" in mapping_text
     assert "Figure S1-S9.pdf/.png" in spec_text

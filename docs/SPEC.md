@@ -52,7 +52,8 @@ Generated outputs are local/private by default:
 
 Manuscript-facing ascertainment terminology is fixed:
 
-- **Ascertainment indicators** are overlapping ABG-positive, VBG-positive, and ICD-positive indicators; admissions may satisfy more than one indicator. Figure 1 Panel C and Figure 2 use this overlapping indicator vocabulary.
+- **Ascertainment indicators** are overlapping ABG-positive, VBG-positive, and ICD-positive indicators; admissions may satisfy more than one indicator. Figure 2 uses this overlapping indicator vocabulary.
+- **Source-specific overlap displays** are reconciliation views across ABG, VBG, ICD, and UNKNOWN-source gas. Figure 1 Panel C and Figure S6 show all nonzero source-specific intersections, including indeterminate-source gas, and their counts sum to the analytic cohort.
 - **Ascertainment strata** are mutually exclusive gas-only, ICD-only, and both ICD + gas groups. Figure 1 Panel A and Table 1 use this strata vocabulary.
 
 ## Notebook Runtime Contract

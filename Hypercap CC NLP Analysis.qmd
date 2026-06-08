@@ -2099,8 +2099,8 @@ SECONDARY_OUTPUT_FILENAMES = {
 FIGURE_SPECS = {
     "figure_1_pdf": {
         "title": "Analytic cohort, ascertainment definitions, and chief-concern NLP classification",
-        "caption_stub": "Three-panel figure showing mutually exclusive ascertainment strata, overlapping ascertainment indicators, and the chief-concern NLP workflow used for multi-label NHAMCS RFV assignment.",
-        "comparison_statement": "Shows how ED-linked admissions enter mutually exclusive ascertainment strata, how ABG/VBG/ICD indicators overlap, and how triage chief complaint text is transformed into multi-label NHAMCS RFV assignments.",
+        "caption_stub": "Three-panel figure showing mutually exclusive ascertainment strata, source-specific ABG/VBG/ICD/UNKNOWN-source gas overlap, and the chief-concern NLP workflow used for multi-label NHAMCS RFV assignment.",
+        "comparison_statement": "Shows how ED-linked admissions enter mutually exclusive ascertainment strata, how ABG/VBG/ICD/UNKNOWN-source gas ascertainment sources overlap, and how triage chief complaint text is transformed into multi-label NHAMCS RFV assignments.",
         "order_rule": "workflow order",
         "export_type": "double-column",
     },
@@ -2161,9 +2161,9 @@ FIGURE_SPECS = {
         "export_type": "single-column",
     },
     "figure_s6_png": {
-        "title": "Expanded ascertainment-indicator overlap across ABG, VBG, and ICD",
-        "caption_stub": "Expanded supporting summary of ordered intersection counts across overlapping ABG-positive, VBG-positive, and ICD-positive ascertainment indicators, displayed as a compact matrix-plus-bar summary. Figure 1 Panel C shows a main-text compact version, and Figure 2 uses these overlapping indicators.",
-        "comparison_statement": "Shows where analytic cohort membership overlaps or remains unique across blood-gas and ICD ascertainment indicators.",
+        "title": "Expanded source-specific ascertainment overlap across ABG, VBG, ICD, and UNKNOWN-source gas",
+        "caption_stub": "Expanded supporting summary of ordered intersection counts across ABG, VBG, ICD, and UNKNOWN-source gas ascertainment sources, displayed as a compact matrix-plus-bar summary. Figure 1 Panel C shows the same full source-specific overlap matrix in main-text form, while Figure 2 remains limited to ABG/VBG/ICD overlapping ascertainment indicators.",
+        "comparison_statement": "Shows where analytic cohort membership overlaps or remains unique across blood-gas source and ICD ascertainment sources, including UNKNOWN-source gas.",
         "order_rule": "ordered by overlap count",
         "export_type": "double-column",
     },
@@ -2210,9 +2210,9 @@ FIGURE_SPECS = {
         "export_type": "double-column",
     },
     "ascertainment_overlap_plot": {
-        "title": "Expanded ascertainment-indicator overlap across ABG, VBG, and ICD",
-        "caption_stub": "Expanded supporting summary of ordered intersection counts across overlapping ABG-positive, VBG-positive, and ICD-positive ascertainment indicators, displayed as a compact matrix-plus-bar summary. Figure 1 Panel C shows a main-text compact version, and Figure 2 uses these overlapping indicators.",
-        "comparison_statement": "Shows where analytic cohort membership overlaps or remains unique across blood-gas and ICD ascertainment indicators.",
+        "title": "Expanded source-specific ascertainment overlap across ABG, VBG, ICD, and UNKNOWN-source gas",
+        "caption_stub": "Expanded supporting summary of ordered intersection counts across ABG, VBG, ICD, and UNKNOWN-source gas ascertainment sources, displayed as a compact matrix-plus-bar summary. Figure 1 Panel C shows the same full source-specific overlap matrix in main-text form, while Figure 2 remains limited to ABG/VBG/ICD overlapping ascertainment indicators.",
+        "comparison_statement": "Shows where analytic cohort membership overlaps or remains unique across blood-gas source and ICD ascertainment sources, including UNKNOWN-source gas.",
         "order_rule": "ordered by overlap count",
         "export_type": "double-column",
     },
@@ -2795,15 +2795,94 @@ def draw_ascertainment_flow_panel(
     ax.text(8.0, 2.9, f"ICD-only\nn={format_figure_n(icd_only_n)}", ha="center", va="center", bbox=route_box, fontsize=10.0)
 
 
+SOURCE_OVERLAP_SOURCES = ["ABG", "VBG", "ICD", "UNKNOWN"]
+SOURCE_OVERLAP_FLAG_COLUMNS = {
+    "ABG": "abg_hypercap_threshold",
+    "VBG": "vbg_hypercap_threshold",
+    "ICD": "any_hypercap_icd",
+    "UNKNOWN": "unknown_hypercap_threshold",
+}
+SOURCE_OVERLAP_MATRIX_COLUMNS = {
+    "ABG": "ABG-positive",
+    "VBG": "VBG-positive",
+    "ICD": "ICD-positive",
+    "UNKNOWN": "UNKNOWN-positive",
+}
+SOURCE_OVERLAP_DISPLAY_LABELS = {
+    "ABG": "ABG",
+    "VBG": "VBG",
+    "ICD": "ICD",
+    "UNKNOWN": "UNKNOWN gas",
+}
+
+
+def format_source_specific_overlap_label(row: pd.Series) -> str:
+    """Return a non-ambiguous label for one source-specific overlap row."""
+
+    active_sources = [source for source in SOURCE_OVERLAP_SOURCES if bool(row[source])]
+    if active_sources == ["ICD"]:
+        return "ICD + no gas"
+    if active_sources == ["UNKNOWN"]:
+        return "Indeterminate gas only"
+    if len(active_sources) == 1:
+        return f"{SOURCE_OVERLAP_DISPLAY_LABELS[active_sources[0]]} only"
+    if not active_sources:
+        return "No qualifying source"
+    return " + ".join(SOURCE_OVERLAP_DISPLAY_LABELS[source] for source in active_sources)
+
+
+def build_source_specific_overlap_intersections(cohort_df: pd.DataFrame) -> pd.DataFrame:
+    """Build ABG/VBG/ICD/UNKNOWN-source gas intersections for display and export."""
+
+    flags = pd.DataFrame(
+        {
+            source: to_binary_flag(maybe_series(cohort_df, [flag_column])).astype(bool)
+            for source, flag_column in SOURCE_OVERLAP_FLAG_COLUMNS.items()
+        },
+        index=cohort_df.index,
+    )
+    intersections = (
+        flags.groupby(SOURCE_OVERLAP_SOURCES, dropna=False)
+        .size()
+        .reset_index(name="Count")
+        .loc[lambda data: data["Count"].gt(0)]
+        .sort_values(["Count"], ascending=[False])
+        .reset_index(drop=True)
+    )
+    intersections["intersection_label"] = intersections.apply(format_source_specific_overlap_label, axis=1)
+    intersections = intersections.sort_values(["Count", "intersection_label"], ascending=[False, True]).reset_index(drop=True)
+    intersections["sort_rank"] = np.arange(1, len(intersections) + 1)
+    intersections["count"] = intersections["Count"].astype(int)
+    for source, matrix_column in SOURCE_OVERLAP_MATRIX_COLUMNS.items():
+        intersections[matrix_column] = intersections[source].astype(int)
+    return intersections
+
+
+def build_source_specific_overlap_set_sizes(intersections: pd.DataFrame) -> pd.DataFrame:
+    """Summarize displayed source-set sizes from the source-specific intersection table."""
+
+    return pd.DataFrame(
+        [
+            {
+                "source": source,
+                "set_label": SOURCE_OVERLAP_MATRIX_COLUMNS[source],
+                "display_label": SOURCE_OVERLAP_DISPLAY_LABELS[source],
+                "count": int(intersections.loc[intersections[source].astype(bool), "Count"].sum()),
+            }
+            for source in SOURCE_OVERLAP_SOURCES
+        ]
+    )
+
+
 def draw_compact_ascertainment_indicator_overlap_panel(
     ax: plt.Axes,
     overlap_display: pd.DataFrame,
     *,
     panel_title: str | None = None,
 ) -> None:
-    """Draw a compact main-text matrix for overlapping ABG/VBG/ICD indicators."""
+    """Draw a compact main-text matrix for source-specific ABG/VBG/ICD/UNKNOWN overlap."""
 
-    required_columns = ["intersection_label", "count", "ABG-positive", "VBG-positive", "ICD-positive"]
+    required_columns = ["intersection_label", "count", *SOURCE_OVERLAP_MATRIX_COLUMNS.values()]
     missing_columns = [column for column in required_columns if column not in overlap_display.columns]
     if missing_columns:
         raise ValueError(f"Ascertainment overlap display is missing columns: {missing_columns}")
@@ -2812,68 +2891,66 @@ def draw_compact_ascertainment_indicator_overlap_panel(
     if display_df.empty:
         raise ValueError("Ascertainment overlap display has no positive-count intersections.")
 
-    display_df = display_df.head(7)
     n_rows = len(display_df)
     y_positions = np.arange(n_rows - 1, -1, -1)
-    max_count = max(float(display_df["count"].max()), 1.0)
-    label_x = 0.03
-    bar_x0 = 0.34
-    bar_x1 = 0.68
-    count_x = 0.705
-    dot_x = {"ABG-positive": 0.82, "VBG-positive": 0.89, "ICD-positive": 0.96}
+    label_x = 0.025
+    count_x = 0.565
+    dot_x = {
+        "ABG-positive": 0.70,
+        "VBG-positive": 0.785,
+        "ICD-positive": 0.865,
+        "UNKNOWN-positive": 0.955,
+    }
+    dot_headers = {
+        "ABG-positive": "ABG",
+        "VBG-positive": "VBG",
+        "ICD-positive": "ICD",
+        "UNKNOWN-positive": "UNKNOWN\ngas",
+    }
 
     ax.set_xlim(0, 1)
-    ax.set_ylim(-1.25, n_rows + 1.1)
+    ax.set_ylim(-1.45, n_rows + 2.0)
     ax.axis("off")
     strip_style = dict(boxstyle="round,pad=0.24", facecolor="#f2f4f7", edgecolor=ANALYSIS_COLORS["light"], lw=0.9)
     if panel_title:
-        ax.text(0.02, 0.98, panel_title, transform=ax.transAxes, fontsize=12.5, fontweight="bold", va="top", bbox=strip_style)
+        ax.text(0.02, n_rows + 1.45, panel_title, fontsize=12.5, fontweight="bold", va="center", bbox=strip_style)
 
-    header_y = n_rows + 0.25
-    ax.text(label_x, header_y, "Intersection", ha="left", va="center", fontsize=9.0, fontweight="bold")
-    ax.text(bar_x0, header_y, "Admissions", ha="left", va="center", fontsize=9.0, fontweight="bold")
+    header_y = n_rows + 0.55
+    ax.text(label_x, header_y, "Source-specific intersection", ha="left", va="center", fontsize=8.4, fontweight="bold")
+    ax.text(count_x, header_y, "Admissions", ha="left", va="center", fontsize=8.4, fontweight="bold")
     for indicator, x_position in dot_x.items():
         ax.text(
             x_position,
             header_y,
-            indicator.replace("-positive", ""),
+            dot_headers[indicator],
             ha="center",
             va="center",
-            fontsize=8.7,
+            fontsize=7.2,
             fontweight="bold",
         )
 
     for y_position, (_, row) in zip(y_positions, display_df.iterrows(), strict=False):
         ax.hlines(y_position - 0.46, 0.02, 0.985, color="#edf0f4", lw=0.75)
-        ax.text(label_x, y_position, str(row["intersection_label"]), ha="left", va="center", fontsize=9.0)
-        bar_width = (float(row["count"]) / max_count) * (bar_x1 - bar_x0)
-        ax.barh(
-            y_position,
-            bar_width,
-            left=bar_x0,
-            height=0.36,
-            color=ANALYSIS_COLORS["neutral_light"],
-            edgecolor="white",
-        )
-        ax.text(count_x, y_position, format_figure_n(row["count"]), ha="left", va="center", fontsize=8.8)
+        ax.text(label_x, y_position, str(row["intersection_label"]), ha="left", va="center", fontsize=7.8)
+        ax.text(count_x, y_position, format_figure_n(row["count"]), ha="left", va="center", fontsize=7.8)
         for indicator, x_position in dot_x.items():
             active = bool(row[indicator])
             ax.scatter(
                 x_position,
                 y_position,
-                s=74 if active else 30,
+                s=56 if active else 24,
                 color=ANALYSIS_COLORS["dark"] if active else "#d9dde3",
                 edgecolor=ANALYSIS_COLORS["dark"] if active else "#d9dde3",
                 marker="o",
                 zorder=3,
             )
     ax.text(
-        0.03,
-        -0.95,
-        "ABG, VBG, and ICD indicators are overlapping; gas-only, ICD-only, and both ICD + gas are separate mutually exclusive strata.",
+        0.025,
+        -1.08,
+        "Panel C shows source-specific overlap across ABG, VBG, ICD, and UNKNOWN-source gas; counts sum to the analytic cohort.",
         ha="left",
         va="center",
-        fontsize=8.5,
+        fontsize=7.6,
         color=ANALYSIS_COLORS["mid"],
     )
 
@@ -6937,6 +7014,7 @@ figure1_gas_flag = to_binary_flag(analytic_df["pco2_threshold_any"]).eq(1)
 figure1_icd_flag = to_binary_flag(analytic_df["any_hypercap_icd"]).eq(1)
 figure1_abg_flag = to_binary_flag(analytic_df["abg_hypercap_threshold"]).eq(1)
 figure1_vbg_flag = to_binary_flag(analytic_df["vbg_hypercap_threshold"]).eq(1)
+figure1_unknown_flag = to_binary_flag(maybe_series(analytic_df, ["unknown_hypercap_threshold"])).eq(1)
 
 figure1_route_counts = {
     "Gas-only": int((figure1_gas_flag & ~figure1_icd_flag).sum()),
@@ -6948,83 +7026,57 @@ figure1_source_counts = {
     "ABG criteria met": int(figure1_abg_flag.sum()),
     "VBG criteria met": int(figure1_vbg_flag.sum()),
     "ICD-positive": int(figure1_icd_flag.sum()),
+    "UNKNOWN-source gas": int(figure1_unknown_flag.sum()),
 }
-abg_idx = set(analytic_df.index[figure1_abg_flag])
-vbg_idx = set(analytic_df.index[figure1_vbg_flag])
-icd_idx = set(analytic_df.index[figure1_icd_flag])
-ascertainment_overlap_intersections = pd.DataFrame(
-    [
-        {
-            "intersection_label": "ABG only",
-            "ABG-positive": 1,
-            "VBG-positive": 0,
-            "ICD-positive": 0,
-            "count": len(abg_idx - vbg_idx - icd_idx),
-        },
-        {
-            "intersection_label": "VBG only",
-            "ABG-positive": 0,
-            "VBG-positive": 1,
-            "ICD-positive": 0,
-            "count": len(vbg_idx - abg_idx - icd_idx),
-        },
-        {
-            "intersection_label": "ICD only",
-            "ABG-positive": 0,
-            "VBG-positive": 0,
-            "ICD-positive": 1,
-            "count": len(icd_idx - abg_idx - vbg_idx),
-        },
-        {
-            "intersection_label": "ABG + VBG",
-            "ABG-positive": 1,
-            "VBG-positive": 1,
-            "ICD-positive": 0,
-            "count": len((abg_idx & vbg_idx) - icd_idx),
-        },
-        {
-            "intersection_label": "ABG + ICD",
-            "ABG-positive": 1,
-            "VBG-positive": 0,
-            "ICD-positive": 1,
-            "count": len((abg_idx & icd_idx) - vbg_idx),
-        },
-        {
-            "intersection_label": "VBG + ICD",
-            "ABG-positive": 0,
-            "VBG-positive": 1,
-            "ICD-positive": 1,
-            "count": len((vbg_idx & icd_idx) - abg_idx),
-        },
-        {
-            "intersection_label": "ABG + VBG + ICD",
-            "ABG-positive": 1,
-            "VBG-positive": 1,
-            "ICD-positive": 1,
-            "count": len(abg_idx & vbg_idx & icd_idx),
-        },
-    ]
+ascertainment_overlap_intersections = build_source_specific_overlap_intersections(analytic_df)
+ascertainment_overlap_set_sizes = build_source_specific_overlap_set_sizes(ascertainment_overlap_intersections)
+overlap_total = int(ascertainment_overlap_intersections["Count"].sum())
+if overlap_total != int(len(analytic_df)):
+    raise AssertionError(
+        f"Figure 1 Panel C source-specific overlap counts sum to {overlap_total:,}, "
+        f"not analytic cohort N={len(analytic_df):,}."
+    )
+overlap_labels = set(ascertainment_overlap_intersections["intersection_label"].astype(str))
+if "ICD only" in overlap_labels:
+    raise AssertionError("Figure 1 Panel C source-specific overlap labels must not use ambiguous 'ICD only'.")
+if "ICD + no gas" not in overlap_labels:
+    raise AssertionError("Figure 1 Panel C source-specific overlap labels are missing 'ICD + no gas'.")
+if "Indeterminate gas only" not in overlap_labels:
+    raise AssertionError("Figure 1 Panel C source-specific overlap labels are missing 'Indeterminate gas only'.")
+for source_label, expected_count in {
+    "ABG-positive": figure1_source_counts["ABG criteria met"],
+    "VBG-positive": figure1_source_counts["VBG criteria met"],
+    "ICD-positive": figure1_source_counts["ICD-positive"],
+    "UNKNOWN-positive": figure1_source_counts["UNKNOWN-source gas"],
+}.items():
+    observed_count = int(
+        ascertainment_overlap_set_sizes.loc[
+            ascertainment_overlap_set_sizes["set_label"].eq(source_label),
+            "count",
+        ].iloc[0]
+    )
+    if observed_count != expected_count:
+        raise AssertionError(
+            f"Figure 1 Panel C {source_label} set size drifted: observed {observed_count}; expected {expected_count}."
+        )
+icd_no_gas_count = int(
+    ascertainment_overlap_intersections.loc[
+        ascertainment_overlap_intersections["intersection_label"].eq("ICD + no gas"),
+        "Count",
+    ].sum()
 )
-ascertainment_overlap_intersections = ascertainment_overlap_intersections.sort_values(
-    ["count", "intersection_label"],
-    ascending=[False, True],
-).reset_index(drop=True)
-ascertainment_overlap_intersections["sort_rank"] = np.arange(1, len(ascertainment_overlap_intersections) + 1)
-ascertainment_overlap_set_sizes = pd.DataFrame(
-    [
-        {"set_label": "ABG-positive", "count": len(abg_idx)},
-        {"set_label": "VBG-positive", "count": len(vbg_idx)},
-        {"set_label": "ICD-positive", "count": len(icd_idx)},
-    ]
-)
-unknown_gas_count = int(to_binary_flag(maybe_series(analytic_df, ["unknown_hypercap_threshold"])).sum())
+if icd_no_gas_count != figure1_route_counts["ICD-only"]:
+    raise AssertionError(
+        f"Figure 1 Panel C ICD + no gas count is {icd_no_gas_count}; expected ICD-only stratum N={figure1_route_counts['ICD-only']}."
+    )
+unknown_gas_count = figure1_source_counts["UNKNOWN-source gas"]
 ascertainment_overlap_indeterminate_audit = pd.DataFrame(
     [
         {
             "audit_item": "indeterminate_or_unknown_gas_positive",
             "count": unknown_gas_count,
-            "plotted": False,
-            "note": "Excluded from plotted ABG/VBG/ICD indicator intersections so Figure 1 Panel C, Figure 2, and Figure S6 use the same overlapping ascertainment indicators.",
+            "plotted": True,
+            "note": "Shown as UNKNOWN-source gas in Figure 1 Panel C and Figure S6; Figure 2 remains limited to ABG/VBG/ICD overlapping ascertainment indicators.",
         }
     ]
 )
@@ -7037,6 +7089,7 @@ figure1_expected_counts = {
     "ABG criteria met": 7454,
     "VBG criteria met": 6388,
     "ICD-positive": 1983,
+    "UNKNOWN-source gas": 1346,
 }
 figure1_route_df_counts = {
     "Gas-only": int(len(gas_only_df)),
@@ -7153,12 +7206,12 @@ ascertainment_flow_workbook_path = write_excel_export(
 )
 note_export(ascertainment_flow_workbook_path)
 
-fig = plt.figure(figsize=get_figure_size("figure_1_pdf", height=8.4))
+fig = plt.figure(figsize=get_figure_size("figure_1_pdf", height=9.4))
 figure1_grid = fig.add_gridspec(
     2,
     2,
-    height_ratios=[1.42, 0.92],
-    hspace=0.18,
+    height_ratios=[1.12, 1.08],
+    hspace=0.14,
     wspace=0.08,
 )
 flow_ax = fig.add_subplot(figure1_grid[0, 0])
@@ -7185,7 +7238,7 @@ draw_nlp_workflow_panel(
 draw_compact_ascertainment_indicator_overlap_panel(
     overlap_ax,
     ascertainment_overlap_intersections,
-    panel_title="C. Overlapping ascertainment indicators",
+    panel_title="C. Source-specific ascertainment overlap",
 )
 fig.subplots_adjust(left=0.035, right=0.99, top=0.975, bottom=0.04)
 figure_1_pdf_path = save_and_render_figure(fig, "figure_1_pdf")
@@ -7492,89 +7545,11 @@ recognition_by_pco2_plot_path = render_recognition_by_pco2_heatmap(
 note_export(recognition_by_pco2_plot_path)
 note_export(recognition_by_pco2_workbook_path)
 
-abg_idx = set(analytic_df.index[to_binary_flag(analytic_df["abg_hypercap_threshold"]).eq(1)])
-vbg_idx = set(analytic_df.index[to_binary_flag(analytic_df["vbg_hypercap_threshold"]).eq(1)])
-icd_idx = set(analytic_df.index[to_binary_flag(analytic_df["any_hypercap_icd"]).eq(1)])
-ascertainment_overlap_intersections = pd.DataFrame(
-    [
-        {
-            "intersection_label": "ABG only",
-            "ABG-positive": 1,
-            "VBG-positive": 0,
-            "ICD-positive": 0,
-            "count": len(abg_idx - vbg_idx - icd_idx),
-        },
-        {
-            "intersection_label": "VBG only",
-            "ABG-positive": 0,
-            "VBG-positive": 1,
-            "ICD-positive": 0,
-            "count": len(vbg_idx - abg_idx - icd_idx),
-        },
-        {
-            "intersection_label": "ICD only",
-            "ABG-positive": 0,
-            "VBG-positive": 0,
-            "ICD-positive": 1,
-            "count": len(icd_idx - abg_idx - vbg_idx),
-        },
-        {
-            "intersection_label": "ABG + VBG",
-            "ABG-positive": 1,
-            "VBG-positive": 1,
-            "ICD-positive": 0,
-            "count": len((abg_idx & vbg_idx) - icd_idx),
-        },
-        {
-            "intersection_label": "ABG + ICD",
-            "ABG-positive": 1,
-            "VBG-positive": 0,
-            "ICD-positive": 1,
-            "count": len((abg_idx & icd_idx) - vbg_idx),
-        },
-        {
-            "intersection_label": "VBG + ICD",
-            "ABG-positive": 0,
-            "VBG-positive": 1,
-            "ICD-positive": 1,
-            "count": len((vbg_idx & icd_idx) - abg_idx),
-        },
-        {
-            "intersection_label": "ABG + VBG + ICD",
-            "ABG-positive": 1,
-            "VBG-positive": 1,
-            "ICD-positive": 1,
-            "count": len(abg_idx & vbg_idx & icd_idx),
-        },
-    ]
-)
-ascertainment_overlap_intersections = ascertainment_overlap_intersections.sort_values(
-    ["count", "intersection_label"],
-    ascending=[False, True],
-).reset_index(drop=True)
-ascertainment_overlap_intersections["sort_rank"] = np.arange(1, len(ascertainment_overlap_intersections) + 1)
-ascertainment_overlap_set_sizes = pd.DataFrame(
-    [
-        {"set_label": "ABG-positive", "count": len(abg_idx)},
-        {"set_label": "VBG-positive", "count": len(vbg_idx)},
-        {"set_label": "ICD-positive", "count": len(icd_idx)},
-    ]
-)
-unknown_gas_count = int(to_binary_flag(maybe_series(analytic_df, ["unknown_hypercap_threshold"])).sum())
-ascertainment_overlap_indeterminate_audit = pd.DataFrame(
-    [
-        {
-            "audit_item": "indeterminate_or_unknown_gas_positive",
-            "count": unknown_gas_count,
-            "plotted": False,
-            "note": "Excluded from plotted ABG/VBG/ICD indicator intersections so Figure 1 Panel C, Figure 2, and Figure S6 use the same overlapping ascertainment indicators.",
-        }
-    ]
-)
 for source_label, expected_count in {
     "ABG-positive": figure1_source_counts["ABG criteria met"],
     "VBG-positive": figure1_source_counts["VBG criteria met"],
     "ICD-positive": figure1_source_counts["ICD-positive"],
+    "UNKNOWN-positive": figure1_source_counts["UNKNOWN-source gas"],
 }.items():
     observed_count = int(
         ascertainment_overlap_set_sizes.loc[
@@ -7597,6 +7572,23 @@ if icd_intersection_total != figure1_source_counts["ICD-positive"]:
         f"Figure S6 ICD-containing intersections sum to {icd_intersection_total}; "
         f"expected ICD-positive N={figure1_source_counts['ICD-positive']}."
     )
+unknown_intersection_total = int(
+    ascertainment_overlap_intersections.loc[
+        ascertainment_overlap_intersections["UNKNOWN-positive"].eq(1),
+        "count",
+    ].sum()
+)
+if unknown_intersection_total != figure1_source_counts["UNKNOWN-source gas"]:
+    raise AssertionError(
+        f"Figure S6 UNKNOWN-source gas intersections sum to {unknown_intersection_total}; "
+        f"expected UNKNOWN-source gas N={figure1_source_counts['UNKNOWN-source gas']}."
+    )
+figure_s6_intersection_total = int(ascertainment_overlap_intersections["Count"].sum())
+if figure_s6_intersection_total != int(len(analytic_df)):
+    raise AssertionError(
+        f"Figure S6 source-specific intersections sum to {figure_s6_intersection_total}; "
+        f"expected analytic cohort N={len(analytic_df)}."
+    )
 ascertainment_overlap_workbook_path = write_excel_export(
     "ascertainment_overlap_workbook",
     {
@@ -7608,13 +7600,13 @@ ascertainment_overlap_workbook_path = write_excel_export(
 )
 
 overlap_display = ascertainment_overlap_intersections.copy()
-overlap_matrix = overlap_display[["ABG-positive", "VBG-positive", "ICD-positive"]].astype(bool)
-fig = plt.figure(figsize=get_figure_size("ascertainment_overlap_plot", height=6.7))
+overlap_matrix = overlap_display[list(SOURCE_OVERLAP_MATRIX_COLUMNS.values())].astype(bool)
+fig = plt.figure(figsize=get_figure_size("ascertainment_overlap_plot", height=7.8))
 grid = fig.add_gridspec(
     2,
     2,
-    width_ratios=[1.15, 5.0],
-    height_ratios=[3.2, 1.55],
+    width_ratios=[1.30, 5.35],
+    height_ratios=[3.35, 2.05],
     hspace=0.06,
     wspace=0.08,
 )
@@ -7624,32 +7616,30 @@ set_ax = fig.add_subplot(grid[1, 0])
 matrix_ax = fig.add_subplot(grid[1, 1], sharex=bar_ax)
 blank_ax.axis("off")
 x_positions = np.arange(len(overlap_display))
-bar_colors = [
-    ANALYSIS_COLORS["dark"] if label == "ICD only" else ANALYSIS_COLORS["neutral"]
-    for label in overlap_display["intersection_label"]
-]
+bar_colors = [ANALYSIS_COLORS["neutral"] for _ in overlap_display["intersection_label"]]
 bars = bar_ax.bar(x_positions, overlap_display["count"], color=bar_colors, edgecolor="white", width=0.72)
+bar_label_offset = max(float(overlap_display["count"].max()) * 0.012, 8.0)
 for bar, count in zip(bars, overlap_display["count"], strict=False):
     bar_ax.text(
         bar.get_x() + bar.get_width() / 2,
-        bar.get_height() + 18,
+        bar.get_height() + bar_label_offset,
         format_figure_n(count),
         ha="center",
         va="bottom",
-        fontsize=FIGURE_STYLE["annotation_size"],
+        fontsize=7.2,
         fontweight="bold",
     )
 bar_ax.set_ylabel("Intersection count")
 bar_ax.tick_params(axis="x", labelbottom=False, length=0)
 finish_axis(bar_ax, x_grid=False, y_grid=True)
 
-matrix_set_order = ["ABG-positive", "VBG-positive", "ICD-positive"]
+matrix_set_order = list(SOURCE_OVERLAP_MATRIX_COLUMNS.values())
 matrix_y_positions = np.arange(len(matrix_set_order))
 matrix_ax.set_ylim(len(matrix_set_order) - 0.5, -0.5)
 matrix_ax.set_yticks(matrix_y_positions)
 matrix_ax.set_yticklabels([])
 matrix_ax.set_xticks(x_positions)
-matrix_ax.set_xticklabels(overlap_display["intersection_label"], rotation=0)
+matrix_ax.set_xticklabels(overlap_display["intersection_label"], rotation=38, ha="right", rotation_mode="anchor")
 for row_idx, membership in enumerate(matrix_set_order):
     matrix_ax.hlines(row_idx, x_positions.min() - 0.4, x_positions.max() + 0.4, color="#e5e7eb", linewidth=0.8)
     for col_idx, active in enumerate(overlap_matrix[membership]):
@@ -7667,34 +7657,34 @@ matrix_ax.spines["left"].set_visible(False)
 matrix_ax.spines["bottom"].set_color(ANALYSIS_COLORS["mid"])
 matrix_ax.tick_params(axis="x", length=0)
 matrix_ax.tick_params(axis="y", length=0)
-matrix_ax.set_xlabel("Ascertainment indicator intersection")
+matrix_ax.set_xlabel("Source-specific ascertainment intersection")
 
-set_size_order = ["ABG-positive", "VBG-positive", "ICD-positive"]
+set_size_order = list(SOURCE_OVERLAP_MATRIX_COLUMNS.values())
 set_size_values = [
     int(ascertainment_overlap_set_sizes.loc[ascertainment_overlap_set_sizes["set_label"].eq(set_label), "count"].iloc[0])
     for set_label in set_size_order
 ]
 set_ax.barh(matrix_y_positions, set_size_values, color=ANALYSIS_COLORS["neutral_light"], edgecolor="white", height=0.62)
-set_size_label_offset = max(set_size_values) * 0.04
+set_size_label_offset = max(set_size_values) * 0.025
 for row_idx, count in zip(matrix_y_positions, set_size_values, strict=False):
     set_ax.text(
-        max(count - set_size_label_offset, count * 0.55),
+        count + set_size_label_offset,
         row_idx,
         format_figure_n(count),
         va="center",
-        ha="right",
+        ha="left",
         fontsize=FIGURE_STYLE["annotation_size"],
         color=ANALYSIS_COLORS["dark"],
     )
 set_ax.set_ylim(len(set_size_order) - 0.5, -0.5)
 set_ax.set_yticks(matrix_y_positions)
-set_ax.set_yticklabels(["ABG-positive", "VBG-positive", "ICD-positive"])
+set_ax.set_yticklabels(["ABG", "VBG", "ICD", "UNKNOWN gas"])
 set_ax.set_xlabel("Set size")
-set_ax.set_xlim(0, max(set_size_values) * 1.05)
+set_ax.set_xlim(0, max(set_size_values) * 1.16)
 set_ax.tick_params(axis="y", length=0)
 set_ax.tick_params(axis="x", labelbottom=False, length=0)
 finish_axis(set_ax, x_grid=False, y_grid=False)
-fig.subplots_adjust(left=0.08, right=0.985, top=0.97, bottom=0.12)
+fig.subplots_adjust(left=0.085, right=0.985, top=0.97, bottom=0.22)
 ascertainment_overlap_plot_path = save_and_render_figure(fig, "ascertainment_overlap_plot", alias_keys=["figure_s6_png"])
 note_export(ascertainment_overlap_plot_path)
 note_export(ascertainment_overlap_workbook_path)
