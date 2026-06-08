@@ -147,7 +147,7 @@ A successful private run produces:
 - Four stage PDFs in `Results/YYYY-MM-DD/`
 - Canonical private handoff workbooks under `MIMIC tabular data/`
 - Manuscript tables and figures under `Results/YYYY-MM-DD/`
-- A curated `Results/YYYY-MM-DD/submission_assets/` bundle with main/supplement figures from `Figure 1` through `Figure S1` and later supplement items, tables, source-data workbooks, and `submission_asset_manifest.csv`
+- A curated `Results/YYYY-MM-DD/submission_assets/` bundle with main figures `Figure 1`-`Figure 4`, supplement figures `Figure S1`-`Figure S9`, tables, source-data workbooks, and `submission_assets_manifest.csv`
 
 For public release, generated manuscript outputs should be attached as GitHub/Zenodo release assets, not tracked in git.
 
@@ -158,7 +158,7 @@ The `v0.1.1` release refreshes metadata for the verified ATS abstract while pres
 | Manuscript item | Producing notebook | Output |
 |---|---|---|
 | Cohort construction and NLP workflow | `Hypercap CC NLP Analysis.qmd` | `Figure 1.pdf` |
-| Presenting-concern prevalence by ascertainment route | `Hypercap CC NLP Analysis.qmd` | `Figure 2.pdf`, `Figure 2.xlsx` |
+| Presenting-concern prevalence by overlapping ascertainment indicator | `Hypercap CC NLP Analysis.qmd` | `Figure 2.pdf`, `Figure 2.xlsx` |
 | Presenting-concern prevalence by age group | `Hypercap CC NLP Analysis.qmd` | `Figure 3.pdf`, `Figure 3.xlsx` |
 | Presenting-concern prevalence by acidemia severity | `Hypercap CC NLP Analysis.qmd` | `Figure 4.pdf`, `Figure 4.xlsx` |
 | Main baseline characteristics | `Hypercap CC NLP Analysis.qmd` | `Table 1.xlsx` |

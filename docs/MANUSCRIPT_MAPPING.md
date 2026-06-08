@@ -17,10 +17,10 @@ This document maps journal-submission outputs to their producing pipeline stages
 
 | Supplement item | Producing stage | Primary output |
 |---|---|---|
-| Figure S1-S8 | `Hypercap CC NLP Analysis.qmd` | `Results/YYYY-MM-DD/Figure S*.pdf`, selected `Figure S*.xlsx` |
+| Figure S1-S9 | `Hypercap CC NLP Analysis.qmd` | `Results/YYYY-MM-DD/Figure S*.pdf`, selected `Figure S*.xlsx` |
 | NLP classifier methods tables | `Hypercap CC NLP Classifier.qmd` | `Results/YYYY-MM-DD/NLP_Classifier_Supplement_Tables.xlsx` |
 | Rater benchmark methods tables | `Rater Agreement Analysis.qmd` | `Results/YYYY-MM-DD/Rater_Benchmark_Supplement_Tables.xlsx` |
-| Submission asset manifest | `Hypercap CC NLP Analysis.qmd` | `Results/YYYY-MM-DD/submission_assets/submission_asset_manifest.csv` |
+| Submission asset manifest | `Hypercap CC NLP Analysis.qmd` | `Results/YYYY-MM-DD/submission_assets/submission_assets_manifest.csv` |
 
 ## Release Asset Policy
 

@@ -342,6 +342,24 @@ def test_table_1_uses_explicit_summary_types_and_journal_formatting() -> None:
     assert 'output_row[f"{group_name} (N={len(frame)})"]' in analysis_text
     assert "format_table1_excel(table_1_xlsx_path)" in analysis_text
     assert "format_table1_excel(expanded_table_1_path)" in analysis_text
+    assert "table1_notes = pd.DataFrame" in analysis_text
+    assert '"Table_1": manuscript_table_1' in analysis_text
+    assert '"Baseline_Characteristics": expanded_table_1' in analysis_text
+    assert '"Notes": table1_notes' in analysis_text
+
+    table1_group_block = analysis_text.split("table1_group_frames = {", maxsplit=1)[1].split(
+        "}\n\ntable1_notes = pd.DataFrame",
+        maxsplit=1,
+    )[0]
+    assert '"Overall": analytic_df' in table1_group_block
+    assert '"Gas-only": gas_only_df' in table1_group_block
+    assert '"ICD-only": icd_only_df' in table1_group_block
+    assert '"Both ICD + gas": both_df' in table1_group_block
+    assert '"ICD-positive": icd_positive_df' not in table1_group_block
+    assert "mutually exclusive ascertainment strata" in analysis_text
+    assert "The unit of analysis is the hospital admission linked to an ED encounter" in analysis_text
+    assert "COPD = chronic obstructive pulmonary disease" in analysis_text
+    assert "IMV = invasive mechanical ventilation" in analysis_text
 
     assert 'f"Overall (N={len(analytic_df):,})"' not in analysis_text
     assert 'f"ICD-positive (N={len(icd_positive_df):,})"' not in analysis_text
@@ -370,6 +388,21 @@ def test_table_1_uses_explicit_summary_types_and_journal_formatting() -> None:
     assert 'table1_row("In-hospital death", "death_in_hosp", TABLE1_SUMMARY_COUNT_PCT)' in analysis_text
     assert 'table1_row("Hospital length of stay, days", "hosp_los_days", TABLE1_SUMMARY_MEDIAN_IQR)' in analysis_text
     assert 'table1_row("ICU length of stay, days", "icu_los_days", TABLE1_SUMMARY_MEDIAN_IQR)' in analysis_text
+
+
+def test_table_2_combined_view_exposes_bootstrap_confidence_intervals() -> None:
+    analysis_text = (WORK_DIR / "Hypercap CC NLP Analysis.qmd").read_text()
+    table2_block = analysis_text.split("rfv_counts_for_combined =", maxsplit=1)[1].split(
+        "table_2_xlsx_path = write_excel_export(",
+        maxsplit=1,
+    )[0]
+
+    assert 'rfv_counts[["RFV category", "Count", "Percent"]].copy()' in table2_block
+    assert 'rfv_counts_for_combined["95% CI"]' in table2_block
+    assert "row['ci_lower']" in table2_block
+    assert "row['ci_upper']" in table2_block
+    assert "The Combined_View and RFV_Prevalence sheets report patient-cluster bootstrap 95% confidence intervals" in analysis_text
+    assert '"RFV_Prevalence": rfv_counts' in analysis_text
 
 
 def test_submission_asset_bundle_has_clean_allowlist_and_manifest() -> None:
@@ -1044,6 +1077,11 @@ def test_prevalence_figure_helpers_render_ci_whiskers_when_supplied() -> None:
     assert "xerr=xerr" in figure2_helper
     assert "axis.errorbar(" in figure2_helper
     assert "fmt=\"none\"" in figure2_helper
+    assert "emphasize_ci: bool = False" in figure2_helper
+    assert "stem_linewidth = 1.2 if emphasize_ci else 2.2" in figure2_helper
+    assert "stem_alpha = 0.65 if emphasize_ci else 1.0" in figure2_helper
+    assert "elinewidth=1.4 if emphasize_ci else 0.9" in figure2_helper
+    assert "capsize=3.2 if emphasize_ci else 2.4" in figure2_helper
 
     for helper_body in (figure3_helper, figure4_helper):
         assert "ci_lower_df: pd.DataFrame | None = None" in helper_body
@@ -1086,6 +1124,7 @@ def test_figure_2_emphasizes_ascertainment_route_gradient() -> None:
     assert 'highlight_categories={"Respiratory"}' in figure2_block
     assert 'highlight_color=ANALYSIS_COLORS["accent"]' in figure2_block
     assert "x_max=55.0" in figure2_block
+    assert "emphasize_ci=True" in figure2_block
     assert "legend" not in figure2_block.lower()
 
 
@@ -1106,7 +1145,17 @@ def test_ascertainment_indicator_and_stratum_vocabulary_is_documented() -> None:
 
     assert "Figure 1: analytic cohort construction, ascertainment definitions, and NLP workflow" in mapping_text
     assert "Figure 2: presenting-concern prevalence by overlapping ascertainment indicator" in mapping_text
+    assert "Figure S1-S9" in mapping_text
+    assert "Figure S1-S9.pdf/.png" in spec_text
+    assert "selected `Figure S*.xlsx` workbooks" in spec_text
+    assert "Figure S1-S9.pdf/.xlsx" not in spec_text
+    assert "submission_assets_manifest.csv" in spec_text
+    assert "submission_assets_manifest.csv" in mapping_text
+    assert "submission_asset_manifest.csv" not in spec_text
+    assert "submission_asset_manifest.csv" not in mapping_text
     assert "Figure 2: presenting-concern prevalence by ascertainment route" not in mapping_text
+    assert "Figure S1-S8" not in spec_text
+    assert "Figure S1-S8" not in mapping_text
 
 
 def test_figure_3_uses_ordered_age_profile_small_multiples() -> None:
@@ -1503,6 +1552,11 @@ def test_makefile_and_readme_document_analysis_as_the_merged_stage() -> None:
     assert "Figure 1" in readme_text
     assert "Figure 4" in readme_text
     assert "Figure S1" in readme_text
+    assert "Figure S9" in readme_text
+    assert "submission_assets_manifest.csv" in readme_text
+    assert "submission_asset_manifest.csv" not in readme_text
+    assert "Presenting-concern prevalence by overlapping ascertainment indicator" in readme_text
+    assert "Presenting-concern prevalence by ascertainment route" not in readme_text
     assert "Hypercap CC NLP Reyan Figures.qmd" not in readme_text
 
 

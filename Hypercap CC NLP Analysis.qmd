@@ -2897,6 +2897,7 @@ def render_manuscript_prevalence_panels(
     y_label: str = "Grouped presenting-concern category",
     strip_text: str | None = None,
     muted_marks: bool = False,
+    emphasize_ci: bool = False,
     height: float = 6.1,
 ) -> Path:
     """Render one manuscript prevalence figure with consistent category order and x-limits."""
@@ -2922,7 +2923,17 @@ def render_manuscript_prevalence_panels(
         else:
             lower_values = upper_values = None
         y_positions = np.arange(len(facet_values))
-        axis.hlines(y=y_positions, xmin=0, xmax=facet_values.to_numpy(), color=ANALYSIS_COLORS["neutral_light"], linewidth=2.2)
+        stem_linewidth = 1.2 if emphasize_ci else 2.2
+        stem_alpha = 0.65 if emphasize_ci else 1.0
+        axis.hlines(
+            y=y_positions,
+            xmin=0,
+            xmax=facet_values.to_numpy(),
+            color=ANALYSIS_COLORS["neutral_light"],
+            linewidth=stem_linewidth,
+            alpha=stem_alpha,
+            zorder=1,
+        )
         if lower_values is not None and upper_values is not None:
             values = facet_values.to_numpy(dtype=float)
             xerr = np.vstack(
@@ -2937,10 +2948,10 @@ def render_manuscript_prevalence_panels(
                 xerr=xerr,
                 fmt="none",
                 ecolor=ANALYSIS_COLORS["mid"],
-                elinewidth=0.9,
-                capsize=2.4,
-                capthick=0.9,
-                zorder=1,
+                elinewidth=1.4 if emphasize_ci else 0.9,
+                capsize=3.2 if emphasize_ci else 2.4,
+                capthick=1.1 if emphasize_ci else 0.9,
+                zorder=3,
             )
         for category, y_pos, value in zip(facet_values.index, y_positions, facet_values.to_numpy(), strict=False):
             if muted_marks:
@@ -2960,7 +2971,7 @@ def render_manuscript_prevalence_panels(
                 marker=SERIES_MARKERS.get(category, "o"),
                 markersize=6.5,
                 color=point_color,
-                zorder=2,
+                zorder=4,
             )
             axis.text(value + 0.6, y_pos, format_figure_pct(value), va="center", ha="left", fontsize=FIGURE_STYLE["annotation_size"])
         facet_label = facet_label_map.get(facet, facet) if facet_label_map else facet
@@ -6688,9 +6699,22 @@ note_export(sensitivity_age_plot_path)
 
 table1_group_frames = {
     "Overall": analytic_df,
-    "ICD-positive": icd_positive_df,
     "Gas-only": gas_only_df,
+    "ICD-only": icd_only_df,
+    "Both ICD + gas": both_df,
 }
+
+table1_notes = pd.DataFrame(
+    {
+        "note": [
+            "The unit of analysis is the hospital admission linked to an ED encounter; percentages use the column-specific admission denominator.",
+            "Gas-only, ICD-only, and both ICD + gas are mutually exclusive ascertainment strata; overlapping ABG-positive, VBG-positive, and ICD-positive indicators are summarized separately.",
+            "ED = emergency department; ICD = International Classification of Diseases; ABG = arterial blood gas; VBG = venous blood gas.",
+            "COPD = chronic obstructive pulmonary disease; OSA/OHS = obstructive sleep apnea/obesity hypoventilation syndrome; ICU = intensive care unit.",
+            "IMV = invasive mechanical ventilation; NIV = non-invasive ventilation; LOS = length of stay.",
+        ]
+    }
+)
 
 table1_demographic_rows = [
     table1_row("Age, years", "age", TABLE1_SUMMARY_MEDIAN_IQR),
@@ -6764,7 +6788,7 @@ manuscript_table_1 = build_table1_frame(
     table1_group_frames,
     table_name="Table 1",
 )
-table_1_xlsx_path = write_excel_export("table_1_xlsx", {"Sheet1": manuscript_table_1})
+table_1_xlsx_path = write_excel_export("table_1_xlsx", {"Table_1": manuscript_table_1, "Notes": table1_notes})
 format_table1_excel(table_1_xlsx_path)
 table_1_pdf_path = write_pdf_table_export(
     "table_1_pdf",
@@ -6794,7 +6818,10 @@ expanded_table_1 = build_table1_frame(
     table1_group_frames,
     table_name="Baseline_Characteristics_Expanded",
 )
-expanded_table_1_path = write_excel_export("baseline_characteristics_expanded", {"Sheet1": expanded_table_1})
+expanded_table_1_path = write_excel_export(
+    "baseline_characteristics_expanded",
+    {"Baseline_Characteristics": expanded_table_1, "Notes": table1_notes},
+)
 format_table1_excel(expanded_table_1_path)
 note_export(expanded_table_1_path)
 
@@ -6829,6 +6856,10 @@ rfv_counts = (
 for column in ("Percent", "ci_lower", "ci_upper"):
     rfv_counts[column] = rfv_counts[column].round(2)
 rfv_counts_for_combined = rfv_counts[["RFV category", "Count", "Percent"]].copy()
+rfv_counts_for_combined["95% CI"] = rfv_counts.apply(
+    lambda row: f"{row['ci_lower']:.2f}-{row['ci_upper']:.2f}",
+    axis=1,
+)
 rfv_primary_counts = (
     analytic_df[RFV_PRIMARY_COL_SENSITIVITY].value_counts().rename_axis("RFV category").reset_index(name="Count")
 )
@@ -6839,7 +6870,7 @@ table2_notes = pd.DataFrame(
         "note": [
             "Primary RFV prevalence is multi-label: each admission contributes once to every assigned RFV category across RFV1_name..RFV5_name.",
             "Categories are not mutually exclusive; percentages represent the percent of admissions with at least one mapped label and may sum to more than 100%.",
-            "The RFV_Prevalence sheet reports patient-cluster bootstrap 95% confidence intervals for admission-level RFV category prevalence.",
+            "The Combined_View and RFV_Prevalence sheets report patient-cluster bootstrap 95% confidence intervals for admission-level RFV category prevalence.",
             "Sensitivity outputs use RFV1_name only and yield a mutually exclusive distribution that sums to approximately 100%.",
         ]
     }
@@ -8256,6 +8287,7 @@ figure_2_png_path = render_manuscript_prevalence_panels(
     highlight_categories={"Respiratory"},
     highlight_color=ANALYSIS_COLORS["accent"],
     x_max=55.0,
+    emphasize_ci=True,
     height=5.8,
 )
 note_export(figure_2_png_path)

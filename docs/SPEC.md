@@ -31,7 +31,7 @@ Stage ownership is fixed to those notebooks. `make quarto-reyan-figures` remains
 | `Hypercap CC NLP Analysis.qmd` | `MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx` unless overridden by `ANALYSIS_INPUT_FILENAME` | Figures, tables, PDFs, submission bundle, and analysis exports under `Results/YYYY-MM-DD/`; QA checks under `artifacts/qa/analysis/` |
 | `Chart Review Sample Calc.qmd` | Local R package environment plus notebook inputs | `Results/YYYY-MM-DD/Chart Review Sample Calc.html` and `Results/YYYY-MM-DD/Chart Review Sample Calc_files/` |
 
-Pipeline order is `cohort -> classifier -> rater -> analysis`. The analysis stage's statistical estimates come from the canonical NLP workbook. The clean submission bundle copies selected publication-facing assets into `Results/YYYY-MM-DD/submission_assets/` and writes `submission_asset_manifest.csv`. Direct analysis-stage renders must not fail solely because optional upstream supplement workbooks are absent; missing optional upstream assets are recorded under `artifacts/qa/analysis/submission_asset_optional_missing.csv`.
+Pipeline order is `cohort -> classifier -> rater -> analysis`. The analysis stage's statistical estimates come from the canonical NLP workbook. The clean submission bundle copies selected publication-facing assets into `Results/YYYY-MM-DD/submission_assets/` and writes `submission_assets_manifest.csv`. Direct analysis-stage renders must not fail solely because optional upstream supplement workbooks are absent; missing optional upstream assets are recorded under `artifacts/qa/analysis/submission_asset_optional_missing.csv`.
 
 Manual annotation workbook curation remains private and independent. The public `Annotation/` directory contains only classifier resource CSVs and the example resource manifest.
 
@@ -41,7 +41,7 @@ Generated outputs are local/private by default:
 
 - stage PDFs: `Results/YYYY-MM-DD/MIMICIV_hypercap_EXT_cohort.pdf`, `Hypercap CC NLP Classifier.pdf`, `Rater Agreement Analysis.pdf`, and `Hypercap CC NLP Analysis.pdf`
 - chart-review render: `Results/YYYY-MM-DD/Chart Review Sample Calc.html` plus its HTML bundle
-- manuscript assets: `Figure 1.pdf`, `Figure 2-4.pdf/.xlsx`, `Table 1-2.xlsx`, and supplement aliases `Figure S1-S8.pdf/.xlsx` as produced by the analysis notebook
+- manuscript assets: `Figure 1.pdf`, `Figure 2-4.pdf/.xlsx`, `Table 1-2.xlsx`, supplement figure aliases `Figure S1-S9.pdf/.png`, and selected `Figure S*.xlsx` workbooks as produced by the analysis notebook
 - submission bundle: `Results/YYYY-MM-DD/submission_assets/`
 - QA/debug/manifests: `artifacts/qa/cohort/`, `artifacts/qa/rater_agreement/`, `artifacts/qa/analysis/`, `artifacts/qa/baselines/`, and `debug/...`
 - private handoff workbooks: `MIMIC tabular data/MIMICIV all with CC.xlsx` and `MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx`
