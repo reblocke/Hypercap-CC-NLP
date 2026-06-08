@@ -20,6 +20,8 @@ This document maps journal-submission outputs to their producing pipeline stages
 | Figure S1-S9 | `Hypercap CC NLP Analysis.qmd` | `Results/YYYY-MM-DD/Figure S*.pdf`, selected `Figure S*.xlsx` |
 | NLP classifier methods tables | `Hypercap CC NLP Classifier.qmd` | `Results/YYYY-MM-DD/NLP_Classifier_Supplement_Tables.xlsx` |
 | Rater benchmark methods tables | `Rater Agreement Analysis.qmd` | `Results/YYYY-MM-DD/Rater_Benchmark_Supplement_Tables.xlsx` |
+| Run-level submission manifest and output README | `Hypercap CC NLP Analysis.qmd` | `Results/YYYY-MM-DD/submission_manifest.xlsx`, `submission_manifest.csv`, `OUTPUTS_README.md` |
+| Aggregate acid-base missingness, candidate definitions, and sensitivity suite | `Hypercap CC NLP Analysis.qmd` | `Results/YYYY-MM-DD/Supplementary_Table_Acid_Base_Source_Missingness.xlsx`, `Candidate_Definition_Yield_Composition.xlsx`, `Sensitivity_Analysis_Suite.xlsx` |
 | Submission asset manifest | `Hypercap CC NLP Analysis.qmd` | `Results/YYYY-MM-DD/submission_assets/submission_assets_manifest.csv` |
 
 ## Release Asset Policy

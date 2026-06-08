@@ -31,7 +31,7 @@ Stage ownership is fixed to those notebooks. `make quarto-reyan-figures` remains
 | `Hypercap CC NLP Analysis.qmd` | `MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx` unless overridden by `ANALYSIS_INPUT_FILENAME` | Figures, tables, PDFs, submission bundle, and analysis exports under `Results/YYYY-MM-DD/`; QA checks under `artifacts/qa/analysis/` |
 | `Chart Review Sample Calc.qmd` | Local R package environment plus notebook inputs | `Results/YYYY-MM-DD/Chart Review Sample Calc.html` and `Results/YYYY-MM-DD/Chart Review Sample Calc_files/` |
 
-Pipeline order is `cohort -> classifier -> rater -> analysis`. The analysis stage's statistical estimates come from the canonical NLP workbook. The clean submission bundle copies selected publication-facing assets into `Results/YYYY-MM-DD/submission_assets/` and writes `submission_assets_manifest.csv`. Direct analysis-stage renders must not fail solely because optional upstream supplement workbooks are absent; missing optional upstream assets are recorded under `artifacts/qa/analysis/submission_asset_optional_missing.csv`.
+Pipeline order is `cohort -> classifier -> rater -> analysis`. The analysis stage's statistical estimates come from the canonical NLP workbook. The committed `analysis_manifest.yml` freezes definition-only manuscript rules including the admission-level unit of analysis, RFV taxonomy, gas thresholds, timing windows, pH/HCO3 bands, and sensitivity definitions. The clean submission bundle copies selected publication-facing assets into `Results/YYYY-MM-DD/submission_assets/` and writes `submission_assets_manifest.csv`. Direct analysis-stage renders must not fail solely because optional upstream supplement workbooks are absent; missing optional upstream assets are recorded under `artifacts/qa/analysis/submission_asset_optional_missing.csv`.
 
 Manual annotation workbook curation remains private and independent. The public `Annotation/` directory contains only classifier resource CSVs and the example resource manifest.
 
@@ -43,10 +43,14 @@ Generated outputs are local/private by default:
 - chart-review render: `Results/YYYY-MM-DD/Chart Review Sample Calc.html` plus its HTML bundle
 - manuscript assets: `Figure 1.pdf`, `Figure 2-4.pdf/.xlsx`, `Table 1-2.xlsx`, supplement figure aliases `Figure S1-S9.pdf/.png`, and selected `Figure S*.xlsx` workbooks as produced by the analysis notebook
 - submission bundle: `Results/YYYY-MM-DD/submission_assets/`
+- run-level output manifest and reviewer README: `Results/YYYY-MM-DD/submission_manifest.xlsx`, `submission_manifest.csv`, and `OUTPUTS_README.md`
+- supplement-ready aggregate analysis workbooks: `Supplementary_Table_Acid_Base_Source_Missingness.xlsx`, `Candidate_Definition_Yield_Composition.xlsx`, and `Sensitivity_Analysis_Suite.xlsx`
 - QA/debug/manifests: `artifacts/qa/cohort/`, `artifacts/qa/rater_agreement/`, `artifacts/qa/analysis/`, `artifacts/qa/baselines/`, and `debug/...`
 - private handoff workbooks: `MIMIC tabular data/MIMICIV all with CC.xlsx` and `MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx`
 - optional private direct annotation benchmark outputs: `MIMIC tabular data/annotation_benchmark_with_NLP.xlsx`, `annotation_visit_candidate_scores.csv`, and `annotation_segment_candidate_scores.csv`
 - rater supplement validation outputs include direct-benchmark denominator notes, per-category support/precision/recall/F1, bootstrap confidence intervals, canonical/grouped confusion matrices, and redacted disagreement examples; encounter identifiers remain excluded from supplement-facing disagreement sheets
+
+Submission-facing aggregate outputs must not include `subject_id`, `hadm_id`, `ed_stay_id`, raw chief complaint text, or other row-level MIMIC data. Private row-level audit files, when generated for local review, are allowed only under ignored output locations and must not be included in `submission_assets/`.
 
 `Drafts/` is manual-only working space and must not be modified by automated render or migration steps. Public release branches must not include `Drafts/`, `Results/`, `MIMIC tabular data/`, `artifacts/`, `debug/`, `outputs/`, `tmp/`, or `Legacy Code/`.
 
@@ -133,6 +137,9 @@ Current cohort-stage invariants:
 - UNKNOWN remains cohort-eligible for threshold inclusion.
 - Gas qualification for enrollment is any-time during stay via `pco2_threshold_any`; `pco2_threshold_0_24h` is retained as a timing marker only.
 - The analysis notebook treats gas timing as an inferential safeguard, not a cohort-enrollment gate: it compares RFV distributions across the broad EHR-ascertained cohort, first qualifying gas within 24h, first qualifying gas within 6h, any ICD-positive admissions, and ICD-positive admissions with qualifying gas within 24h.
+- Analysis-stage candidate definition and sensitivity outputs are descriptive supplement-ready summaries only. They do not redefine the primary cohort, add regression/prediction models, or create new chief-concern categories.
+- Frozen submission pH bands are `<7.20`, `7.20-7.24`, `7.25-7.29`, `7.30-7.34`, `7.35-7.44`, and `>=7.45`.
+- Frozen submission bicarbonate bands are `<22`, `22-27`, `28-33`, and `>=34`.
 - POC itemid QC telemetry does not itself gate cohort enrollment logic.
 - Gas-source row diagnostics are written to `artifacts/qa/cohort/gas_source_diagnostics_by_ed_stay.csv`.
 - Canonical cohort export fields use `qualifying_pco2_mmhg` rather than `first_pco2`.

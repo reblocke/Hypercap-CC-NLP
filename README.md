@@ -35,6 +35,7 @@ Researchers must obtain the required PhysioNet/MIMIC training, data-use approval
 - [`docs/SPEC.md`](docs/SPEC.md) is the current pipeline contract: stage ownership, private handoffs, output locations, QA surfaces, runtime constraints, and acceptance checks.
 - [`docs/DECISIONS.md`](docs/DECISIONS.md) records dated rationale and superseded decisions.
 - [`docs/MANUSCRIPT_MAPPING.md`](docs/MANUSCRIPT_MAPPING.md) maps manuscript tables/figures to notebook stages and generated assets.
+- [`analysis_manifest.yml`](analysis_manifest.yml) freezes definition-only analysis rules used by the submission revision, including RFV taxonomy, gas thresholds, pH/HCO3 bands, and sensitivity definitions.
 - [`data_dictionary.md`](data_dictionary.md) and [`data_dictionary.csv`](data_dictionary.csv) describe restricted source fields, derived NLP/cohort variables, benchmark metrics, and aggregate release assets without exposing row-level data.
 
 ## Quick Start
@@ -148,6 +149,8 @@ A successful private run produces:
 - Canonical private handoff workbooks under `MIMIC tabular data/`
 - Manuscript tables and figures under `Results/YYYY-MM-DD/`
 - A curated `Results/YYYY-MM-DD/submission_assets/` bundle with main figures `Figure 1`-`Figure 4`, supplement figures `Figure S1`-`Figure S9`, tables, source-data workbooks, and `submission_assets_manifest.csv`
+- Run-level reviewer manifests `submission_manifest.xlsx`, `submission_manifest.csv`, and `OUTPUTS_README.md`
+- Aggregate supplement-ready acid-base missingness, candidate-definition, and sensitivity-suite workbooks
 
 For public release, generated manuscript outputs should be attached as GitHub/Zenodo release assets, not tracked in git.
 

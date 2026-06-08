@@ -878,6 +878,7 @@ def summarize_multilabel_prevalence_with_clustered_ci(
 
     strata_cols = [strata] if isinstance(strata, str) else list(strata)
     ensure_required_columns(df, [*strata_cols, cluster_col])
+    cluster_unit_label = "patient" if cluster_col == "subject_id" else cluster_col
 
     observed = summarize_multilabel_prevalence(
         df,
@@ -890,7 +891,7 @@ def summarize_multilabel_prevalence_with_clustered_ci(
         "ci_upper": np.nan,
         "bootstrap_replicates": int(n_bootstrap),
         "bootstrap_seed": int(seed),
-        "cluster_unit": cluster_col,
+        "cluster_unit": cluster_unit_label,
         "n_clusters": 0,
     }
     if observed.empty:
@@ -952,7 +953,7 @@ def summarize_multilabel_prevalence_with_clustered_ci(
     ci_frame["ci_upper"] = np.nanpercentile(replicate_values, upper_quantile, axis=0)
     ci_frame["bootstrap_replicates"] = int(n_bootstrap)
     ci_frame["bootstrap_seed"] = int(seed)
-    ci_frame["cluster_unit"] = cluster_col
+    ci_frame["cluster_unit"] = cluster_unit_label
     ci_frame["n_clusters"] = [
         stratum_cluster_counts[tuple(row[column] for column in strata_cols)]
         for _, row in ci_frame.iterrows()
@@ -1941,6 +1942,17 @@ ANALYSIS_MARKERS = ["o", "s", "^", "D", "P", "X"]
 ANALYSIS_LINESTYLES = ["-", "--", "-.", ":", (0, (3, 1, 1, 1)), (0, (5, 2))]
 ANALYSIS_HATCHES = ["////", "....", "xxxx", "\\\\\\\\", "----", "++++"]
 PH_BAND_ORDER = ["≥7.35", "7.30–7.34", "7.20–7.29", "<7.20"]
+FROZEN_PH_BAND_ORDER = ["<7.20", "7.20-7.24", "7.25-7.29", "7.30-7.34", "7.35-7.44", ">=7.45"]
+FROZEN_HCO3_BAND_ORDER = ["<22", "22-27", "28-33", ">=34"]
+ACID_BASE_STATE_ORDER = [
+    "acidemic with low HCO3",
+    "acidemic with reference HCO3",
+    "acidemic with elevated HCO3",
+    "non-acidemic with elevated HCO3",
+    "alkalemic with elevated HCO3",
+    "non-acidemic without elevated HCO3",
+    "indeterminate",
+]
 TIMING_ORDER = ["<6h", "6-24h", ">24h"]
 ROUTE_ORDER = ["ICD-positive", "Arterial (ABG)", "Venous (VBG)", "Other gas"]
 ACIDEMIA_TIMING_ORDER = ["Early acidemia", "Late acidemia", "No acidemia"]
@@ -2044,6 +2056,12 @@ MANUSCRIPT_ASSET_FILENAMES = {
 
 SECONDARY_OUTPUT_FILENAMES = {
     "cohort_construction": "Cohort_Construction_and_Definitions.xlsx",
+    "submission_manifest_xlsx": "submission_manifest.xlsx",
+    "submission_manifest_csv": "submission_manifest.csv",
+    "outputs_readme": "OUTPUTS_README.md",
+    "acid_base_source_missingness": "Supplementary_Table_Acid_Base_Source_Missingness.xlsx",
+    "candidate_definition_summary": "Candidate_Definition_Yield_Composition.xlsx",
+    "sensitivity_suite": "Sensitivity_Analysis_Suite.xlsx",
     "first_admission_sensitivity": "First_Admission_Sensitivity.xlsx",
     "timing_safeguard_rfv_comparison": "Timing_Safeguard_RFV_Comparison.xlsx",
     "prevalence_uncertainty": "Prevalence_Uncertainty.xlsx",
@@ -4151,6 +4169,151 @@ def build_submission_asset_bundle(
     return bundle_dir, manifest_path, manifest_df, missing_optional_path_or_none, missing_optional_df
 
 
+def build_submission_manifest(
+    submission_asset_manifest: pd.DataFrame,
+    *,
+    figure_denominator_map: dict[str, int],
+    output_dir: Path,
+) -> pd.DataFrame:
+    """Create the run-level manuscript artifact manifest requested for submission QA."""
+
+    label_to_denominator = {
+        "Figure 1": "broad EHR hypercapnia cohort",
+        "Figure 2": "broad EHR hypercapnia cohort; overlapping ABG/VBG/ICD indicators",
+        "Figure 3": "broad EHR hypercapnia cohort",
+        "Figure 4": "blood-gas subset with paired qualifying-gas pH available",
+        "Figure S1": "blood-gas subset with sufficient pH timing data",
+        "Figure S2": "first-priority RFV sensitivity; overlapping ascertainment indicators",
+        "Figure S3": "first-priority RFV sensitivity; age strata",
+        "Figure S4": "first-priority RFV sensitivity; acidemia severity",
+        "Figure S5": "first-priority RFV sensitivity; acidemia timing",
+        "Figure S6": "broad EHR hypercapnia cohort; source-specific overlap",
+        "Figure S7": "blood-gas subset with valid 0-24h timing",
+        "Figure S8": "blood-gas subset with PCO2 bin and ICD status",
+        "Figure S9": "blood-gas subset with QC-passing first_hco3",
+        "Table 1": "broad EHR hypercapnia cohort and mutually exclusive ascertainment strata",
+        "Table 2": "broad EHR hypercapnia cohort",
+        "Supplementary Table S1": "broad EHR hypercapnia cohort",
+    }
+    label_to_rfv_definition = {
+        "Table 2": "multi-label canonical RFV prevalence",
+        "Supplementary Table S1": "raw triage chief complaint entries",
+    }
+    default_rfv_definition = "multi-label grouped RFV prevalence unless noted"
+    first_priority_labels = {"Figure S2", "Figure S3", "Figure S4", "Figure S5"}
+    rows = []
+    for row in submission_asset_manifest.itertuples(index=False):
+        manuscript_label = str(row.manuscript_label)
+        figure_key = SUBMISSION_LABEL_TO_FIGURE_KEY.get(manuscript_label)
+        if manuscript_label in first_priority_labels:
+            rfv_definition = "first-priority grouped RFV sensitivity"
+        else:
+            rfv_definition = label_to_rfv_definition.get(manuscript_label, default_rfv_definition)
+        rows.append(
+            {
+                "artifact_id": manuscript_label,
+                "artifact_title": str(row.title),
+                "source_script": str(row.source_notebook),
+                "source_data": str(row.source_data_file),
+                "cohort_denominator": label_to_denominator.get(manuscript_label, "see source workbook"),
+                "cohort_denominator_n": int(figure_denominator_map.get(figure_key, 0)) if figure_key else pd.NA,
+                "rfv_definition": rfv_definition,
+                "gas_definition": "ICD-positive OR qualifying gas; ABG >=45, VBG >=50, UNKNOWN-source gas >=50 unless sensitivity-specific",
+                "pH_definition": "paired qualifying-gas pH for Figure 4 where available; source workbook reports missingness",
+                "hco3_definition": "first_hco3 with source/QC provenance for bicarbonate outputs; same-specimen HCO3 not yet claimed",
+                "date_generated": RESULTS_DATE,
+                "final_file_path": f"{SUBMISSION_ASSET_DIRNAME}/{row.file_name}",
+                "caption_matches": False,
+                "caption_check_status": "pending_manual_check",
+                "include_in_submission": str(row.include_in_submission),
+            }
+        )
+    manifest = pd.DataFrame(rows)
+    if manifest["artifact_id"].isna().any() or manifest["artifact_title"].astype("string").str.strip().eq("").any():
+        raise ValueError("Submission manifest contains blank artifact identifiers or titles.")
+    forbidden_columns = {"subject_id", "hadm_id", "ed_stay_id", "ed_triage_cc", "chief_complaint", "chiefcomplaint"}
+    if forbidden_columns.intersection(manifest.columns):
+        raise AssertionError(f"Submission manifest includes restricted row-level columns: {forbidden_columns}")
+    missing_files = [
+        final_path
+        for final_path in manifest["final_file_path"].astype(str)
+        if not (output_dir / final_path).exists()
+    ]
+    if missing_files:
+        raise FileNotFoundError(f"Submission manifest points to missing files: {missing_files}")
+    return manifest
+
+
+def write_outputs_readme(
+    output_dir: Path,
+    submission_manifest: pd.DataFrame,
+    *,
+    filename: str = "OUTPUTS_README.md",
+) -> Path:
+    """Write a run-specific README for collaborator/submission output review."""
+
+    lines = [
+        "# Hypercap CC NLP Output README",
+        "",
+        f"Generated date: `{RESULTS_DATE}`",
+        "",
+        "## Cohort Definitions",
+        "- Primary cohort: ED-linked hospital admissions with nonmissing triage chief complaint and EHR evidence of hypercapnia by ICD code and/or qualifying gas.",
+        "- Unit of analysis: hospital admission linked to an ED encounter.",
+        "- Ascertainment indicators: ABG-positive, VBG-positive, and ICD-positive are overlapping.",
+        "- Ascertainment strata: Gas-only, ICD-only, and Both ICD + gas are mutually exclusive.",
+        "",
+        "## RFV Framework",
+        "- Primary RFV summaries use the current NHAMCS/RFV multi-label taxonomy.",
+        "- First-priority RFV outputs are explicitly labeled as sensitivity analyses.",
+        "- No new chief-concern categories, composites, or subcategories were added.",
+        "",
+        "## Gas, Timing, And Acid-Base Rules",
+        "- Broad gas evidence uses qualifying pCO2 after the ED anchor through discharge.",
+        "- Early timing windows are <=6h and <=24h from the ED anchor.",
+        "- Figure 4 uses paired qualifying-gas pH when available and reports denominator/missingness in the source workbook.",
+        "- Bicarbonate outputs use first_hco3 with source/QC provenance; same-specimen HCO3 requires a future cohort-stage rerun before manuscript claims.",
+        "",
+        "## Sensitivity Analyses Generated",
+        "- First-admission sensitivity.",
+        "- Timing-safeguard RFV comparison.",
+        "- Gas-source, ICD-era, administrative-only exclusion, and stricter PCO2 threshold sensitivity suite.",
+        "- First-priority RFV sensitivity figures.",
+        "",
+        "## Manifest",
+        "- `submission_manifest.xlsx` and `submission_manifest.csv` map each manuscript-facing artifact to source, denominator, RFV definition, gas rule, pH/HCO3 rule, and caption-check status.",
+        "- `submission_assets/submission_assets_manifest.csv` lists the clean copied submission bundle.",
+        "",
+        "## Included Submission Assets",
+        "| Artifact | File | Denominator | Caption Check |",
+        "|---|---|---|---|",
+    ]
+    for row in submission_manifest.itertuples(index=False):
+        lines.append(
+            f"| {row.artifact_id} | `{row.final_file_path}` | {row.cohort_denominator} | {row.caption_check_status} |"
+        )
+    lines.extend(
+        [
+            "",
+            "## Known Limitations",
+            "- These outputs describe admission-level EHR evidence patterns and do not adjudicate causal attribution.",
+            "- Blood-gas testing, diagnosis coding, admission, and nonmissing triage text are clinical documentation/utilization processes.",
+            "- Generated private row-level audits, if present, remain ignored and must not be committed.",
+        ]
+    )
+    readme_path = output_dir / filename
+    readme_path.write_text("\n".join(lines) + "\n")
+    register_export(
+        key="outputs_readme",
+        output_path=readme_path,
+        builder="write_outputs_readme",
+        artifact_kind="documentation",
+        scope="secondary",
+        formats=["md"],
+    )
+    return readme_path
+
+
 def classify_compensation(ph: float) -> str | float:
     """Map minimum 24h pH to the manuscript compensation groups."""
 
@@ -4562,6 +4725,361 @@ def classify_timing_group(df: pd.DataFrame) -> pd.Series:
     return pd.Series(labels, index=df.index, name="timing_group")
 
 
+def assign_frozen_ph_band(ph_values: pd.Series) -> pd.Series:
+    """Assign the frozen submission pH bands used for acid-base supplement outputs."""
+
+    ph = pd.to_numeric(ph_values, errors="coerce")
+    labels = np.select(
+        [
+            ph.lt(7.20),
+            ph.ge(7.20) & ph.lt(7.25),
+            ph.ge(7.25) & ph.lt(7.30),
+            ph.ge(7.30) & ph.lt(7.35),
+            ph.ge(7.35) & ph.lt(7.45),
+            ph.ge(7.45),
+        ],
+        FROZEN_PH_BAND_ORDER,
+        default=None,
+    )
+    return pd.Series(
+        pd.Categorical(labels, categories=FROZEN_PH_BAND_ORDER, ordered=True),
+        index=ph_values.index,
+        name="frozen_ph_band",
+    )
+
+
+def assign_frozen_hco3_band(hco3_values: pd.Series) -> pd.Series:
+    """Assign the frozen submission bicarbonate bands used for acid-base outputs."""
+
+    hco3 = pd.to_numeric(hco3_values, errors="coerce")
+    labels = np.select(
+        [
+            hco3.lt(22),
+            hco3.ge(22) & hco3.lt(28),
+            hco3.ge(28) & hco3.lt(34),
+            hco3.ge(34),
+        ],
+        FROZEN_HCO3_BAND_ORDER,
+        default=None,
+    )
+    return pd.Series(
+        pd.Categorical(labels, categories=FROZEN_HCO3_BAND_ORDER, ordered=True),
+        index=hco3_values.index,
+        name="frozen_hco3_band",
+    )
+
+
+def derive_acid_base_state(ph_values: pd.Series, hco3_values: pd.Series) -> pd.Series:
+    """Classify descriptive acid-base state without implying chronicity or causality."""
+
+    ph = pd.to_numeric(ph_values, errors="coerce")
+    hco3 = pd.to_numeric(hco3_values, errors="coerce")
+    missing = ph.isna() | hco3.isna()
+    labels = np.select(
+        [
+            missing,
+            ph.lt(7.35) & hco3.lt(22),
+            ph.lt(7.35) & hco3.ge(22) & hco3.lt(28),
+            ph.lt(7.35) & hco3.ge(28),
+            ph.ge(7.35) & ph.lt(7.45) & hco3.ge(28),
+            ph.ge(7.45) & hco3.ge(28),
+            ph.ge(7.35) & hco3.lt(28),
+        ],
+        [
+            "indeterminate",
+            "acidemic with low HCO3",
+            "acidemic with reference HCO3",
+            "acidemic with elevated HCO3",
+            "non-acidemic with elevated HCO3",
+            "alkalemic with elevated HCO3",
+            "non-acidemic without elevated HCO3",
+        ],
+        default="indeterminate",
+    )
+    return pd.Series(
+        pd.Categorical(labels, categories=ACID_BASE_STATE_ORDER, ordered=True),
+        index=ph_values.index,
+        name="acid_base_state",
+    )
+
+
+def build_acid_base_source_missingness_table(df: pd.DataFrame) -> pd.DataFrame:
+    """Create aggregate acid-base availability/source rows without identifiers."""
+
+    denominator = int(len(df))
+    pco2_available = maybe_numeric(df, ["qualifying_pco2_mmhg"]).notna()
+    ph_available = select_figure4_analysis_ph(df).notna()
+    hco3_available = first_hco3_qc_pass_mask(df)
+    first_gas_hours = maybe_numeric(df, ["dt_qualifying_hypercapnia_hours", "time_to_gas_hrs"])
+    source_flags = {
+        "Pco2 source: ABG": to_binary_flag(maybe_series(df, ["abg_hypercap_threshold"])).eq(1),
+        "Pco2 source: VBG": to_binary_flag(maybe_series(df, ["vbg_hypercap_threshold"])).eq(1),
+        "Pco2 source: UNKNOWN-source gas": to_binary_flag(maybe_series(df, ["unknown_hypercap_threshold"])).eq(1),
+    }
+    rows = [
+        ("Any qualifying PCO2", pco2_available, "qualifying_pco2_mmhg available"),
+        ("pH available", ph_available, "active Figure 4 pH rule"),
+        ("HCO3 available", hco3_available, "first_hco3 available and QC-passing"),
+        ("pH + HCO3 both available", ph_available & hco3_available, "active pH plus QC-passing first_hco3"),
+        ("First qualifying gas time available", first_gas_hours.notna(), "dt_qualifying_hypercapnia_hours available"),
+        ("First qualifying gas within 6h", first_gas_hours.lt(6), "first qualifying gas <6h from ED anchor"),
+        ("First qualifying gas within 24h", first_gas_hours.le(24), "first qualifying gas <=24h from ED anchor"),
+    ]
+    rows.extend((label, mask, label) for label, mask in source_flags.items())
+    out = []
+    for label, mask, definition in rows:
+        n_admissions = int(mask.fillna(False).sum())
+        out.append(
+            {
+                "measure": label,
+                "n_admissions": n_admissions,
+                "denominator": denominator,
+                "percent_of_denominator": round(n_admissions / denominator * 100, 2) if denominator else np.nan,
+                "definition": definition,
+                "row_level_identifiers_exported": False,
+            }
+        )
+    return pd.DataFrame(out)
+
+
+def build_candidate_definition_membership(df: pd.DataFrame) -> pd.DataFrame:
+    """Build candidate phenotype-enrichment definition flags using current fields only."""
+
+    any_icd = to_binary_flag(maybe_series(df, ["any_hypercap_icd"])).eq(1)
+    any_gas = to_binary_flag(maybe_series(df, ["pco2_threshold_any"])).eq(1)
+    gas_hours = maybe_numeric(df, ["dt_qualifying_hypercapnia_hours", "time_to_gas_hrs"])
+    ph = select_figure4_analysis_ph(df)
+    hco3_available = first_hco3_qc_pass_mask(df)
+    hco3 = maybe_numeric(df, ["first_hco3"])
+    time_to_imv = maybe_numeric(df, ["time_to_imv_hrs", "dt_first_imv_hours", "dt_first_imv_hours_model"])
+    time_to_niv = maybe_numeric(df, ["time_to_niv_hrs", "dt_first_niv_hours", "dt_first_niv_hours_model"])
+    gas_time_missing_or_not_applicable = (~any_gas) | gas_hours.isna()
+    gas_precedes_imv = gas_time_missing_or_not_applicable | time_to_imv.isna() | gas_hours.lt(time_to_imv)
+    gas_precedes_niv = gas_time_missing_or_not_applicable | time_to_niv.isna() | gas_hours.lt(time_to_niv)
+    post_vent_only = any_gas & (
+        (time_to_imv.notna() & gas_hours.ge(time_to_imv))
+        | (time_to_niv.notna() & gas_hours.ge(time_to_niv))
+    )
+    membership = pd.DataFrame(index=df.index)
+    membership["Broad EHR hypercapnia cohort"] = any_icd | any_gas
+    membership["Gas-confirmed hypercapnia"] = any_gas
+    membership["Early gas <=24h"] = any_gas & gas_hours.le(24)
+    membership["Early gas <=6h"] = any_gas & gas_hours.lt(6)
+    membership["Early acidemic gas <=24h"] = any_gas & gas_hours.le(24) & ph.lt(7.35)
+    membership["Early acidemic gas <=6h"] = any_gas & gas_hours.lt(6) & ph.lt(7.35)
+    membership["Early gas + elevated HCO3"] = any_gas & gas_hours.le(24) & hco3_available & hco3.ge(28)
+    membership["ICD + early gas"] = any_icd & any_gas & gas_hours.le(24)
+    membership["ICD + early acidemic gas"] = any_icd & any_gas & gas_hours.le(24) & ph.lt(7.35)
+    membership["Exclude post-ventilation-only gas"] = (any_icd | any_gas) & (~post_vent_only) & gas_precedes_imv & gas_precedes_niv
+    return membership.astype(bool)
+
+
+def summarize_candidate_definition_yield(
+    df: pd.DataFrame,
+    membership: pd.DataFrame,
+) -> pd.DataFrame:
+    """Summarize yield and physiologic/context composition for candidate definitions."""
+
+    broad_n = int(membership.iloc[:, 0].sum()) if not membership.empty else 0
+    ph = select_figure4_analysis_ph(df)
+    hco3 = maybe_numeric(df, ["first_hco3"])
+    hco3_available = first_hco3_qc_pass_mask(df)
+    respiratory = to_binary_flag(maybe_series(df, ["has_group_respiratory"])).eq(1)
+    nervous = to_binary_flag(maybe_series(df, ["has_group_nervous"])).eq(1)
+    injury = to_binary_flag(maybe_series(df, ["has_group_injuries_adverse_effects"])).eq(1)
+    administrative = to_binary_flag(maybe_series(df, ["has_rfv_administrative", "has_group_administrative"])).eq(1)
+    any_icd = to_binary_flag(maybe_series(df, ["any_hypercap_icd"])).eq(1)
+    imv = to_binary_flag(maybe_series(df, ["imv_flag"])).eq(1)
+    niv = to_binary_flag(maybe_series(df, ["niv_flag"])).eq(1)
+    vent_24h = (
+        maybe_numeric(df, ["time_to_imv_hrs", "dt_first_imv_hours", "dt_first_imv_hours_model"]).le(24)
+        | maybe_numeric(df, ["time_to_niv_hrs", "dt_first_niv_hours", "dt_first_niv_hours_model"]).le(24)
+    )
+    mortality = to_binary_flag(maybe_series(df, ["death_in_hosp"])).eq(1)
+    los = maybe_numeric(df, ["hosp_los_days"])
+    pco2 = maybe_numeric(df, ["qualifying_pco2_mmhg"])
+
+    def _pct(mask: pd.Series, subset: pd.Series) -> float:
+        denominator = int(subset.sum())
+        if denominator == 0:
+            return np.nan
+        return round(int((mask & subset).sum()) / denominator * 100, 2)
+
+    rows = []
+    for order, definition_name in enumerate(membership.columns, start=1):
+        subset = membership[definition_name].fillna(False)
+        n_retained = int(subset.sum())
+        rows.append(
+            {
+                "definition_order": order,
+                "candidate_definition": definition_name,
+                "N_retained": n_retained,
+                "percent_of_broad_cohort_retained": round(n_retained / broad_n * 100, 2) if broad_n else np.nan,
+                "percent_respiratory_rfv": _pct(respiratory, subset),
+                "percent_nervous_rfv": _pct(nervous, subset),
+                "percent_injuries_adverse_effects_rfv": _pct(injury, subset),
+                "percent_administrative_rfv": _pct(administrative, subset),
+                "median_qualifying_pco2": round(float(pco2.loc[subset].median()), 1) if pco2.loc[subset].notna().any() else np.nan,
+                "percent_ph_lt_7_35": _pct(ph.lt(7.35), subset),
+                "percent_ph_lt_7_25": _pct(ph.lt(7.25), subset),
+                "percent_ph_ge_7_45": _pct(ph.ge(7.45), subset),
+                "percent_hco3_ge_28": _pct(hco3_available & hco3.ge(28), subset),
+                "percent_hco3_ge_34": _pct(hco3_available & hco3.ge(34), subset),
+                "percent_icd_positive": _pct(any_icd, subset),
+                "percent_niv_or_imv_24h": _pct(vent_24h, subset),
+                "percent_any_imv_or_niv": _pct(imv | niv, subset),
+                "in_hospital_mortality_percent": _pct(mortality, subset),
+                "median_hospital_los_days": round(float(los.loc[subset].median()), 1) if los.loc[subset].notna().any() else np.nan,
+                "interpretation_note": "Candidate enrichment rule only; not causal adjudication.",
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def summarize_rfv_by_candidate_definition(
+    df: pd.DataFrame,
+    membership: pd.DataFrame,
+    *,
+    grouped: bool = True,
+) -> pd.DataFrame:
+    """Summarize RFV composition for each candidate definition."""
+
+    pieces = []
+    for order, definition_name in enumerate(membership.columns, start=1):
+        subset_df = df.loc[membership[definition_name]].copy()
+        if subset_df.empty:
+            continue
+        subset_df["candidate_definition"] = definition_name
+        summary = summarize_multilabel_prevalence(
+            subset_df,
+            strata="candidate_definition",
+            grouped=grouped,
+        )
+        summary.insert(0, "definition_order", order)
+        pieces.append(summary)
+    if not pieces:
+        return pd.DataFrame()
+    return pd.concat(pieces, ignore_index=True)
+
+
+def build_gas_source_sensitivity_summary(df: pd.DataFrame) -> pd.DataFrame:
+    """Compare broad/gas-source sensitivity denominators and grouped RFV composition."""
+
+    unknown = to_binary_flag(maybe_series(df, ["unknown_hypercap_threshold"])).eq(1)
+    any_gas = to_binary_flag(maybe_series(df, ["pco2_threshold_any"])).eq(1)
+    frames = {
+        "Broad EHR cohort": df,
+        "Any qualifying gas": df.loc[any_gas],
+        "Exclude UNKNOWN-source gas": df.loc[~unknown],
+        "ABG-positive": df.loc[to_binary_flag(maybe_series(df, ["abg_hypercap_threshold"])).eq(1)],
+        "VBG-positive": df.loc[to_binary_flag(maybe_series(df, ["vbg_hypercap_threshold"])).eq(1)],
+    }
+    rows = []
+    for label, frame in frames.items():
+        rows.append(
+            {
+                "sensitivity": label,
+                "N_admissions": int(len(frame)),
+                "percent_of_broad_cohort": round(len(frame) / max(len(df), 1) * 100, 2),
+                "unknown_source_gas_n": int(to_binary_flag(maybe_series(frame, ["unknown_hypercap_threshold"])).sum()) if len(frame) else 0,
+                "respiratory_rfv_percent": (
+                    round(to_binary_flag(maybe_series(frame, ["has_group_respiratory"])).mean() * 100, 2)
+                    if len(frame)
+                    else np.nan
+                ),
+                "administrative_rfv_percent": (
+                    round(to_binary_flag(maybe_series(frame, ["has_rfv_administrative", "has_group_administrative"])).mean() * 100, 2)
+                    if len(frame)
+                    else np.nan
+                ),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def build_icd_era_sensitivity_summary(df: pd.DataFrame) -> pd.DataFrame:
+    """Summarize ICD-positive yield by admission year and inferred ICD era."""
+
+    admit_time = maybe_datetime(df, ["admittime", "ed_anchor_time", "ed_intime"])
+    admit_year = admit_time.dt.year
+    icd_positive = to_binary_flag(maybe_series(df, ["any_hypercap_icd"])).eq(1)
+    era = pd.Series("missing_admission_year", index=df.index, dtype="string")
+    era = era.mask(admit_year.lt(2015), "pre_ICD10")
+    era = era.mask(admit_year.ge(2015), "ICD10_era")
+    summary = (
+        pd.DataFrame({"admission_year": admit_year, "icd_era": era, "icd_positive": icd_positive.astype(int)})
+        .groupby(["icd_era", "admission_year"], dropna=False)
+        .agg(N_admissions=("icd_positive", "size"), n_icd_positive=("icd_positive", "sum"))
+        .reset_index()
+    )
+    summary["percent_icd_positive"] = (
+        summary["n_icd_positive"] / summary["N_admissions"].replace(0, np.nan) * 100
+    ).round(2)
+    return summary
+
+
+def build_administrative_exclusion_sensitivity(df: pd.DataFrame) -> pd.DataFrame:
+    """Summarize impact of excluding administrative-only RFV presentations."""
+
+    administrative = to_binary_flag(maybe_series(df, ["has_rfv_administrative", "has_group_administrative"])).eq(1)
+    canonical_cols = [column for column in df.columns if column.startswith("has_rfv_")]
+    non_admin_cols = [column for column in canonical_cols if column != "has_rfv_administrative"]
+    non_admin_any = pd.Series(False, index=df.index)
+    for column in non_admin_cols:
+        non_admin_any = non_admin_any | to_binary_flag(df[column]).eq(1)
+    admin_only = administrative & (~non_admin_any)
+    frames = {
+        "Primary cohort": df,
+        "Exclude administrative-only RFV": df.loc[~admin_only],
+    }
+    rows = []
+    for label, frame in frames.items():
+        rows.append(
+            {
+                "sensitivity": label,
+                "N_admissions": int(len(frame)),
+                "excluded_administrative_only_n": int(admin_only.sum()) if label != "Primary cohort" else 0,
+                "respiratory_rfv_percent": round(to_binary_flag(maybe_series(frame, ["has_group_respiratory"])).mean() * 100, 2) if len(frame) else np.nan,
+                "administrative_rfv_percent": round(to_binary_flag(maybe_series(frame, ["has_rfv_administrative", "has_group_administrative"])).mean() * 100, 2) if len(frame) else np.nan,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def build_pco2_threshold_sensitivity_summary(df: pd.DataFrame) -> pd.DataFrame:
+    """Summarize stricter PCO2 threshold sensitivity without redefining the main cohort."""
+
+    pco2 = maybe_numeric(df, ["qualifying_pco2_mmhg"])
+    source = maybe_series(df, ["qualifying_site_group"]).astype("string").fillna("UNKNOWN")
+    any_icd = to_binary_flag(maybe_series(df, ["any_hypercap_icd"])).eq(1)
+    specs = [
+        ("Primary thresholds", 45, 50, 50),
+        ("ABG>=50 VBG>=55 UNKNOWN>=55", 50, 55, 55),
+        ("ABG>=55 VBG>=60 UNKNOWN>=60", 55, 60, 60),
+        ("Exclude UNKNOWN-source gas", 45, 50, np.inf),
+    ]
+    rows = []
+    for label, abg_threshold, vbg_threshold, unknown_threshold in specs:
+        gas_pass = (
+            (source.eq("ABG") & pco2.ge(abg_threshold))
+            | (source.eq("VBG") & pco2.ge(vbg_threshold))
+            | (source.eq("UNKNOWN") & pco2.ge(unknown_threshold))
+        )
+        retained = any_icd | gas_pass
+        rows.append(
+            {
+                "threshold_sensitivity": label,
+                "abg_threshold_mmhg": abg_threshold,
+                "vbg_threshold_mmhg": vbg_threshold,
+                "unknown_threshold_mmhg": "excluded" if np.isinf(unknown_threshold) else unknown_threshold,
+                "N_retained": int(retained.sum()),
+                "percent_of_primary_cohort_retained": round(retained.sum() / max(len(df), 1) * 100, 2),
+                "respiratory_rfv_percent": round(to_binary_flag(maybe_series(df.loc[retained], ["has_group_respiratory"])).mean() * 100, 2) if retained.any() else np.nan,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
 TABLE1_SUMMARY_MEDIAN_IQR = "median [IQR]"
 TABLE1_SUMMARY_COUNT_PCT = "n (%)"
 TABLE1_ALLOWED_SUMMARY_TYPES = {TABLE1_SUMMARY_MEDIAN_IQR, TABLE1_SUMMARY_COUNT_PCT}
@@ -4849,6 +5367,22 @@ rfv_group_indicator_df = rfv_label_artifacts["grouped_indicators"]
 rfv_label_coverage_audit = rfv_label_artifacts["label_coverage_audit"]
 rfv_uncodable_diagnostics = rfv_label_artifacts["uncodable_diagnostics"]
 rfv_uncodable_detail = rfv_label_artifacts["uncodable_detail"]
+for category in RFV_CANONICAL_LABELS:
+    analytic_df[f"has_rfv_{_slugify_category(category)}"] = (
+        rfv_indicator_df.get(
+            category,
+            pd.Series(0, index=analytic_df.index, dtype="int64"),
+        )
+        .astype("int64")
+    )
+for category in RFV_GROUP_ORDER:
+    analytic_df[f"has_group_{_slugify_category(category)}"] = (
+        rfv_group_indicator_df.get(
+            category,
+            pd.Series(0, index=analytic_df.index, dtype="int64"),
+        )
+        .astype("int64")
+    )
 analytic_df["has_group_respiratory"] = (
     rfv_group_indicator_df.get(
         "Respiratory",
@@ -8702,6 +9236,166 @@ candidate_compensation_matrix_plot_path = render_compensation_matrix_heatmap(
 )
 note_export(candidate_compensation_matrix_plot_path)
 
+acid_base_audit_df = biochemical_df.copy()
+acid_base_audit_df["frozen_ph_band"] = assign_frozen_ph_band(select_figure4_analysis_ph(acid_base_audit_df))
+acid_base_audit_df["frozen_hco3_band"] = assign_frozen_hco3_band(maybe_numeric(acid_base_audit_df, ["first_hco3"]))
+acid_base_audit_df["acid_base_state"] = derive_acid_base_state(
+    select_figure4_analysis_ph(acid_base_audit_df),
+    maybe_numeric(acid_base_audit_df, ["first_hco3"]),
+)
+acid_base_source_missingness = build_acid_base_source_missingness_table(acid_base_audit_df)
+frozen_band_rules = pd.DataFrame(
+    [
+        {"variable": "pH", "band_order": order, "band_label": label}
+        for order, label in enumerate(FROZEN_PH_BAND_ORDER, start=1)
+    ]
+    + [
+        {"variable": "HCO3", "band_order": order, "band_label": label}
+        for order, label in enumerate(FROZEN_HCO3_BAND_ORDER, start=1)
+    ]
+)
+acid_base_state_counts = (
+    acid_base_audit_df["acid_base_state"]
+    .value_counts(sort=False, dropna=False)
+    .reindex(ACID_BASE_STATE_ORDER, fill_value=0)
+    .rename_axis("acid_base_state")
+    .reset_index(name="n_admissions")
+)
+acid_base_state_counts["denominator"] = len(acid_base_audit_df)
+acid_base_state_counts["percent_of_blood_gas_subset"] = (
+    acid_base_state_counts["n_admissions"] / max(len(acid_base_audit_df), 1) * 100
+).round(2)
+ph_hco3_bivariate_counts = (
+    acid_base_audit_df.dropna(subset=["frozen_ph_band", "frozen_hco3_band"])
+    .groupby(["frozen_ph_band", "frozen_hco3_band"], observed=False)
+    .size()
+    .reset_index(name="n_admissions")
+)
+ph_hco3_bivariate_counts["analyzable_denominator"] = int(
+    acid_base_audit_df[["frozen_ph_band", "frozen_hco3_band"]].notna().all(axis=1).sum()
+)
+ph_hco3_bivariate_counts["percent_of_analyzable"] = (
+    ph_hco3_bivariate_counts["n_admissions"]
+    / ph_hco3_bivariate_counts["analyzable_denominator"].replace(0, np.nan)
+    * 100
+).fillna(0).round(2)
+acid_base_rfv_frame = pd.DataFrame(
+    {
+        "encounter_id": resolve_encounter_id(acid_base_audit_df),
+        "frozen_ph_band": acid_base_audit_df["frozen_ph_band"],
+        "frozen_hco3_band": acid_base_audit_df["frozen_hco3_band"],
+        "acid_base_state": acid_base_audit_df["acid_base_state"],
+    },
+    index=acid_base_audit_df.index,
+)
+acid_base_rfv_long = rfv_group_membership_long.merge(
+    acid_base_rfv_frame,
+    on="encounter_id",
+    how="inner",
+    validate="many_to_one",
+)
+ph_hco3_by_rfv = (
+    acid_base_rfv_long.dropna(subset=["frozen_ph_band", "frozen_hco3_band"])
+    .groupby(["category", "frozen_ph_band", "frozen_hco3_band"], observed=False)
+    .size()
+    .reset_index(name="n_admissions")
+)
+ph_hco3_category_denominators = (
+    acid_base_rfv_long.dropna(subset=["frozen_ph_band", "frozen_hco3_band"])
+    .groupby("category", observed=False)["encounter_id"]
+    .nunique()
+    .rename("category_denominator")
+    .reset_index()
+)
+ph_hco3_by_rfv = ph_hco3_by_rfv.merge(
+    ph_hco3_category_denominators,
+    on="category",
+    how="left",
+    validate="many_to_one",
+)
+ph_hco3_by_rfv["percent_within_category"] = (
+    ph_hco3_by_rfv["n_admissions"]
+    / ph_hco3_by_rfv["category_denominator"].replace(0, np.nan)
+    * 100
+).fillna(0).round(2)
+acid_base_source_missingness_path = write_excel_export(
+    "acid_base_source_missingness",
+    {
+        "Source_Missingness": acid_base_source_missingness,
+        "Frozen_Band_Rules": frozen_band_rules,
+        "Acid_Base_State_Counts": acid_base_state_counts,
+        "PH_by_HCO3_Counts": ph_hco3_bivariate_counts,
+        "PH_by_HCO3_by_Grouped_RFV": ph_hco3_by_rfv,
+        "Notes": pd.DataFrame(
+            {
+                "note": [
+                    "All rows are aggregate-only and exclude subject_id, hadm_id, ed_stay_id, and raw chief complaint text.",
+                    "HCO3 uses first_hco3 with QC flag/source provenance; same-specimen HCO3 requires a cohort-stage rerun before manuscript claims.",
+                    "Acid-base states are descriptive physiology groupings, not chief-concern categories or causal adjudication.",
+                ]
+            }
+        ),
+    },
+)
+note_export(acid_base_source_missingness_path)
+
+candidate_definition_membership = build_candidate_definition_membership(analytic_df)
+candidate_definition_yield = summarize_candidate_definition_yield(
+    analytic_df,
+    candidate_definition_membership,
+)
+candidate_definition_rfv_grouped = summarize_rfv_by_candidate_definition(
+    analytic_df,
+    candidate_definition_membership,
+    grouped=True,
+)
+candidate_definition_rfv_canonical = summarize_rfv_by_candidate_definition(
+    analytic_df,
+    candidate_definition_membership,
+    grouped=False,
+)
+candidate_definition_notes = pd.DataFrame(
+    {
+        "note": [
+            "Candidate definitions are phenotype-enrichment rules for future design, not validated causal-adjudication rules.",
+            "RFV summaries use the current package taxonomy only; no new chief-concern categories or composites are introduced.",
+            "Primary cohort remains broad EHR ascertainment and admission-level.",
+        ]
+    }
+)
+candidate_definition_summary_path = write_excel_export(
+    "candidate_definition_summary",
+    {
+        "Candidate_Definitions": candidate_definition_yield,
+        "RFV_Composition_Grouped": candidate_definition_rfv_grouped,
+        "RFV_Composition_Canonical": candidate_definition_rfv_canonical,
+        "Notes": candidate_definition_notes,
+    },
+)
+note_export(candidate_definition_summary_path)
+
+sensitivity_suite_path = write_excel_export(
+    "sensitivity_suite",
+    {
+        "Gas_Source": build_gas_source_sensitivity_summary(analytic_df),
+        "ICD_Era": build_icd_era_sensitivity_summary(analytic_df),
+        "Administrative_Exclusion": build_administrative_exclusion_sensitivity(analytic_df),
+        "PCO2_Thresholds": build_pco2_threshold_sensitivity_summary(analytic_df),
+        "First_Admission_Counts": first_admission_counts,
+        "Timing_Denominators": timing_safeguard_denominators,
+        "Notes": pd.DataFrame(
+            {
+                "note": [
+                    "Sensitivity analyses are descriptive and do not redefine the primary cohort.",
+                    "No p-values, regression models, or new prediction models are added.",
+                    "Administrative-only exclusion uses the current canonical Administrative RFV label when present.",
+                ]
+            }
+        ),
+    },
+)
+note_export(sensitivity_suite_path)
+
 ph_sensitivity_counts = (
     ph_df.groupby(["ph_severity", "rfv_primary_group_sensitivity"]).size().unstack(fill_value=0)
     .reindex(ph_severity_order)
@@ -9161,7 +9855,43 @@ note_export(submission_assets_dir)
 note_export(submission_asset_manifest_path)
 if submission_asset_optional_missing_path is not None:
     note_export(submission_asset_optional_missing_path)
+submission_manifest = build_submission_manifest(
+    submission_asset_manifest,
+    figure_denominator_map=figure_denominator_map,
+    output_dir=OUTPUT_DIR,
+)
+submission_manifest_xlsx_path = write_excel_export(
+    "submission_manifest_xlsx",
+    {
+        "Submission_Manifest": submission_manifest,
+        "Notes": pd.DataFrame(
+            {
+                "note": [
+                    "Run-level manifest for manuscript-facing artifacts and submission asset checks.",
+                    "caption_matches remains False until manual caption/source reconciliation is completed.",
+                    "No row-level identifiers or raw chief complaint text are included.",
+                ]
+            }
+        ),
+    },
+    builder="build_submission_manifest",
+)
+submission_manifest_csv_path = OUTPUT_DIR / SECONDARY_OUTPUT_FILENAMES["submission_manifest_csv"]
+submission_manifest.to_csv(submission_manifest_csv_path, index=False)
+register_export(
+    key="submission_manifest_csv",
+    output_path=submission_manifest_csv_path,
+    builder="build_submission_manifest",
+    artifact_kind="manifest",
+    scope="secondary",
+    formats=["csv"],
+)
+outputs_readme_path = write_outputs_readme(OUTPUT_DIR, submission_manifest)
+note_export(submission_manifest_xlsx_path)
+note_export(submission_manifest_csv_path)
+note_export(outputs_readme_path)
 display(submission_asset_manifest)
+display(submission_manifest)
 if not submission_asset_optional_missing.empty:
     display(submission_asset_optional_missing)
 ```

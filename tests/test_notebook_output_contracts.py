@@ -5,6 +5,8 @@ from pathlib import Path
 import re
 import subprocess
 
+import yaml
+
 
 WORK_DIR = Path(__file__).resolve().parents[1]
 
@@ -81,6 +83,14 @@ def test_spec_describes_the_live_output_contract() -> None:
     assert "CLASSIFIER_ANNOTATION_BENCHMARK_MODE" in spec_text
     assert "RATER_BENCHMARK_SOURCE" in spec_text
     assert "artifacts/qa/cohort/gas_source_diagnostics_by_ed_stay.csv" in spec_text
+    assert "committed `analysis_manifest.yml` freezes definition-only manuscript rules" in spec_text
+    assert "`Results/YYYY-MM-DD/submission_manifest.xlsx`, `submission_manifest.csv`, and `OUTPUTS_README.md`" in spec_text
+    assert "`Supplementary_Table_Acid_Base_Source_Missingness.xlsx`" in spec_text
+    assert "`Candidate_Definition_Yield_Composition.xlsx`" in spec_text
+    assert "`Sensitivity_Analysis_Suite.xlsx`" in spec_text
+    assert "Submission-facing aggregate outputs must not include `subject_id`, `hadm_id`, `ed_stay_id`" in spec_text
+    assert "Frozen submission pH bands are `<7.20`, `7.20-7.24`, `7.25-7.29`" in spec_text
+    assert "Frozen submission bicarbonate bands are `<22`, `22-27`, `28-33`, and `>=34`" in spec_text
 
 
 def test_readme_defers_contract_heavy_rules_to_spec() -> None:
@@ -290,6 +300,12 @@ def test_analysis_notebook_contains_requested_outputs() -> None:
     assert '"figure_s9_png": "Figure S9.png"' in analysis_text
     assert '"candidate_compensation_matrix_plot": "Candidate_Figure_Compensation_Matrix.png"' in analysis_text
     assert '"candidate_compensation_matrix_workbook": "Candidate_Figure_Compensation_Matrix.xlsx"' in analysis_text
+    assert '"submission_manifest_xlsx": "submission_manifest.xlsx"' in analysis_text
+    assert '"submission_manifest_csv": "submission_manifest.csv"' in analysis_text
+    assert '"outputs_readme": "OUTPUTS_README.md"' in analysis_text
+    assert '"acid_base_source_missingness": "Supplementary_Table_Acid_Base_Source_Missingness.xlsx"' in analysis_text
+    assert '"candidate_definition_summary": "Candidate_Definition_Yield_Composition.xlsx"' in analysis_text
+    assert '"sensitivity_suite": "Sensitivity_Analysis_Suite.xlsx"' in analysis_text
     assert '"figure_manifest": "figure_manifest.csv"' in analysis_text
     assert '"baseline_characteristics_expanded": "Baseline_Characteristics_Expanded.xlsx"' in analysis_text
     assert "write_pdf_table_export(" in analysis_text
@@ -325,6 +341,55 @@ def test_analysis_notebook_contains_requested_outputs() -> None:
     assert "obsolete_figure_5_assets_absent" in analysis_text
     assert 'SYMPTOM_COL = "RFV1_name"' not in analysis_text
     assert 'RFV_PRIMARY_COL = "RFV1_name"' not in analysis_text
+
+
+def test_analysis_manifest_freezes_submission_revision_definitions() -> None:
+    manifest_path = WORK_DIR / "analysis_manifest.yml"
+    manifest = yaml.safe_load(manifest_path.read_text())
+
+    assert manifest["analysis_version"] == "2026-06-submission"
+    assert manifest["unit_of_analysis"] == "hospital admission linked to ED presentation"
+    assert manifest["rfv_taxonomy"]["category_system"] == "current package NHAMCS RFV categories"
+    assert manifest["rfv_taxonomy"]["no_new_granular_categories"] is True
+    assert manifest["rfv_taxonomy"]["no_new_composite_chief_concern_categories"] is True
+    assert manifest["hypercapnia_evidence"]["abg_pco2_threshold_mmhg"] == 45
+    assert manifest["hypercapnia_evidence"]["vbg_pco2_threshold_mmhg"] == 50
+    assert manifest["hypercapnia_evidence"]["unknown_pco2_threshold_mmhg"] == 50
+    assert manifest["acid_base"]["ph_bands"] == [
+        "<7.20",
+        "7.20-7.24",
+        "7.25-7.29",
+        "7.30-7.34",
+        "7.35-7.44",
+        ">=7.45",
+    ]
+    assert manifest["acid_base"]["hco3_bands_mmol_l"] == ["<22", "22-27", "28-33", ">=34"]
+    assert manifest["models"]["new_regression_models"] is False
+    assert manifest["models"]["new_prediction_models"] is False
+
+
+def test_large_revision_outputs_are_registered_and_aggregate_only() -> None:
+    analysis_text = (WORK_DIR / "Hypercap CC NLP Analysis.qmd").read_text()
+
+    assert "def build_submission_manifest(" in analysis_text
+    assert "def write_outputs_readme(" in analysis_text
+    assert "submission_manifest = build_submission_manifest(" in analysis_text
+    assert 'submission_manifest_xlsx_path = write_excel_export(\n    "submission_manifest_xlsx"' in analysis_text
+    assert 'register_export(\n    key="submission_manifest_csv"' in analysis_text
+    assert "outputs_readme_path = write_outputs_readme(OUTPUT_DIR, submission_manifest)" in analysis_text
+    assert "build_acid_base_source_missingness_table(" in analysis_text
+    assert "build_candidate_definition_membership(" in analysis_text
+    assert "build_gas_source_sensitivity_summary(" in analysis_text
+    assert "build_pco2_threshold_sensitivity_summary(" in analysis_text
+    assert '"Source_Missingness": acid_base_source_missingness' in analysis_text
+    assert '"Frozen_Band_Rules": frozen_band_rules' in analysis_text
+    assert '"PH_by_HCO3_Counts": ph_hco3_bivariate_counts' in analysis_text
+    assert '"Candidate_Definitions": candidate_definition_yield' in analysis_text
+    assert '"RFV_Composition_Grouped": candidate_definition_rfv_grouped' in analysis_text
+    assert '"Gas_Source": build_gas_source_sensitivity_summary(analytic_df)' in analysis_text
+    assert '"Administrative_Exclusion": build_administrative_exclusion_sensitivity(analytic_df)' in analysis_text
+    assert "All rows are aggregate-only and exclude subject_id, hadm_id, ed_stay_id" in analysis_text
+    assert "No row-level identifiers or raw chief complaint text are included." in analysis_text
 
 
 def test_table_1_uses_explicit_summary_types_and_journal_formatting() -> None:
@@ -1572,10 +1637,26 @@ def test_makefile_and_readme_document_analysis_as_the_merged_stage() -> None:
     assert "Figure S1" in readme_text
     assert "Figure S9" in readme_text
     assert "submission_assets_manifest.csv" in readme_text
+    assert "analysis_manifest.yml" in readme_text
+    assert "submission_manifest.xlsx" in readme_text
+    assert "OUTPUTS_README.md" in readme_text
     assert "submission_asset_manifest.csv" not in readme_text
     assert "Presenting-concern prevalence by overlapping ascertainment indicator" in readme_text
     assert "Presenting-concern prevalence by ascertainment route" not in readme_text
     assert "Hypercap CC NLP Reyan Figures.qmd" not in readme_text
+
+
+def test_manuscript_mapping_lists_revision_manifest_outputs() -> None:
+    mapping_text = (WORK_DIR / "docs" / "MANUSCRIPT_MAPPING.md").read_text()
+
+    assert "Run-level submission manifest and output README" in mapping_text
+    assert "submission_manifest.xlsx" in mapping_text
+    assert "submission_manifest.csv" in mapping_text
+    assert "OUTPUTS_README.md" in mapping_text
+    assert "Aggregate acid-base missingness, candidate definitions, and sensitivity suite" in mapping_text
+    assert "Supplementary_Table_Acid_Base_Source_Missingness.xlsx" in mapping_text
+    assert "Candidate_Definition_Yield_Composition.xlsx" in mapping_text
+    assert "Sensitivity_Analysis_Suite.xlsx" in mapping_text
 
 
 def test_classifier_notebook_contains_spell_mode_comparison_and_audit() -> None:

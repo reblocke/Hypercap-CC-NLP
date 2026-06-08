@@ -44,6 +44,7 @@ HELPER_FUNCTIONS = [
     "format_figure_pct",
     "maybe_series",
     "maybe_numeric",
+    "maybe_datetime",
     "_first_available_datetime",
     "_numeric_sort_key",
     "first_eligible_admission_mask",
@@ -60,6 +61,17 @@ HELPER_FUNCTIONS = [
     "select_paired_qualifying_ph_for_figure4",
     "select_figure4_analysis_ph",
     "derive_ph_severity",
+    "first_hco3_qc_pass_mask",
+    "assign_frozen_ph_band",
+    "assign_frozen_hco3_band",
+    "derive_acid_base_state",
+    "build_acid_base_source_missingness_table",
+    "build_candidate_definition_membership",
+    "summarize_candidate_definition_yield",
+    "build_administrative_exclusion_sensitivity",
+    "build_gas_source_sensitivity_summary",
+    "build_icd_era_sensitivity_summary",
+    "build_pco2_threshold_sensitivity_summary",
     "build_acidemia_ph_source_audit",
     "build_acidemia_severity_denominator_audit",
     "build_acidemia_timing_denominator_audit",
@@ -81,6 +93,9 @@ HELPER_CONSTANTS = {
     "PREVALENCE_CI_BOOTSTRAP_SEED",
     "PREVALENCE_CI_CLUSTER_UNIT",
     "PREVALENCE_CI_LEVEL",
+    "FROZEN_PH_BAND_ORDER",
+    "FROZEN_HCO3_BAND_ORDER",
+    "ACID_BASE_STATE_ORDER",
 }
 
 
@@ -163,6 +178,16 @@ select_analysis_ph = HELPERS["select_analysis_ph"]
 select_paired_qualifying_ph_for_figure4 = HELPERS["select_paired_qualifying_ph_for_figure4"]
 select_figure4_analysis_ph = HELPERS["select_figure4_analysis_ph"]
 derive_ph_severity = HELPERS["derive_ph_severity"]
+assign_frozen_ph_band = HELPERS["assign_frozen_ph_band"]
+assign_frozen_hco3_band = HELPERS["assign_frozen_hco3_band"]
+derive_acid_base_state = HELPERS["derive_acid_base_state"]
+build_acid_base_source_missingness_table = HELPERS["build_acid_base_source_missingness_table"]
+build_candidate_definition_membership = HELPERS["build_candidate_definition_membership"]
+summarize_candidate_definition_yield = HELPERS["summarize_candidate_definition_yield"]
+build_administrative_exclusion_sensitivity = HELPERS["build_administrative_exclusion_sensitivity"]
+build_gas_source_sensitivity_summary = HELPERS["build_gas_source_sensitivity_summary"]
+build_icd_era_sensitivity_summary = HELPERS["build_icd_era_sensitivity_summary"]
+build_pco2_threshold_sensitivity_summary = HELPERS["build_pco2_threshold_sensitivity_summary"]
 build_acidemia_ph_source_audit = HELPERS["build_acidemia_ph_source_audit"]
 build_acidemia_severity_denominator_audit = HELPERS["build_acidemia_severity_denominator_audit"]
 build_acidemia_timing_denominator_audit = HELPERS["build_acidemia_timing_denominator_audit"]
@@ -487,7 +512,7 @@ def test_clustered_bootstrap_ci_samples_repeated_admissions_by_patient_cluster()
     assert respiratory["n_with_category"] == 2
     assert respiratory["pct_of_encounters"] == 50
     assert respiratory["n_clusters"] == 3
-    assert respiratory["cluster_unit"] == "subject_id"
+    assert respiratory["cluster_unit"] == "patient"
 
 
 def test_clustered_bootstrap_ci_fails_closed_without_patient_cluster() -> None:
@@ -846,3 +871,131 @@ def test_summarize_labels_per_encounter_caps_at_five_and_supports_strata() -> No
     assert summary["label_count"].max() <= 5
     assert set(summary["route"]) == {"ABG", "VBG"}
     assert summary["n_encounters"].sum() == 2
+
+
+def test_frozen_acid_base_bands_and_states_are_deterministic() -> None:
+    ph_values = pd.Series([7.19, 7.20, 7.249, 7.25, 7.299, 7.30, 7.349, 7.35, 7.449, 7.45, np.nan])
+    hco3_values = pd.Series([21.9, 22.0, 27.9, 28.0, 33.9, 34.0, np.nan])
+
+    assert assign_frozen_ph_band(ph_values).astype("string").fillna("<NA>").tolist() == [
+        "<7.20",
+        "7.20-7.24",
+        "7.20-7.24",
+        "7.25-7.29",
+        "7.25-7.29",
+        "7.30-7.34",
+        "7.30-7.34",
+        "7.35-7.44",
+        "7.35-7.44",
+        ">=7.45",
+        "<NA>",
+    ]
+    assert assign_frozen_hco3_band(hco3_values).astype("string").fillna("<NA>").tolist() == [
+        "<22",
+        "22-27",
+        "22-27",
+        "28-33",
+        "28-33",
+        ">=34",
+        "<NA>",
+    ]
+
+    states = derive_acid_base_state(
+        pd.Series([7.20, 7.30, 7.25, 7.40, 7.46, 7.40, np.nan]),
+        pd.Series([21, 24, 30, 30, 35, 24, 30]),
+    )
+    assert states.astype("string").tolist() == [
+        "acidemic with low HCO3",
+        "acidemic with reference HCO3",
+        "acidemic with elevated HCO3",
+        "non-acidemic with elevated HCO3",
+        "alkalemic with elevated HCO3",
+        "non-acidemic without elevated HCO3",
+        "indeterminate",
+    ]
+
+
+def test_candidate_definition_and_sensitivity_summaries_are_aggregate_and_source_aware() -> None:
+    df = pd.DataFrame(
+        {
+            "any_hypercap_icd": [1, 0, 0, 1],
+            "pco2_threshold_any": [0, 1, 1, 1],
+            "dt_qualifying_hypercapnia_hours": [np.nan, 5.0, 30.0, 20.0],
+            "qualifying_ph": [np.nan, 7.20, 7.40, 7.40],
+            "first_hco3": [np.nan, 30.0, 24.0, 35.0],
+            "first_hco3_qc_flag": [0, 1, 1, 1],
+            "time_to_imv_hrs": [2.0, np.nan, np.nan, np.nan],
+            "time_to_niv_hrs": [np.nan, np.nan, 10.0, np.nan],
+            "qualifying_pco2_mmhg": [np.nan, 55.0, 52.0, 61.0],
+            "qualifying_site_group": ["UNKNOWN", "VBG", "UNKNOWN", "ABG"],
+            "abg_hypercap_threshold": [0, 0, 0, 1],
+            "vbg_hypercap_threshold": [0, 1, 0, 0],
+            "unknown_hypercap_threshold": [0, 0, 1, 0],
+            "has_group_respiratory": [0, 1, 0, 1],
+            "has_group_nervous": [0, 0, 1, 0],
+            "has_group_injuries_adverse_effects": [0, 0, 0, 0],
+            "has_rfv_administrative": [1, 0, 0, 0],
+            "has_rfv_respiratory": [0, 1, 0, 1],
+            "has_rfv_nervous": [0, 0, 1, 0],
+            "imv_flag": [0, 0, 0, 0],
+            "niv_flag": [0, 0, 1, 0],
+            "death_in_hosp": [0, 0, 0, 1],
+            "hosp_los_days": [2.0, 3.0, 4.0, 5.0],
+            "admittime": pd.to_datetime(["2014-01-01", "2016-01-01", "2016-02-01", "2013-01-01"]),
+        }
+    )
+
+    membership = build_candidate_definition_membership(df)
+    assert membership["Broad EHR hypercapnia cohort"].tolist() == [True, True, True, True]
+    assert membership["Early gas <=6h"].tolist() == [False, True, False, False]
+    assert membership["ICD + early gas"].tolist() == [False, False, False, True]
+    assert membership["Exclude post-ventilation-only gas"].tolist() == [True, True, False, True]
+
+    yield_summary = summarize_candidate_definition_yield(df, membership)
+    retained = yield_summary.set_index("candidate_definition")["N_retained"].to_dict()
+    assert retained["Early gas <=24h"] == 2
+    assert retained["Exclude post-ventilation-only gas"] == 3
+
+    gas_source_summary = build_gas_source_sensitivity_summary(df).set_index("sensitivity")
+    assert gas_source_summary.loc["Exclude UNKNOWN-source gas", "N_admissions"] == 3
+    assert gas_source_summary.loc["Any qualifying gas", "N_admissions"] == 3
+
+    admin_summary = build_administrative_exclusion_sensitivity(df).set_index("sensitivity")
+    assert admin_summary.loc["Exclude administrative-only RFV", "excluded_administrative_only_n"] == 1
+    assert admin_summary.loc["Exclude administrative-only RFV", "N_admissions"] == 3
+
+    threshold_summary = build_pco2_threshold_sensitivity_summary(df).set_index("threshold_sensitivity")
+    assert threshold_summary.loc["Primary thresholds", "N_retained"] == 4
+    assert threshold_summary.loc["Exclude UNKNOWN-source gas", "N_retained"] == 3
+
+    icd_era_summary = build_icd_era_sensitivity_summary(df)
+    assert set(icd_era_summary["icd_era"]) == {"pre_ICD10", "ICD10_era"}
+
+
+def test_acid_base_source_missingness_output_is_aggregate_only() -> None:
+    df = pd.DataFrame(
+        {
+            "subject_id": [1, 2, 3],
+            "hadm_id": [10, 20, 30],
+            "ed_stay_id": [100, 200, 300],
+            "chiefcomplaint": ["dyspnea", "fall", "weakness"],
+            "qualifying_pco2_mmhg": [60.0, 55.0, np.nan],
+            "qualifying_ph": [7.20, np.nan, np.nan],
+            "first_hco3": [31.0, 24.0, np.nan],
+            "first_hco3_qc_flag": [1, 1, 0],
+            "dt_qualifying_hypercapnia_hours": [5.0, 30.0, np.nan],
+            "abg_hypercap_threshold": [1, 0, 0],
+            "vbg_hypercap_threshold": [0, 1, 0],
+            "unknown_hypercap_threshold": [0, 0, 0],
+        }
+    )
+
+    out = build_acid_base_source_missingness_table(df)
+    counts = out.set_index("measure")["n_admissions"].to_dict()
+    assert counts["Any qualifying PCO2"] == 2
+    assert counts["pH available"] == 1
+    assert counts["HCO3 available"] == 2
+    assert counts["First qualifying gas within 6h"] == 1
+    forbidden_columns = {"subject_id", "hadm_id", "ed_stay_id", "chiefcomplaint", "chief_complaint"}
+    assert forbidden_columns.isdisjoint(out.columns)
+    assert out["row_level_identifiers_exported"].eq(False).all()
