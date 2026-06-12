@@ -380,16 +380,42 @@ def test_large_revision_outputs_are_registered_and_aggregate_only() -> None:
     assert "build_acid_base_source_missingness_table(" in analysis_text
     assert "build_candidate_definition_membership(" in analysis_text
     assert "build_gas_source_sensitivity_summary(" in analysis_text
+    assert "def _administrative_only_rfv_mask(" in analysis_text
+    assert "def source_specific_pco2_threshold_mask(" in analysis_text
+    assert '"first_abg_hypercap_pco2_mmhg"' in analysis_text
+    assert '"first_vbg_hypercap_pco2_mmhg"' in analysis_text
+    assert '"first_other_pco2"' in analysis_text
     assert "build_pco2_threshold_sensitivity_summary(" in analysis_text
+    assert "build_sensitivity_denominator_audit(" in analysis_text
     assert '"Source_Missingness": acid_base_source_missingness' in analysis_text
     assert '"Frozen_Band_Rules": frozen_band_rules' in analysis_text
     assert '"PH_by_HCO3_Counts": ph_hco3_bivariate_counts' in analysis_text
     assert '"Candidate_Definitions": candidate_definition_yield' in analysis_text
     assert '"RFV_Composition_Grouped": candidate_definition_rfv_grouped' in analysis_text
+    assert '"Denominator_Audit": build_sensitivity_denominator_audit(analytic_df)' in analysis_text
     assert '"Gas_Source": build_gas_source_sensitivity_summary(analytic_df)' in analysis_text
     assert '"Administrative_Exclusion": build_administrative_exclusion_sensitivity(analytic_df)' in analysis_text
+    assert '"Analytic_Cohort_Thresholds": build_analytic_cohort_threshold_sensitivity_summary(analytic_df)' in analysis_text
+    assert '"ICD_Era": build_icd_era_sensitivity_summary(analytic_df)' not in analysis_text
     assert "All rows are aggregate-only and exclude subject_id, hadm_id, ed_stay_id" in analysis_text
     assert "No row-level identifiers or raw chief complaint text are included." in analysis_text
+    threshold_block = analysis_text.split("def build_pco2_threshold_sensitivity_summary", maxsplit=1)[
+        1
+    ].split("def build_sensitivity_denominator_audit", maxsplit=1)[0]
+    assert "source_specific_pco2_threshold_mask(" in threshold_block
+    assert 'source.eq("ABG") & pco2.ge' not in threshold_block
+    admin_block = analysis_text.split("def build_administrative_exclusion_sensitivity", maxsplit=1)[
+        1
+    ].split("def _any_numeric_candidate_ge", maxsplit=1)[0]
+    assert "admin_only = _administrative_only_rfv_mask(df)" in admin_block
+    assert "canonical_cols =" not in admin_block
+    denominator_block = analysis_text.split("def build_sensitivity_denominator_audit", maxsplit=1)[
+        1
+    ].split("def _sensitivity_denominator_definition", maxsplit=1)[0]
+    assert "first_admission = first_eligible_admission_mask(df)" in denominator_block
+    assert "admin_only = _administrative_only_rfv_mask(df)" in denominator_block
+    assert "canonical_cols =" not in denominator_block
+    assert 'if "subject_id" in df.columns else' not in denominator_block
 
 
 def test_table_1_uses_explicit_summary_types_and_journal_formatting() -> None:
@@ -450,24 +476,41 @@ def test_table_1_uses_explicit_summary_types_and_journal_formatting() -> None:
     assert '"flag_pneumonia"' in analysis_text
     assert 'table1_row("ICD-positive", "any_hypercap_icd", TABLE1_SUMMARY_COUNT_PCT)' in analysis_text
     assert 'table1_row("Blood-gas criteria met", "pco2_threshold_any", TABLE1_SUMMARY_COUNT_PCT)' in analysis_text
+    assert "ed_triage_acuity_missing_unknown" in analysis_text
+    assert "ED triage acuity missing/unknown" in analysis_text
     assert 'table1_row("In-hospital death", "death_in_hosp", TABLE1_SUMMARY_COUNT_PCT)' in analysis_text
     assert 'table1_row("Hospital length of stay, days", "hosp_los_days", TABLE1_SUMMARY_MEDIAN_IQR)' in analysis_text
     assert 'table1_row("ICU length of stay, days", "icu_los_days", TABLE1_SUMMARY_MEDIAN_IQR)' in analysis_text
 
 
-def test_table_2_combined_view_exposes_bootstrap_confidence_intervals() -> None:
+def test_table_2_submission_table_exposes_bootstrap_confidence_intervals() -> None:
     analysis_text = (WORK_DIR / "Hypercap CC NLP Analysis.qmd").read_text()
-    table2_block = analysis_text.split("rfv_counts_for_combined =", maxsplit=1)[1].split(
+    table2_block = analysis_text.split("table_2_submission =", maxsplit=1)[1].split(
         "table_2_xlsx_path = write_excel_export(",
         maxsplit=1,
     )[0]
 
     assert 'rfv_counts[["RFV category", "Count", "Percent"]].copy()' in table2_block
-    assert 'rfv_counts_for_combined["95% CI"]' in table2_block
+    assert 'table_2_submission["95% CI"]' in table2_block
     assert "row['ci_lower']" in table2_block
     assert "row['ci_upper']" in table2_block
-    assert "The Combined_View and RFV_Prevalence sheets report patient-cluster bootstrap 95% confidence intervals" in analysis_text
-    assert '"RFV_Prevalence": rfv_counts' in analysis_text
+    assert '"NHAMCS RFV category"' in table2_block
+    assert '"n admissions"' in table2_block
+    assert '"% admissions"' in table2_block
+    assert '"Table_2": table_2_submission' in analysis_text
+    assert '"Combined_View"' not in analysis_text
+    assert '"RFV_Prevalence_Source": rfv_counts' in analysis_text
+    assert '"table_2_source_workbook": "Table_2_Source_Diagnostics.xlsx"' in analysis_text
+    assert "The Table_2 sheet reports patient-cluster bootstrap 95% confidence intervals" in analysis_text
+    assert '"title": "NLP-derived NHAMCS RFV category prevalence"' in analysis_text
+    assert (
+        '"intended_caption": "Admission-level multi-label NHAMCS RFV category prevalence in the analytic cohort. '
+        "Counts and percentages reflect admissions with each RFV category; categories are not mutually exclusive, "
+        'and 95% confidence intervals use patient-cluster bootstrap."'
+    ) in analysis_text
+    table2_spec = analysis_text.split('"Table 2": {', maxsplit=1)[1].split("    },", maxsplit=1)[0]
+    assert "Raw triage chief complaint field frequencies" not in table2_spec
+    assert "raw triage entries" not in table2_spec.lower()
 
 
 def test_submission_asset_bundle_has_clean_allowlist_and_manifest() -> None:
@@ -634,11 +677,14 @@ def test_supplement_sensitivity_figures_use_first_priority_admission_language() 
         maxsplit=1,
     )[0]
     target_blocks = sensitivity_block + acidemia_block
-    assert 'sensitivity_strip_text = "Sensitivity analysis: first-priority RFV only"' in analysis_text
     assert target_blocks.count('y_label="First-priority presenting-concern category"') >= 4
     assert target_blocks.count("render_manuscript_prevalence_panels(") >= 4
-    assert target_blocks.count("strip_text=sensitivity_strip_text") >= 4
-    assert target_blocks.count("muted_marks=True") >= 4
+    assert "sensitivity_strip_text =" not in analysis_text
+    assert "strip_text=sensitivity_strip_text" not in target_blocks
+    assert 'strip_text="Sensitivity analysis: first-priority RFV only"' not in target_blocks
+    assert target_blocks.count("prevalence_lollipop_xmax(") >= 4
+    assert "muted_marks=True" not in target_blocks
+    assert "x_max=100.0" not in target_blocks
     assert "stacked=True" not in target_blocks
     assert 'ax.legend(title="First-priority RFV group"' not in target_blocks
     assert "Percent of encounters" not in target_blocks
@@ -703,11 +749,13 @@ def test_supplement_operational_figures_s6_s7_contract() -> None:
     )[0]
 
     assert "ABG, VBG, ICD, and UNKNOWN-source gas" in figure_s6_spec
-    assert "Figure 1 Panel C shows the same full source-specific overlap matrix" in figure_s6_spec
+    assert "Supplementary UpSet-style source-specific overlap summary" in figure_s6_spec
     assert "Figure 2 remains limited to ABG/VBG/ICD overlapping ascertainment indicators" in figure_s6_spec
     assert 'SOURCE_OVERLAP_SOURCES = ["ABG", "VBG", "ICD", "UNKNOWN"]' in analysis_text
     assert '"UNKNOWN": "unknown_hypercap_threshold"' in source_overlap_helpers
+    assert "color=rfv_display_color(row.category)" in figure_s7_block
     assert 'matrix_set_order = list(SOURCE_OVERLAP_MATRIX_COLUMNS.values())' in figure_s6_block
+    assert "matrix_ax.vlines(" in figure_s6_block
     assert "UNKNOWN-positive" in figure_s6_block
     assert "UNKNOWN gas" in figure_s6_block
     assert "unknown_intersection_total" in figure_s6_block
@@ -730,7 +778,7 @@ def test_supplement_operational_figures_s6_s7_contract() -> None:
     assert '.sort_values(["median", "category"], ascending=[True, True])' in figure_s7_block
     assert "ax.axvline(6.0" in figure_s7_block
     assert 'color=ANALYSIS_COLORS["dark"]' in figure_s7_block
-    assert "rfv_display_color" not in figure_s7_block
+    assert "color=rfv_display_color(row.category)" in figure_s7_block
     assert "median_q1_q3_hours_label" in figure_s7_block
     assert "category_n" in figure_s7_block
     assert "valid_timing_n" in figure_s7_block
@@ -760,8 +808,8 @@ def test_figure_s8_icd_recognition_uses_grouped_heatmap_contract() -> None:
     assert "diagnostic accuracy without chart review" in figure_s8_spec
     assert "def render_recognition_by_pco2_heatmap(" in analysis_text
     assert "sns.heatmap(" in s8_helper
-    assert "LinearSegmentedColormap.from_list(" in s8_helper
-    assert "icd_recognition_grayscale" in s8_helper
+    assert 'cmap="cividis"' in s8_helper
+    assert "icd_recognition_grayscale" not in s8_helper
     assert "ordered_rfv_display_categories(RFV_GROUP_ORDER)" in s8_helper
     assert "format_figure_pct" in s8_helper
     assert "format_figure_n(numerator)" in s8_helper
@@ -769,6 +817,9 @@ def test_figure_s8_icd_recognition_uses_grouped_heatmap_contract() -> None:
     assert "cbar=False" in s8_helper
     assert "colorbar" not in s8_helper.lower()
     assert "legend" not in s8_helper.lower()
+    assert "readable_text_color_for_cmap_value(" in analysis_text
+    assert 'plt.get_cmap(cmap_name)(normalized_value)' in analysis_text
+    assert 'text.set_color(readable_text_color_for_cmap_value(cell_value, cmap_name="cividis"))' in s8_helper
     assert 'ax.set_xlabel("Qualifying PCO2 stratum")' in s8_helper
     assert 'ax.set_ylabel("Grouped presenting-concern category")' in s8_helper
 
@@ -804,8 +855,8 @@ def test_publication_figure_style_contract_is_unified_and_title_free() -> None:
         assert f"def {helper_name}(" in analysis_text
 
     assert "savefig.dpi" in analysis_text
-    assert '"Respiratory": ANALYSIS_COLORS["respiratory"]' in analysis_text
-    assert '"Injuries & adverse effects": ANALYSIS_COLORS["injury"]' in analysis_text
+    assert '"Respiratory": "#0072B2"' in analysis_text
+    assert '"Injuries & adverse effects": "#E69F00"' in analysis_text
     assert "fig.suptitle(" not in analysis_text
     assert "plt.suptitle(" not in analysis_text
     assert "ax.set_title(FIGURE_SPECS" not in analysis_text
@@ -848,10 +899,14 @@ def test_timing_safeguard_is_secondary_aggregate_workbook() -> None:
         "Any-admission qualifying hypercapnia",
         "First qualifying gas within 24h",
         "First qualifying gas within 6h",
-        "ICD-positive only",
+        "ICD-positive",
         "ICD + early gas",
     ):
         assert cohort_label in analysis_text
+    assert "ICD-positive only" not in analysis_text
+    assert "Definition note" in analysis_text
+    assert "Administrative RFV" in analysis_text
+    assert "administrative_prevalence=timing_safeguard_canonical_prevalence" in analysis_text
     for sheet_name in (
         "Cohort_Denominators",
         "Main_Text_Table",
@@ -1014,18 +1069,15 @@ def test_figure_1_uses_current_manuscript_labels_and_counts() -> None:
     figure1_text = figure1_helpers + figure1_generation
 
     assert "Analytic cohort, ascertainment definitions, and chief-concern NLP classification" in analysis_text
-    assert "Three-panel figure showing mutually exclusive ascertainment strata, source-specific ABG/VBG/ICD/UNKNOWN-source gas overlap" in analysis_text
+    assert "Two-panel figure showing mutually exclusive ascertainment strata and the chief-concern NLP workflow" in analysis_text
     assert "A. Cohort and ascertainment strata" in figure1_text
     assert "B. Chief-concern NLP classification" in figure1_text
-    assert "C. Source-specific ascertainment overlap" in figure1_text
     assert "Admissions linked to ED presentation\\nwith nonmissing triage chief complaint" in figure1_text
     assert "Overlapping ascertainment indicators" in figure1_text
     assert "Mutually exclusive ascertainment strata" in figure1_text
-    assert "draw_compact_ascertainment_indicator_overlap_panel" in figure1_text
-    assert "Panel C shows source-specific overlap across ABG, VBG, ICD, and UNKNOWN-source gas" in figure1_text
-    assert "Indeterminate gas only" in figure1_text
-    assert "ICD + no gas" in figure1_text
-    assert "UNKNOWN-positive" in figure1_text
+    assert "draw_compact_ascertainment_indicator_overlap_panel" not in figure1_text
+    assert "C. Source-specific ascertainment overlap" not in figure1_text
+    assert "Panel C shows source-specific overlap across ABG, VBG, ICD, and UNKNOWN-source gas" not in figure1_text
     assert "Both ICD and blood-gas criteria" in analysis_text
     assert "Both ICD + gas" in figure1_text
     assert "Triage chief\\ncomplaint field" in figure1_text
@@ -1034,8 +1086,12 @@ def test_figure_1_uses_current_manuscript_labels_and_counts() -> None:
     assert "Score against\\nNHAMCS RFV prototypes" in figure1_text
     assert "Apply deterministic\\noverrides" in figure1_text
     assert "Assign up to five\\nRFV categories per admission" in figure1_text
-    assert "Sensitivity:\\nfirst-priority RFV assignment only" in figure1_text
-    assert "NHAMCS RFV categories\\nN=" in figure1_text
+    assert "Final classified cohort" in figure1_text
+    assert "NHAMCS RFV categories" in figure1_text
+    assert "draw_flow_box(" in figure1_text
+    assert "draw_flow_arrow_between_boxes(" in figure1_text
+    assert 'fig = plt.figure(figsize=get_figure_size("figure_1_pdf", height=5.8))' in figure1_text
+    assert "fig.add_gridspec(\n    1,\n    2," in figure1_text
     assert '"Admissions linked to ED presentation with nonmissing triage chief complaint": 11941' in figure1_text
     assert '"Analytic cohort": 11941' in figure1_text
     assert '"Gas-only": 9958' in analysis_text
@@ -1056,9 +1112,15 @@ def test_figure_1_uses_current_manuscript_labels_and_counts() -> None:
     assert "Yale chief complaint labels" not in figure1_text
     assert "Up to 5 RFV categories per encounter" not in figure1_text
     assert "RFV1 only" not in figure1_text
+    assert "Sensitivity:" not in figure1_text
+    assert "first-priority RFV assignment only" not in figure1_text
+    assert "Primary analysis:" not in figure1_text
+    assert "Excluded: missing triage chief complaint field" not in figure1_text
+    assert "n = 36 rows" not in figure1_text
     assert "17 symptom categories" not in figure1_text
     assert "Spell-correction applied" not in figure1_text
     assert "fig.suptitle(" not in figure1_text
+    assert "Three-panel figure" not in figure1_text
 
 
 def test_manuscript_prevalence_figures_use_admission_display_language() -> None:
@@ -1068,7 +1130,21 @@ def test_manuscript_prevalence_figures_use_admission_display_language() -> None:
         "def direct_label_lines(",
         maxsplit=1,
     )[0]
+    assert "RFV_CATEGORY_COLORS = {" in analysis_text
+    for category_color in (
+        '"Respiratory": "#0072B2"',
+        '"Nervous": "#CC79A7"',
+        '"Digestive": "#009E73"',
+        '"Circulatory": "#D55E00"',
+        '"Injuries & adverse effects": "#E69F00"',
+        '"Other grouped RFV categories": "#7A869A"',
+    ):
+        assert category_color in analysis_text
+    assert "return RFV_CATEGORY_COLORS.get(grouped_category, ANALYSIS_COLORS[\"neutral\"])" in analysis_text
     assert 'fig.supxlabel("Percent of admissions"' in helper_body
+    assert helper_body.count('fig.supxlabel("Percent of admissions"') == 1
+    assert 'axis.set_xlabel("Percent of admissions")' not in helper_body
+    assert 'axis.set_xlabel("")' in helper_body
     assert "Percent of encounters" not in helper_body
     assert 'y_label: str = "Grouped presenting-concern category"' in helper_body
     assert "Grouped complaint category" not in helper_body
@@ -1162,6 +1238,13 @@ def test_prevalence_figure_helpers_render_ci_whiskers_when_supplied() -> None:
     assert "stem_alpha = 0.65 if emphasize_ci else 1.0" in figure2_helper
     assert "elinewidth=1.4 if emphasize_ci else 0.9" in figure2_helper
     assert "capsize=3.2 if emphasize_ci else 2.4" in figure2_helper
+    assert "label_x_padding = 2.0" in figure2_helper
+    assert "label_bound_max = max(label_bound_max, ci_max)" in figure2_helper
+    assert "label_anchor = max(label_anchor, float(upper_values.loc[category]))" in figure2_helper
+    assert "label_anchor + label_x_padding" in figure2_helper
+    assert "value + 0.6" not in figure2_helper
+    assert '"facecolor": "white"' in figure2_helper
+    assert "point_color = rfv_display_color(category)" in figure2_helper
 
     for helper_body in (figure3_helper, figure4_helper):
         assert "ci_lower_df: pd.DataFrame | None = None" in helper_body
@@ -1202,7 +1285,7 @@ def test_figure_2_emphasizes_ascertainment_route_gradient() -> None:
     assert "ci_lower_df=route_ci_lower_plot_df" in figure2_block
     assert "ci_upper_df=route_ci_upper_plot_df" in figure2_block
     assert 'highlight_categories={"Respiratory"}' in figure2_block
-    assert 'highlight_color=ANALYSIS_COLORS["accent"]' in figure2_block
+    assert 'highlight_color=ANALYSIS_COLORS["accent"]' not in figure2_block
     assert "x_max=55.0" in figure2_block
     assert "emphasize_ci=True" in figure2_block
     assert "legend" not in figure2_block.lower()
@@ -1215,18 +1298,19 @@ def test_ascertainment_indicator_and_stratum_vocabulary_is_documented() -> None:
 
     assert "**Ascertainment indicators** are overlapping ABG-positive, VBG-positive, and ICD-positive indicators" in spec_text
     assert "**Source-specific overlap displays** are reconciliation views across ABG, VBG, ICD, and UNKNOWN-source gas" in spec_text
-    assert "Figure 1 Panel C and Figure S6 show all nonzero source-specific intersections" in spec_text
+    assert "Figure S6 shows all nonzero source-specific intersections" in spec_text
     assert "**Ascertainment strata** are mutually exclusive gas-only, ICD-only, and both ICD + gas groups" in spec_text
-    assert "Figure 1 Panel C" in spec_text
+    assert "Figure 1 Panel C" not in spec_text
     assert "Figure 2 uses this overlapping indicator vocabulary" in spec_text
 
-    assert "combined three-panel analytic cohort construction" in decisions_text
-    assert "source-specific ABG/VBG/ICD/UNKNOWN-source gas overlap matrix" in decisions_text
+    assert "two-panel analytic cohort construction" in decisions_text
+    assert "source-specific ABG/VBG/ICD/UNKNOWN-source gas overlap matrix" not in decisions_text
     assert "Figure 2.png/.xlsx` = grouped presenting category prevalence across overlapping ascertainment indicators" in decisions_text
     assert "expanded ascertainment-overlap figure remains supplement-only as `Figure S6`" in decisions_text
     assert "full source-specific ABG/VBG/ICD/UNKNOWN-source gas overlap" in decisions_text
 
-    assert "Figure 1: analytic cohort construction, source-specific overlap, ascertainment definitions, and NLP workflow" in mapping_text
+    assert "Figure 1: analytic cohort construction, ascertainment definitions, and NLP workflow" in mapping_text
+    assert "Figure 1: analytic cohort construction, source-specific overlap" not in mapping_text
     assert "Figure 2: presenting-concern prevalence by overlapping ascertainment indicator" in mapping_text
     assert "Figure S1-S9" in mapping_text
     assert "Figure S1-S9.pdf/.png" in spec_text
@@ -1271,8 +1355,9 @@ def test_figure_3_uses_ordered_age_profile_small_multiples() -> None:
     assert "ci_lower_df=age_ci_lower_plot_df" in figure3_block
     assert "ci_upper_df=age_ci_upper_plot_df" in figure3_block
     assert 'highlight_categories={"Respiratory", "Injuries & adverse effects"}' in figure3_block
-    assert '"Respiratory": ANALYSIS_COLORS["accent"]' in figure3_helper
-    assert '"Injuries & adverse effects": ANALYSIS_COLORS["injury"]' in figure3_helper
+    assert "line_color = rfv_display_color(category)" in figure3_helper
+    assert '"Respiratory": ANALYSIS_COLORS["accent"]' not in figure3_helper
+    assert '"Injuries & adverse effects": ANALYSIS_COLORS["injury"]' not in figure3_helper
     assert "figure3_respiratory_values.is_monotonic_increasing" in analysis_text
     assert "figure3_injury_values.iloc[0] <= figure3_injury_values.iloc[1:].max()" in analysis_text
     assert "legend" not in figure3_block.lower()
@@ -1333,8 +1418,9 @@ def test_figure_4_uses_prespecified_ph_profile_small_multiples() -> None:
     assert 'fig.supylabel("Percent of admissions"' in figure4_helper
     assert "y_max=55.0" in figure4_block
     assert 'highlight_categories={"Respiratory", "Injuries & adverse effects"}' in figure4_block
-    assert '"Respiratory": ANALYSIS_COLORS["accent"]' in figure4_helper
-    assert '"Injuries & adverse effects": ANALYSIS_COLORS["injury"]' in figure4_helper
+    assert "line_color = rfv_display_color(category)" in figure4_helper
+    assert '"Respiratory": ANALYSIS_COLORS["accent"]' not in figure4_helper
+    assert '"Injuries & adverse effects": ANALYSIS_COLORS["injury"]' not in figure4_helper
     assert "figure4_required_ph_labels" in analysis_text
     assert "figure4_expected_ph_group_sizes" in analysis_text
     assert "legend" not in figure4_block.lower()
@@ -1383,8 +1469,9 @@ def test_figure_s9_uses_bicarbonate_profile_contract() -> None:
     assert 'fig.supylabel("Percent of admissions"' in figure_s9_helper
     assert "ordered_rfv_display_categories(category_order)" in figure_s9_helper
     assert 'highlight_categories={"Respiratory", "Injuries & adverse effects"}' in figure_s9_block
-    assert '"Respiratory": ANALYSIS_COLORS["accent"]' in figure_s9_helper
-    assert '"Injuries & adverse effects": ANALYSIS_COLORS["injury"]' in figure_s9_helper
+    assert "line_color = rfv_display_color(category)" in figure_s9_helper
+    assert '"Respiratory": ANALYSIS_COLORS["accent"]' not in figure_s9_helper
+    assert '"Injuries & adverse effects": ANALYSIS_COLORS["injury"]' not in figure_s9_helper
     assert "legend" not in figure_s9_block.lower()
     assert "legend(" not in figure_s9_helper
 

@@ -97,6 +97,7 @@ from typing import Any, Iterable
 
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.patches import FancyBboxPatch
 import numpy as np
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -1378,6 +1379,8 @@ def build_timing_safeguard_interpretation_flags(
 def format_timing_safeguard_main_text_table(
     grouped_prevalence: pd.DataFrame,
     denominators: pd.DataFrame,
+    *,
+    administrative_prevalence: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Create a compact grouped-RFV timing table for manuscript drafting."""
     ensure_required_columns(
@@ -1408,6 +1411,7 @@ def format_timing_safeguard_main_text_table(
         row = {
             "Cohort": denominator_row["cohort_label"],
             "Purpose": denominator_row["purpose"],
+            "Definition note": _timing_safeguard_definition_note(cohort_key),
             "N admissions": int(denominator_row["N_admissions"]),
             "% of broad cohort": float(denominator_row["pct_of_broad_ehr_cohort"]),
         }
@@ -1421,8 +1425,34 @@ def format_timing_safeguard_main_text_table(
                     f"{int(category_row['n_with_category'])} "
                     f"({float(category_row['pct_of_encounters']):.1f}%)"
                 )
+        if administrative_prevalence is not None:
+            administrative_rows = administrative_prevalence.loc[
+                administrative_prevalence["cohort_key"].eq(cohort_key)
+                & administrative_prevalence["category"].eq("Administrative")
+            ]
+            if administrative_rows.empty:
+                row["Administrative RFV"] = "0 (0.0%)"
+            else:
+                administrative_row = administrative_rows.iloc[0]
+                row["Administrative RFV"] = (
+                    f"{int(administrative_row['n_with_category'])} "
+                    f"({float(administrative_row['pct_of_encounters']):.1f}%)"
+                )
         rows.append(row)
     return pd.DataFrame(rows)
+
+
+def _timing_safeguard_definition_note(cohort_key: str) -> str:
+    """Return a concise reader-facing definition for a timing-safeguard cohort."""
+
+    notes = {
+        "broad_ehr_ascertained": "ICD hypercapnia/OHS/RF code or qualifying PCO2 after ED anchor through discharge.",
+        "first_gas_within_24h": "Qualifying PCO2 at or before 24h from ED anchor.",
+        "first_gas_within_6h": "Qualifying PCO2 before 6h from ED anchor.",
+        "icd_positive": "Any hypercapnia/OHS/RF ICD phenotype, with or without qualifying gas.",
+        "icd_plus_24h_gas": "Any ICD phenotype plus qualifying PCO2 at or before 24h from ED anchor.",
+    }
+    return notes.get(cohort_key, "")
 
 
 def summarize_labels_per_encounter(
@@ -1975,7 +2005,7 @@ TIMING_SAFEGUARD_COHORTS = [
     },
     {
         "cohort_key": "icd_positive",
-        "cohort_label": "ICD-positive only",
+        "cohort_label": "ICD-positive",
         "purpose": "Clinician-labeled hypercapnic RF/OHS phenotype",
     },
     {
@@ -2004,13 +2034,17 @@ SERIES_LINESTYLES = {
     "Circulatory": (0, (3, 1, 1, 1)),
 }
 
+RFV_CATEGORY_COLORS = {
+    "Respiratory": "#0072B2",
+    "Nervous": "#CC79A7",
+    "Digestive": "#009E73",
+    "Circulatory": "#D55E00",
+    "Injuries & adverse effects": "#E69F00",
+    "Other grouped RFV categories": "#7A869A",
+}
+
 SERIES_COLORS = {
-    "Respiratory": ANALYSIS_COLORS["respiratory"],
-    "Digestive": ANALYSIS_COLORS["neutral"],
-    "Nervous": ANALYSIS_COLORS["neutral"],
-    "Circulatory": ANALYSIS_COLORS["neutral"],
-    "Injuries & adverse effects": ANALYSIS_COLORS["injury"],
-    "Other grouped RFV categories": ANALYSIS_COLORS["neutral_light"],
+    **RFV_CATEGORY_COLORS,
     "IMV": ANALYSIS_COLORS["dark"],
     "NIV": ANALYSIS_COLORS["mid"],
     "Mortality": ANALYSIS_COLORS["light"],
@@ -2111,14 +2145,15 @@ SECONDARY_OUTPUT_FILENAMES = {
     "sensitivity_route_plot": "Sensitivity_First_Priority_RFV_Route_Prevalence.png",
     "sensitivity_age_plot": "Sensitivity_First_Priority_RFV_Age_Prevalence.png",
     "sensitivity_table_2": "Sensitivity_Primary_Label_Table_2.xlsx",
+    "table_2_source_workbook": "Table_2_Source_Diagnostics.xlsx",
     "baseline_characteristics_expanded": "Baseline_Characteristics_Expanded.xlsx",
 }
 
 FIGURE_SPECS = {
     "figure_1_pdf": {
         "title": "Analytic cohort, ascertainment definitions, and chief-concern NLP classification",
-        "caption_stub": "Three-panel figure showing mutually exclusive ascertainment strata, source-specific ABG/VBG/ICD/UNKNOWN-source gas overlap, and the chief-concern NLP workflow used for multi-label NHAMCS RFV assignment.",
-        "comparison_statement": "Shows how ED-linked admissions enter mutually exclusive ascertainment strata, how ABG/VBG/ICD/UNKNOWN-source gas ascertainment sources overlap, and how triage chief complaint text is transformed into multi-label NHAMCS RFV assignments.",
+        "caption_stub": "Two-panel figure showing mutually exclusive ascertainment strata and the chief-concern NLP workflow used for multi-label NHAMCS RFV assignment. Source-specific ABG/VBG/ICD/UNKNOWN-source gas overlap is shown in Supplementary Figure S6.",
+        "comparison_statement": "Shows how ED-linked admissions enter mutually exclusive ascertainment strata and how triage chief complaint text is transformed into multi-label NHAMCS RFV assignments.",
         "order_rule": "workflow order",
         "export_type": "double-column",
     },
@@ -2180,7 +2215,7 @@ FIGURE_SPECS = {
     },
     "figure_s6_png": {
         "title": "Expanded source-specific ascertainment overlap across ABG, VBG, ICD, and UNKNOWN-source gas",
-        "caption_stub": "Expanded supporting summary of ordered intersection counts across ABG, VBG, ICD, and UNKNOWN-source gas ascertainment sources, displayed as a compact matrix-plus-bar summary. Figure 1 Panel C shows the same full source-specific overlap matrix in main-text form, while Figure 2 remains limited to ABG/VBG/ICD overlapping ascertainment indicators.",
+        "caption_stub": "Supplementary UpSet-style source-specific overlap summary showing ordered intersection counts across ABG, VBG, ICD, and UNKNOWN-source gas ascertainment sources. Figure 2 remains limited to ABG/VBG/ICD overlapping ascertainment indicators.",
         "comparison_statement": "Shows where analytic cohort membership overlaps or remains unique across blood-gas source and ICD ascertainment sources, including UNKNOWN-source gas.",
         "order_rule": "ordered by overlap count",
         "export_type": "double-column",
@@ -2229,7 +2264,7 @@ FIGURE_SPECS = {
     },
     "ascertainment_overlap_plot": {
         "title": "Expanded source-specific ascertainment overlap across ABG, VBG, ICD, and UNKNOWN-source gas",
-        "caption_stub": "Expanded supporting summary of ordered intersection counts across ABG, VBG, ICD, and UNKNOWN-source gas ascertainment sources, displayed as a compact matrix-plus-bar summary. Figure 1 Panel C shows the same full source-specific overlap matrix in main-text form, while Figure 2 remains limited to ABG/VBG/ICD overlapping ascertainment indicators.",
+        "caption_stub": "Supplementary UpSet-style source-specific overlap summary showing ordered intersection counts across ABG, VBG, ICD, and UNKNOWN-source gas ascertainment sources. Figure 2 remains limited to ABG/VBG/ICD overlapping ascertainment indicators.",
         "comparison_statement": "Shows where analytic cohort membership overlaps or remains unique across blood-gas source and ICD ascertainment sources, including UNKNOWN-source gas.",
         "order_rule": "ordered by overlap count",
         "export_type": "double-column",
@@ -2583,15 +2618,52 @@ def format_figure_pct(value: object) -> str:
 
 
 def rfv_display_color(category: str) -> str:
-    """Return the sparse publication palette color for an RFV display category."""
+    """Return the color-blind-safe publication palette color for an RFV display category."""
 
-    if category in SERIES_COLORS:
-        return SERIES_COLORS[category]
+    if category in RFV_CATEGORY_COLORS:
+        return RFV_CATEGORY_COLORS[category]
     try:
         grouped_category = normalize_rfv_group(category)
     except ValueError:
         return ANALYSIS_COLORS["neutral"]
-    return SERIES_COLORS.get(grouped_category, ANALYSIS_COLORS["neutral"])
+    return RFV_CATEGORY_COLORS.get(grouped_category, ANALYSIS_COLORS["neutral"])
+
+
+def prevalence_lollipop_xmax(
+    plot_df: pd.DataFrame,
+    *,
+    minimum: float = 45.0,
+    padding: float = 10.0,
+    cap: float | None = None,
+) -> float:
+    """Return a compact x-axis limit with room for direct value labels."""
+
+    max_value = float(plot_df.max(numeric_only=True).max())
+    if not np.isfinite(max_value):
+        max_value = 0.0
+    x_max = max(minimum, float(np.ceil((max_value + padding) / 5.0) * 5.0))
+    if cap is not None:
+        x_max = min(float(cap), x_max)
+    return x_max
+
+
+def readable_text_color_for_cmap_value(
+    value: float,
+    *,
+    cmap_name: str,
+    vmin: float = 0.0,
+    vmax: float = 100.0,
+) -> str:
+    """Return dark or white text after checking the actual colormap luminance."""
+
+    if vmax <= vmin:
+        normalized_value = 0.0
+    else:
+        normalized_value = (float(value) - vmin) / (vmax - vmin)
+    normalized_value = float(np.clip(normalized_value, 0.0, 1.0))
+    red, green, blue, _ = plt.get_cmap(cmap_name)(normalized_value)
+    relative_luminance = (0.2126 * red) + (0.7152 * green) + (0.0722 * blue)
+    return ANALYSIS_COLORS["dark"] if relative_luminance >= 0.52 else "white"
 
 
 def maybe_order_rfv_categories(values: list[str]) -> list[str]:
@@ -2696,6 +2768,109 @@ def plot_panelled_lollipop(
     return save_analysis_figure(fig, filename)
 
 
+def draw_flow_box(
+    ax: plt.Axes,
+    *,
+    center_x: float,
+    center_y: float,
+    width: float,
+    height: float,
+    text: str,
+    facecolor: str = "#ffffff",
+    edgecolor: str | None = None,
+    linewidth: float = 0.9,
+    fontsize: float = 10.0,
+    fontweight: str | None = None,
+    color: str | None = None,
+    linespacing: float = 1.05,
+) -> dict[str, float]:
+    """Draw a rounded flow box with explicit data-coordinate edges."""
+
+    edgecolor = edgecolor or ANALYSIS_COLORS["light"]
+    color = color or ANALYSIS_COLORS["dark"]
+    left = center_x - width / 2
+    bottom = center_y - height / 2
+    patch = FancyBboxPatch(
+        (left, bottom),
+        width,
+        height,
+        boxstyle="round,pad=0.02,rounding_size=0.12",
+        facecolor=facecolor,
+        edgecolor=edgecolor,
+        linewidth=linewidth,
+        mutation_aspect=1,
+    )
+    ax.add_patch(patch)
+    ax.text(
+        center_x,
+        center_y,
+        text,
+        ha="center",
+        va="center",
+        fontsize=fontsize,
+        fontweight=fontweight,
+        color=color,
+        linespacing=linespacing,
+    )
+    return {
+        "left": left,
+        "right": left + width,
+        "bottom": bottom,
+        "top": bottom + height,
+        "center_x": center_x,
+        "center_y": center_y,
+        "width": width,
+        "height": height,
+    }
+
+
+def flow_box_edge(box: dict[str, float], side: str, *, x_fraction: float = 0.5, y_fraction: float = 0.5) -> tuple[float, float]:
+    """Return a point on a flow-box border in data coordinates."""
+
+    if side == "top":
+        return (box["left"] + box["width"] * x_fraction, box["top"])
+    if side == "bottom":
+        return (box["left"] + box["width"] * x_fraction, box["bottom"])
+    if side == "left":
+        return (box["left"], box["bottom"] + box["height"] * y_fraction)
+    if side == "right":
+        return (box["right"], box["bottom"] + box["height"] * y_fraction)
+    raise ValueError(f"Unsupported flow-box side: {side}")
+
+
+def draw_flow_arrow_between_boxes(
+    ax: plt.Axes,
+    source_box: dict[str, float],
+    target_box: dict[str, float],
+    *,
+    source_side: str = "bottom",
+    target_side: str = "top",
+    source_x_fraction: float = 0.5,
+    target_x_fraction: float = 0.5,
+    source_y_fraction: float = 0.5,
+    target_y_fraction: float = 0.5,
+    arrow_props: dict[str, Any] | None = None,
+) -> None:
+    """Draw an arrow that starts and ends on explicit flow-box borders."""
+
+    props = {
+        "arrowstyle": "->",
+        "lw": 0.9,
+        "color": ANALYSIS_COLORS["mid"],
+        "shrinkA": 0,
+        "shrinkB": 0,
+        "mutation_scale": 9,
+    }
+    if arrow_props:
+        props.update(arrow_props)
+    ax.annotate(
+        "",
+        xy=flow_box_edge(target_box, target_side, x_fraction=target_x_fraction, y_fraction=target_y_fraction),
+        xytext=flow_box_edge(source_box, source_side, x_fraction=source_x_fraction, y_fraction=source_y_fraction),
+        arrowprops=props,
+    )
+
+
 def draw_nlp_workflow_panel(
     ax: plt.Axes,
     *,
@@ -2709,10 +2884,6 @@ def draw_nlp_workflow_panel(
     ax.set_ylim(0, 12)
     ax.axis("off")
     strip_style = dict(boxstyle="round,pad=0.32", facecolor="#f2f4f7", edgecolor=ANALYSIS_COLORS["light"], lw=0.9)
-    process_style = dict(boxstyle="round,pad=0.38", facecolor="#ffffff", edgecolor=ANALYSIS_COLORS["light"], lw=0.9)
-    output_style = dict(boxstyle="round,pad=0.42", facecolor="#f2f4f7", edgecolor=ANALYSIS_COLORS["accent"], lw=1.0)
-    sensitivity_style = dict(boxstyle="round,pad=0.42", facecolor="#ffffff", edgecolor=ANALYSIS_COLORS["mid"], lw=0.9)
-    arrow_props = dict(arrowstyle="->", lw=0.9, color=ANALYSIS_COLORS["mid"], shrinkA=4, shrinkB=4)
 
     if panel_title:
         ax.text(0.03, 0.98, panel_title, transform=ax.transAxes, fontsize=12.5, fontweight="bold", va="top", bbox=strip_style)
@@ -2725,27 +2896,43 @@ def draw_nlp_workflow_panel(
         "Apply deterministic\noverrides",
         "Assign up to five\nRFV categories per admission",
     ]
-    y_positions = [10.4, 9.0, 7.6, 6.2, 4.8, 3.4]
-    for step, y_position in zip(workflow_steps, y_positions, strict=True):
-        ax.text(5, y_position, step, ha="center", va="center", bbox=process_style, fontsize=10.0)
+    y_positions = [10.35, 9.05, 7.75, 6.45, 5.15, 3.85]
+    workflow_boxes = [
+        draw_flow_box(
+            ax,
+            center_x=5,
+            center_y=y_position,
+            width=4.65,
+            height=0.92,
+            text=step,
+            facecolor="#ffffff",
+            edgecolor=ANALYSIS_COLORS["light"],
+            fontsize=9.8,
+        )
+        for step, y_position in zip(workflow_steps, y_positions, strict=True)
+    ]
 
-    for start_y, end_y in zip(y_positions[:-1], y_positions[1:], strict=True):
-        ax.annotate("", xy=(5, end_y + 0.45), xytext=(5, start_y - 0.45), arrowprops=arrow_props)
+    for source_box, target_box in zip(workflow_boxes[:-1], workflow_boxes[1:], strict=True):
+        draw_flow_arrow_between_boxes(ax, source_box, target_box)
 
-    ax.text(
-        5,
-        2.45,
-        f"{format_figure_n(unique_cats)} NHAMCS RFV categories\nN={format_figure_n(classified_admissions_n)} admissions",
-        ha="center",
-        va="center",
-        fontsize=10.0,
+    final_box = draw_flow_box(
+        ax,
+        center_x=5,
+        center_y=1.55,
+        width=6.8,
+        height=1.50,
+        text=(
+            "Final classified cohort\n"
+            f"{format_figure_n(unique_cats)} NHAMCS RFV categories\n"
+            f"N={format_figure_n(classified_admissions_n)} admissions"
+        ),
+        facecolor="#f2f4f7",
+        edgecolor=ANALYSIS_COLORS["accent"],
+        linewidth=1.0,
+        fontsize=9.5,
         fontweight="bold",
-        color=ANALYSIS_COLORS["dark"],
     )
-    ax.annotate("", xy=(3.1, 1.25), xytext=(4.5, 2.0), arrowprops=arrow_props)
-    ax.annotate("", xy=(6.9, 1.25), xytext=(5.5, 2.0), arrowprops=arrow_props)
-    ax.text(2.8, 0.85, "Primary analysis:\nmulti-label RFV prevalence", ha="center", va="center", bbox=output_style, fontsize=9.8, fontweight="bold")
-    ax.text(7.2, 0.85, "Sensitivity:\nfirst-priority RFV assignment only", ha="center", va="center", bbox=sensitivity_style, fontsize=9.8)
+    draw_flow_arrow_between_boxes(ax, workflow_boxes[-1], final_box)
 
 
 def draw_ascertainment_flow_panel(
@@ -2767,50 +2954,151 @@ def draw_ascertainment_flow_panel(
     ax.set_ylim(0, 12)
     ax.axis("off")
     strip_style = dict(boxstyle="round,pad=0.32", facecolor="#f2f4f7", edgecolor=ANALYSIS_COLORS["light"], lw=0.9)
-    start_box = dict(boxstyle="round,pad=0.42", facecolor="#ffffff", edgecolor=ANALYSIS_COLORS["light"], lw=0.9)
-    cohort_box = dict(boxstyle="round,pad=0.5", facecolor="#f2f4f7", edgecolor=ANALYSIS_COLORS["dark"], lw=1.1)
-    evidence_box = dict(boxstyle="round,pad=0.36", facecolor="#ffffff", edgecolor=ANALYSIS_COLORS["light"], lw=0.9)
-    route_box = dict(boxstyle="round,pad=0.40", facecolor="#f8f9fa", edgecolor=ANALYSIS_COLORS["mid"], lw=0.9)
-    flow_arrow = dict(arrowstyle="->", lw=0.9, color=ANALYSIS_COLORS["mid"], shrinkA=4, shrinkB=4)
     center_x = 5
 
     if panel_title:
         ax.text(0.03, 0.98, panel_title, transform=ax.transAxes, fontsize=12.5, fontweight="bold", va="top", bbox=strip_style)
-    ax.text(
-        center_x,
-        10.35,
-        "Admissions linked to ED presentation\nwith nonmissing triage chief complaint\n"
-        f"N={format_figure_n(chief_complaint_present_n)}",
-        ha="center",
-        va="center",
-        bbox=start_box,
-        fontsize=10.2,
+    source_box = draw_flow_box(
+        ax,
+        center_x=center_x,
+        center_y=10.25,
+        width=6.85,
+        height=1.45,
+        text=(
+            "Admissions linked to ED presentation\nwith nonmissing triage chief complaint\n"
+            f"N={format_figure_n(chief_complaint_present_n)}"
+        ),
+        facecolor="#ffffff",
+        edgecolor=ANALYSIS_COLORS["light"],
+        fontsize=9.7,
     )
-    ax.annotate("", xy=(center_x, 8.85), xytext=(center_x, 9.75), arrowprops=flow_arrow)
-    ax.text(
-        center_x,
-        8.35,
-        f"Analytic cohort\nN={format_figure_n(analytic_n)}",
-        ha="center",
-        va="center",
-        bbox=cohort_box,
+    analytic_box = draw_flow_box(
+        ax,
+        center_x=center_x,
+        center_y=8.30,
+        width=3.65,
+        height=1.08,
+        text=f"Analytic cohort\nN={format_figure_n(analytic_n)}",
+        facecolor="#f2f4f7",
+        edgecolor=ANALYSIS_COLORS["dark"],
+        linewidth=1.1,
         fontsize=11.0,
         fontweight="bold",
     )
+    draw_flow_arrow_between_boxes(ax, source_box, analytic_box)
 
-    ax.text(center_x, 7.15, "Overlapping ascertainment indicators", ha="center", va="center", fontsize=10.0, fontweight="bold")
-    for evidence_x in (2.0, center_x, 8.0):
-        ax.annotate("", xy=(evidence_x, 6.2), xytext=(center_x, 6.85), arrowprops=flow_arrow)
-    ax.text(2.0, 5.75, f"ABG-positive\nn={format_figure_n(abg_n)}", ha="center", va="center", bbox=evidence_box, fontsize=9.8)
-    ax.text(center_x, 5.75, f"VBG-positive\nn={format_figure_n(vbg_n)}", ha="center", va="center", bbox=evidence_box, fontsize=9.8)
-    ax.text(8.0, 5.75, f"ICD-positive\nn={format_figure_n(icd_positive_n)}", ha="center", va="center", bbox=evidence_box, fontsize=9.8)
+    indicator_header = draw_flow_box(
+        ax,
+        center_x=center_x,
+        center_y=6.95,
+        width=5.95,
+        height=0.70,
+        text="Overlapping ascertainment indicators",
+        facecolor="#f8f9fa",
+        edgecolor=ANALYSIS_COLORS["light"],
+        linewidth=0.6,
+        fontsize=9.6,
+        fontweight="bold",
+    )
+    draw_flow_arrow_between_boxes(ax, analytic_box, indicator_header)
+    evidence_boxes = [
+        draw_flow_box(
+            ax,
+            center_x=2.0,
+            center_y=5.50,
+            width=2.35,
+            height=1.0,
+            text=f"ABG-positive\nn={format_figure_n(abg_n)}",
+            facecolor="#ffffff",
+            edgecolor=ANALYSIS_COLORS["light"],
+            fontsize=9.8,
+        ),
+        draw_flow_box(
+            ax,
+            center_x=center_x,
+            center_y=5.50,
+            width=2.35,
+            height=1.0,
+            text=f"VBG-positive\nn={format_figure_n(vbg_n)}",
+            facecolor="#ffffff",
+            edgecolor=ANALYSIS_COLORS["light"],
+            fontsize=9.8,
+        ),
+        draw_flow_box(
+            ax,
+            center_x=8.0,
+            center_y=5.50,
+            width=2.35,
+            height=1.0,
+            text=f"ICD-positive\nn={format_figure_n(icd_positive_n)}",
+            facecolor="#ffffff",
+            edgecolor=ANALYSIS_COLORS["light"],
+            fontsize=9.8,
+        ),
+    ]
+    for target_box, source_fraction in zip(evidence_boxes, (0.16, 0.5, 0.84), strict=True):
+        draw_flow_arrow_between_boxes(
+            ax,
+            indicator_header,
+            target_box,
+            source_x_fraction=source_fraction,
+        )
 
-    ax.text(center_x, 4.3, "Mutually exclusive ascertainment strata", ha="center", va="center", fontsize=10.0, fontweight="bold")
-    for route_x in (2.0, center_x, 8.0):
-        ax.annotate("", xy=(route_x, 3.35), xytext=(center_x, 4.0), arrowprops=flow_arrow)
-    ax.text(2.0, 2.9, f"Gas-only\nn={format_figure_n(gas_only_n)}", ha="center", va="center", bbox=route_box, fontsize=10.0)
-    ax.text(center_x, 2.9, f"Both ICD + gas\nn={format_figure_n(both_n)}", ha="center", va="center", bbox=route_box, fontsize=10.0)
-    ax.text(8.0, 2.9, f"ICD-only\nn={format_figure_n(icd_only_n)}", ha="center", va="center", bbox=route_box, fontsize=10.0)
+    stratum_header = draw_flow_box(
+        ax,
+        center_x=center_x,
+        center_y=3.90,
+        width=6.15,
+        height=0.70,
+        text="Mutually exclusive ascertainment strata",
+        facecolor="#f8f9fa",
+        edgecolor=ANALYSIS_COLORS["light"],
+        linewidth=0.6,
+        fontsize=9.6,
+        fontweight="bold",
+    )
+    route_boxes = [
+        draw_flow_box(
+            ax,
+            center_x=2.0,
+            center_y=2.40,
+            width=2.2,
+            height=1.05,
+            text=f"Gas-only\nn={format_figure_n(gas_only_n)}",
+            facecolor="#f8f9fa",
+            edgecolor=ANALYSIS_COLORS["mid"],
+            fontsize=10.0,
+        ),
+        draw_flow_box(
+            ax,
+            center_x=center_x,
+            center_y=2.40,
+            width=2.65,
+            height=1.05,
+            text=f"Both ICD + gas\nn={format_figure_n(both_n)}",
+            facecolor="#f8f9fa",
+            edgecolor=ANALYSIS_COLORS["mid"],
+            fontsize=10.0,
+        ),
+        draw_flow_box(
+            ax,
+            center_x=8.0,
+            center_y=2.40,
+            width=2.2,
+            height=1.05,
+            text=f"ICD-only\nn={format_figure_n(icd_only_n)}",
+            facecolor="#f8f9fa",
+            edgecolor=ANALYSIS_COLORS["mid"],
+            fontsize=10.0,
+        ),
+    ]
+    for target_box, source_fraction in zip(route_boxes, (0.16, 0.5, 0.84), strict=True):
+        draw_flow_arrow_between_boxes(
+            ax,
+            stratum_header,
+            target_box,
+            source_x_fraction=source_fraction,
+        )
 
 
 SOURCE_OVERLAP_SOURCES = ["ABG", "VBG", "ICD", "UNKNOWN"]
@@ -2892,87 +3180,6 @@ def build_source_specific_overlap_set_sizes(intersections: pd.DataFrame) -> pd.D
     )
 
 
-def draw_compact_ascertainment_indicator_overlap_panel(
-    ax: plt.Axes,
-    overlap_display: pd.DataFrame,
-    *,
-    panel_title: str | None = None,
-) -> None:
-    """Draw a compact main-text matrix for source-specific ABG/VBG/ICD/UNKNOWN overlap."""
-
-    required_columns = ["intersection_label", "count", *SOURCE_OVERLAP_MATRIX_COLUMNS.values()]
-    missing_columns = [column for column in required_columns if column not in overlap_display.columns]
-    if missing_columns:
-        raise ValueError(f"Ascertainment overlap display is missing columns: {missing_columns}")
-
-    display_df = overlap_display.loc[overlap_display["count"].gt(0), required_columns].copy()
-    if display_df.empty:
-        raise ValueError("Ascertainment overlap display has no positive-count intersections.")
-
-    n_rows = len(display_df)
-    y_positions = np.arange(n_rows - 1, -1, -1)
-    label_x = 0.025
-    count_x = 0.565
-    dot_x = {
-        "ABG-positive": 0.70,
-        "VBG-positive": 0.785,
-        "ICD-positive": 0.865,
-        "UNKNOWN-positive": 0.955,
-    }
-    dot_headers = {
-        "ABG-positive": "ABG",
-        "VBG-positive": "VBG",
-        "ICD-positive": "ICD",
-        "UNKNOWN-positive": "UNKNOWN\ngas",
-    }
-
-    ax.set_xlim(0, 1)
-    ax.set_ylim(-1.45, n_rows + 2.0)
-    ax.axis("off")
-    strip_style = dict(boxstyle="round,pad=0.24", facecolor="#f2f4f7", edgecolor=ANALYSIS_COLORS["light"], lw=0.9)
-    if panel_title:
-        ax.text(0.02, n_rows + 1.45, panel_title, fontsize=12.5, fontweight="bold", va="center", bbox=strip_style)
-
-    header_y = n_rows + 0.55
-    ax.text(label_x, header_y, "Source-specific intersection", ha="left", va="center", fontsize=8.4, fontweight="bold")
-    ax.text(count_x, header_y, "Admissions", ha="left", va="center", fontsize=8.4, fontweight="bold")
-    for indicator, x_position in dot_x.items():
-        ax.text(
-            x_position,
-            header_y,
-            dot_headers[indicator],
-            ha="center",
-            va="center",
-            fontsize=7.2,
-            fontweight="bold",
-        )
-
-    for y_position, (_, row) in zip(y_positions, display_df.iterrows(), strict=False):
-        ax.hlines(y_position - 0.46, 0.02, 0.985, color="#edf0f4", lw=0.75)
-        ax.text(label_x, y_position, str(row["intersection_label"]), ha="left", va="center", fontsize=7.8)
-        ax.text(count_x, y_position, format_figure_n(row["count"]), ha="left", va="center", fontsize=7.8)
-        for indicator, x_position in dot_x.items():
-            active = bool(row[indicator])
-            ax.scatter(
-                x_position,
-                y_position,
-                s=56 if active else 24,
-                color=ANALYSIS_COLORS["dark"] if active else "#d9dde3",
-                edgecolor=ANALYSIS_COLORS["dark"] if active else "#d9dde3",
-                marker="o",
-                zorder=3,
-            )
-    ax.text(
-        0.025,
-        -1.08,
-        "Panel C shows source-specific overlap across ABG, VBG, ICD, and UNKNOWN-source gas; counts sum to the analytic cohort.",
-        ha="left",
-        va="center",
-        fontsize=7.6,
-        color=ANALYSIS_COLORS["mid"],
-    )
-
-
 def render_manuscript_prevalence_panels(
     plot_df: pd.DataFrame,
     *,
@@ -2998,6 +3205,9 @@ def render_manuscript_prevalence_panels(
     """Render one manuscript prevalence figure with consistent category order and x-limits."""
 
     category_order = ordered_rfv_display_categories(category_order)
+    plot_matrix_for_limits = plot_df.reindex(index=facet_order, columns=category_order).fillna(0)
+    label_x_padding = 2.0
+    label_bound_max = float(plot_matrix_for_limits.max(numeric_only=True).max())
     ci_max = None
     if ci_upper_df is not None and not ci_upper_df.empty:
         ci_max = float(
@@ -3006,7 +3216,9 @@ def render_manuscript_prevalence_panels(
             .max()
         )
         if np.isfinite(ci_max):
-            x_max = max(x_max, float(np.ceil((ci_max + 8.0) / 5.0) * 5.0))
+            label_bound_max = max(label_bound_max, ci_max)
+    if np.isfinite(label_bound_max):
+        x_max = max(x_max, float(np.ceil((label_bound_max + label_x_padding + 5.0) / 5.0) * 5.0))
     fig, axes = plt.subplots(1, len(facet_order), figsize=get_figure_size(key, height=height), sharex=True, sharey=True)
     axes = np.atleast_1d(axes).ravel()
     for axis_index, facet in enumerate(facet_order):
@@ -3049,26 +3261,39 @@ def render_manuscript_prevalence_panels(
                 zorder=3,
             )
         for category, y_pos, value in zip(facet_values.index, y_positions, facet_values.to_numpy(), strict=False):
+            is_highlighted = highlight_categories is not None and category in highlight_categories
             if muted_marks:
                 point_color = ANALYSIS_COLORS["neutral"]
             else:
-                point_color = (
-                    highlight_color
-                    if highlight_categories is not None and category in highlight_categories
-                    else ANALYSIS_COLORS["neutral"]
-                    if highlight_categories is not None
-                    else rfv_display_color(category)
-                )
+                point_color = rfv_display_color(category)
             axis.plot(
                 value,
                 y_pos,
                 linestyle="none",
                 marker=SERIES_MARKERS.get(category, "o"),
-                markersize=6.5,
+                markersize=7.0 if is_highlighted else 6.5,
                 color=point_color,
                 zorder=4,
             )
-            axis.text(value + 0.6, y_pos, format_figure_pct(value), va="center", ha="left", fontsize=FIGURE_STYLE["annotation_size"])
+            label_anchor = value
+            if upper_values is not None:
+                label_anchor = max(label_anchor, float(upper_values.loc[category]))
+            axis.text(
+                label_anchor + label_x_padding,
+                y_pos,
+                format_figure_pct(value),
+                va="center",
+                ha="left",
+                fontsize=FIGURE_STYLE["annotation_size"],
+                color=ANALYSIS_COLORS["dark"],
+                bbox={
+                    "boxstyle": "round,pad=0.10",
+                    "facecolor": "white",
+                    "edgecolor": "none",
+                    "alpha": 0.92,
+                },
+                clip_on=False,
+            )
         facet_label = facet_label_map.get(facet, facet) if facet_label_map else facet
         facet_strip_label = (
             facet_strip_label_map.get(facet)
@@ -3134,11 +3359,6 @@ def render_age_profile_panels(
             y_max = max(y_max, float(np.ceil((ci_max + 5.0) / 5.0) * 5.0))
     age_positions = np.arange(len(age_order))
     age_tick_labels = [f"{age_group}\nN={format_figure_n(group_sizes.get(age_group, 0))}" for age_group in age_order]
-    figure3_color_map = {
-        "Respiratory": ANALYSIS_COLORS["accent"],
-        "Injuries & adverse effects": ANALYSIS_COLORS["injury"],
-    }
-
     fig, axes = plt.subplots(2, 3, figsize=get_figure_size(key, height=height), sharex=True, sharey=True)
     axes = np.atleast_1d(axes).ravel()
     for axis_index, category in enumerate(category_order):
@@ -3156,7 +3376,7 @@ def render_age_profile_panels(
         else:
             yerr = None
         is_highlighted = category in highlight_categories
-        line_color = figure3_color_map.get(category, ANALYSIS_COLORS["neutral"])
+        line_color = rfv_display_color(category)
         marker_face = line_color if is_highlighted else "white"
         line_width = 2.0 if is_highlighted else 1.35
         marker_size = 5.8 if is_highlighted else 4.8
@@ -3265,11 +3485,6 @@ def render_ph_severity_profile_panels(
         f"{ph_tick_label_map.get(ph_stratum, ph_stratum)}\nN={format_figure_n(group_sizes.get(ph_stratum, 0))}"
         for ph_stratum in ph_order
     ]
-    figure4_color_map = {
-        "Respiratory": ANALYSIS_COLORS["accent"],
-        "Injuries & adverse effects": ANALYSIS_COLORS["injury"],
-    }
-
     fig, axes = plt.subplots(2, 3, figsize=get_figure_size(key, height=height), sharex=True, sharey=True)
     axes = np.atleast_1d(axes).ravel()
     for axis_index, category in enumerate(category_order):
@@ -3287,7 +3502,7 @@ def render_ph_severity_profile_panels(
         else:
             yerr = None
         is_highlighted = category in highlight_categories
-        line_color = figure4_color_map.get(category, ANALYSIS_COLORS["neutral"])
+        line_color = rfv_display_color(category)
         marker_face = line_color if is_highlighted else "white"
         line_width = 2.0 if is_highlighted else 1.35
         marker_size = 5.8 if is_highlighted else 4.8
@@ -3384,18 +3599,13 @@ def render_bicarbonate_profile_panels(
         f"{bicarbonate_tick_label_map.get(stratum, stratum)}\nN={format_figure_n(group_sizes.get(stratum, 0))}"
         for stratum in bicarbonate_order
     ]
-    figure_s9_color_map = {
-        "Respiratory": ANALYSIS_COLORS["accent"],
-        "Injuries & adverse effects": ANALYSIS_COLORS["injury"],
-    }
-
     fig, axes = plt.subplots(2, 3, figsize=get_figure_size(key, height=height), sharex=True, sharey=True)
     axes = np.atleast_1d(axes).ravel()
     for axis_index, category in enumerate(category_order):
         axis = axes[axis_index]
         values = plot_matrix[category].to_numpy(dtype=float)
         is_highlighted = category in highlight_categories
-        line_color = figure_s9_color_map.get(category, ANALYSIS_COLORS["neutral"])
+        line_color = rfv_display_color(category)
         marker_face = line_color if is_highlighted else "white"
         line_width = 2.0 if is_highlighted else 1.35
         marker_size = 5.8 if is_highlighted else 4.8
@@ -3545,16 +3755,11 @@ def render_recognition_by_pco2_heatmap(
                     f"{format_figure_pct(value_matrix.loc[category, pco2_bin])}\n"
                     f"{format_figure_n(numerator)}/{format_figure_n(denominator)}"
                 )
-    recognition_cmap = LinearSegmentedColormap.from_list(
-        "icd_recognition_grayscale",
-        ["#f7f7f7", "#dedede", "#bdbdbd", "#7f7f7f", "#343434"],
-    )
-
     fig, ax = plt.subplots(figsize=get_figure_size(key, height=height))
     sns.heatmap(
         value_matrix,
         ax=ax,
-        cmap=recognition_cmap,
+        cmap="cividis",
         vmin=0.0,
         vmax=100.0,
         annot=cell_labels.to_numpy(),
@@ -3575,7 +3780,7 @@ def render_recognition_by_pco2_heatmap(
     for spine in ax.spines.values():
         spine.set_visible(False)
     for text, cell_value in zip(ax.texts, value_matrix.to_numpy(dtype=float).ravel(), strict=False):
-        text.set_color("white" if cell_value >= 55.0 else ANALYSIS_COLORS["dark"])
+        text.set_color(readable_text_color_for_cmap_value(cell_value, cmap_name="cividis"))
     fig.subplots_adjust(left=0.25, right=0.985, top=0.92, bottom=0.15)
     return save_and_render_figure(fig, key, alias_keys=alias_keys)
 
@@ -3768,8 +3973,8 @@ SUBMISSION_TABLE_SPECS = {
         "intended_caption": "Baseline characteristics of the analytic cohort. Binary variables are shown as n (%); continuous variables are shown as median [IQR].",
     },
     "Table 2": {
-        "title": "Chief complaint and grouped RFV prevalence summary",
-        "intended_caption": "Raw triage chief complaint field frequencies and NLP-derived RFV prevalence in the analytic cohort.",
+        "title": "NLP-derived NHAMCS RFV category prevalence",
+        "intended_caption": "Admission-level multi-label NHAMCS RFV category prevalence in the analytic cohort. Counts and percentages reflect admissions with each RFV category; categories are not mutually exclusive, and 95% confidence intervals use patient-cluster bootstrap.",
     },
     "Supplementary Table S1": {
         "title": "Raw triage chief complaint field entries",
@@ -4862,7 +5067,10 @@ def build_candidate_definition_membership(df: pd.DataFrame) -> pd.DataFrame:
     )
     membership = pd.DataFrame(index=df.index)
     membership["Broad EHR hypercapnia cohort"] = any_icd | any_gas
-    membership["Gas-confirmed hypercapnia"] = any_gas
+    membership["Any qualifying gas"] = any_gas
+    membership["Gas-only"] = any_gas & (~any_icd)
+    membership["ICD-only"] = any_icd & (~any_gas)
+    membership["Both ICD + gas"] = any_icd & any_gas
     membership["Early gas <=24h"] = any_gas & gas_hours.le(24)
     membership["Early gas <=6h"] = any_gas & gas_hours.lt(6)
     membership["Early acidemic gas <=24h"] = any_gas & gas_hours.le(24) & ph.lt(7.35)
@@ -4970,7 +5178,8 @@ def build_gas_source_sensitivity_summary(df: pd.DataFrame) -> pd.DataFrame:
     frames = {
         "Broad EHR cohort": df,
         "Any qualifying gas": df.loc[any_gas],
-        "Exclude UNKNOWN-source gas": df.loc[~unknown],
+        "Exclude any UNKNOWN-source gas evidence": df.loc[~unknown],
+        "Gas-positive excluding UNKNOWN-source gas": df.loc[any_gas & ~unknown],
         "ABG-positive": df.loc[to_binary_flag(maybe_series(df, ["abg_hypercap_threshold"])).eq(1)],
         "VBG-positive": df.loc[to_binary_flag(maybe_series(df, ["vbg_hypercap_threshold"])).eq(1)],
     }
@@ -5018,66 +5227,290 @@ def build_icd_era_sensitivity_summary(df: pd.DataFrame) -> pd.DataFrame:
     return summary
 
 
-def build_administrative_exclusion_sensitivity(df: pd.DataFrame) -> pd.DataFrame:
-    """Summarize impact of excluding administrative-only RFV presentations."""
+def _administrative_only_rfv_mask(df: pd.DataFrame) -> pd.Series:
+    """Return True for rows with Administrative RFV and no other RFV indicator."""
 
     administrative = to_binary_flag(maybe_series(df, ["has_rfv_administrative", "has_group_administrative"])).eq(1)
-    canonical_cols = [column for column in df.columns if column.startswith("has_rfv_")]
-    non_admin_cols = [column for column in canonical_cols if column != "has_rfv_administrative"]
+    indicator_cols = [
+        column
+        for column in df.columns
+        if column.startswith("has_rfv_") or column.startswith("has_group_")
+    ]
+    non_admin_cols = [
+        column
+        for column in indicator_cols
+        if column not in {"has_rfv_administrative", "has_group_administrative"}
+    ]
     non_admin_any = pd.Series(False, index=df.index)
     for column in non_admin_cols:
         non_admin_any = non_admin_any | to_binary_flag(df[column]).eq(1)
-    admin_only = administrative & (~non_admin_any)
+    return administrative & (~non_admin_any)
+
+
+def build_administrative_exclusion_sensitivity(df: pd.DataFrame) -> pd.DataFrame:
+    """Summarize impact of excluding administrative-only RFV presentations."""
+
+    admin_only = _administrative_only_rfv_mask(df)
     frames = {
         "Primary cohort": df,
         "Exclude administrative-only RFV": df.loc[~admin_only],
     }
     rows = []
+    grouped_categories = [
+        category
+        for category in ordered_rfv_display_categories(RFV_GROUP_ORDER)
+        if f"has_group_{_slugify_category(category)}" in df.columns
+    ]
     for label, frame in frames.items():
-        rows.append(
-            {
-                "sensitivity": label,
-                "N_admissions": int(len(frame)),
-                "excluded_administrative_only_n": int(admin_only.sum()) if label != "Primary cohort" else 0,
-                "respiratory_rfv_percent": round(to_binary_flag(maybe_series(frame, ["has_group_respiratory"])).mean() * 100, 2) if len(frame) else np.nan,
-                "administrative_rfv_percent": round(to_binary_flag(maybe_series(frame, ["has_rfv_administrative", "has_group_administrative"])).mean() * 100, 2) if len(frame) else np.nan,
-            }
-        )
-    return pd.DataFrame(rows)
+        for category in grouped_categories:
+            flag_column = f"has_group_{_slugify_category(category)}"
+            flag = to_binary_flag(maybe_series(frame, [flag_column])).eq(1)
+            n_with_category = int(flag.sum()) if len(frame) else 0
+            rows.append(
+                {
+                    "sensitivity": label,
+                    "grouped_rfv_category": category,
+                    "N_admissions": int(len(frame)),
+                    "excluded_administrative_only_n": int(admin_only.sum()) if label != "Primary cohort" else 0,
+                    "n_with_category": n_with_category,
+                    "percent_with_category": round(n_with_category / max(len(frame), 1) * 100, 2) if len(frame) else np.nan,
+                }
+            )
+    out = pd.DataFrame(rows)
+    if out.empty:
+        return out
+    primary_lookup = (
+        out.loc[out["sensitivity"].eq("Primary cohort"), ["grouped_rfv_category", "percent_with_category"]]
+        .set_index("grouped_rfv_category")["percent_with_category"]
+    )
+    out["difference_pp_vs_primary"] = out.apply(
+        lambda row: round(
+            float(row["percent_with_category"])
+            - float(primary_lookup.get(row["grouped_rfv_category"], np.nan)),
+            2,
+        ),
+        axis=1,
+    )
+    return out
+
+
+def _any_numeric_candidate_ge(
+    df: pd.DataFrame,
+    candidates: list[str],
+    threshold: float,
+) -> pd.Series:
+    """Return True when any available numeric candidate column is at least threshold."""
+
+    if np.isinf(threshold):
+        return pd.Series(False, index=df.index)
+    mask = pd.Series(False, index=df.index)
+    for column in candidates:
+        if column in df.columns:
+            mask = mask | pd.to_numeric(df[column], errors="coerce").ge(threshold).fillna(False)
+    return mask
+
+
+def source_specific_pco2_threshold_mask(
+    df: pd.DataFrame,
+    *,
+    abg_threshold: float,
+    vbg_threshold: float,
+    unknown_threshold: float,
+) -> pd.Series:
+    """Evaluate stricter PCO2 thresholds using source-specific gas evidence."""
+
+    selected_source = maybe_series(df, ["qualifying_site_group"]).astype("string").fillna("UNKNOWN")
+    selected_pco2 = maybe_numeric(df, ["qualifying_pco2_mmhg"])
+    abg_pass = _any_numeric_candidate_ge(
+        df,
+        [
+            "first_abg_hypercap_pco2_mmhg",
+            "lab_abg_paco2",
+            "poc_abg_paco2",
+            "first_abg_pco2",
+        ],
+        abg_threshold,
+    )
+    vbg_pass = _any_numeric_candidate_ge(
+        df,
+        [
+            "first_vbg_hypercap_pco2_mmhg",
+            "lab_vbg_paco2",
+            "poc_vbg_paco2",
+            "first_vbg_pco2",
+        ],
+        vbg_threshold,
+    )
+    unknown_pass = _any_numeric_candidate_ge(
+        df,
+        [
+            "first_other_hypercap_pco2_mmhg",
+            "first_other_pco2",
+        ],
+        unknown_threshold,
+    )
+    abg_pass = abg_pass | (selected_source.eq("ABG") & selected_pco2.ge(abg_threshold).fillna(False))
+    vbg_pass = vbg_pass | (selected_source.eq("VBG") & selected_pco2.ge(vbg_threshold).fillna(False))
+    unknown_pass = unknown_pass | (
+        selected_source.eq("UNKNOWN") & selected_pco2.ge(unknown_threshold).fillna(False)
+    )
+    return abg_pass | vbg_pass | unknown_pass
 
 
 def build_pco2_threshold_sensitivity_summary(df: pd.DataFrame) -> pd.DataFrame:
-    """Summarize stricter PCO2 threshold sensitivity without redefining the main cohort."""
+    """Summarize stricter PCO2 threshold sensitivity among blood-gas-positive admissions."""
 
-    pco2 = maybe_numeric(df, ["qualifying_pco2_mmhg"])
-    source = maybe_series(df, ["qualifying_site_group"]).astype("string").fillna("UNKNOWN")
-    any_icd = to_binary_flag(maybe_series(df, ["any_hypercap_icd"])).eq(1)
+    any_gas = to_binary_flag(maybe_series(df, ["pco2_threshold_any"])).eq(1)
+    unknown = to_binary_flag(maybe_series(df, ["unknown_hypercap_threshold"])).eq(1)
+    gas_denominator_n = int(any_gas.sum())
     specs = [
         ("Primary thresholds", 45, 50, 50),
         ("ABG>=50 VBG>=55 UNKNOWN>=55", 50, 55, 55),
         ("ABG>=55 VBG>=60 UNKNOWN>=60", 55, 60, 60),
-        ("Exclude UNKNOWN-source gas", 45, 50, np.inf),
+        ("Exclude any UNKNOWN-source gas evidence", 45, 50, np.inf),
     ]
     rows = []
     for label, abg_threshold, vbg_threshold, unknown_threshold in specs:
-        gas_pass = (
-            (source.eq("ABG") & pco2.ge(abg_threshold))
-            | (source.eq("VBG") & pco2.ge(vbg_threshold))
-            | (source.eq("UNKNOWN") & pco2.ge(unknown_threshold))
-        )
-        retained = any_icd | gas_pass
+        if label == "Primary thresholds":
+            gas_pass = any_gas
+        elif label == "Exclude any UNKNOWN-source gas evidence":
+            gas_pass = any_gas & (~unknown)
+        else:
+            gas_pass = source_specific_pco2_threshold_mask(
+                df,
+                abg_threshold=abg_threshold,
+                vbg_threshold=vbg_threshold,
+                unknown_threshold=unknown_threshold,
+            )
+        retained = any_gas & gas_pass
         rows.append(
             {
                 "threshold_sensitivity": label,
+                "denominator_scope": "Blood-gas-positive admissions",
                 "abg_threshold_mmhg": abg_threshold,
                 "vbg_threshold_mmhg": vbg_threshold,
                 "unknown_threshold_mmhg": "excluded" if np.isinf(unknown_threshold) else unknown_threshold,
+                "pco2_evidence_rule": (
+                    "source-specific exported PCO2 evidence"
+                    if label not in {"Primary thresholds", "Exclude any UNKNOWN-source gas evidence"}
+                    else "primary gas flag or explicit UNKNOWN-source exclusion"
+                ),
                 "N_retained": int(retained.sum()),
-                "percent_of_primary_cohort_retained": round(retained.sum() / max(len(df), 1) * 100, 2),
+                "N_denominator": gas_denominator_n,
+                "percent_of_gas_positive_retained": round(retained.sum() / max(gas_denominator_n, 1) * 100, 2),
                 "respiratory_rfv_percent": round(to_binary_flag(maybe_series(df.loc[retained], ["has_group_respiratory"])).mean() * 100, 2) if retained.any() else np.nan,
             }
         )
     return pd.DataFrame(rows)
+
+
+def build_analytic_cohort_threshold_sensitivity_summary(df: pd.DataFrame) -> pd.DataFrame:
+    """Summarize threshold sensitivity for the ICD-or-gas analytic union."""
+
+    any_icd = to_binary_flag(maybe_series(df, ["any_hypercap_icd"])).eq(1)
+    any_gas = to_binary_flag(maybe_series(df, ["pco2_threshold_any"])).eq(1)
+    unknown = to_binary_flag(maybe_series(df, ["unknown_hypercap_threshold"])).eq(1)
+    specs = [
+        ("Primary thresholds", 45, 50, 50),
+        ("ABG>=50 VBG>=55 UNKNOWN>=55", 50, 55, 55),
+        ("ABG>=55 VBG>=60 UNKNOWN>=60", 55, 60, 60),
+        ("Exclude any UNKNOWN-source gas evidence", 45, 50, np.inf),
+    ]
+    rows = []
+    for label, abg_threshold, vbg_threshold, unknown_threshold in specs:
+        if label == "Primary thresholds":
+            retained = any_icd | any_gas
+        elif label == "Exclude any UNKNOWN-source gas evidence":
+            retained = (any_icd | any_gas) & (~unknown)
+        else:
+            gas_pass = source_specific_pco2_threshold_mask(
+                df,
+                abg_threshold=abg_threshold,
+                vbg_threshold=vbg_threshold,
+                unknown_threshold=unknown_threshold,
+            )
+            retained = any_icd | gas_pass
+        rows.append(
+            {
+                "threshold_sensitivity": label,
+                "denominator_scope": "Analytic ICD-or-gas cohort",
+                "abg_threshold_mmhg": abg_threshold,
+                "vbg_threshold_mmhg": vbg_threshold,
+                "unknown_threshold_mmhg": "excluded" if np.isinf(unknown_threshold) else unknown_threshold,
+                "pco2_evidence_rule": (
+                    "source-specific exported PCO2 evidence"
+                    if label not in {"Primary thresholds", "Exclude any UNKNOWN-source gas evidence"}
+                    else "primary ICD-or-gas flag or explicit UNKNOWN-source exclusion"
+                ),
+                "N_retained": int(retained.sum()),
+                "N_denominator": int(len(df)),
+                "percent_of_analytic_cohort_retained": round(retained.sum() / max(len(df), 1) * 100, 2),
+                "respiratory_rfv_percent": round(to_binary_flag(maybe_series(df.loc[retained], ["has_group_respiratory"])).mean() * 100, 2) if retained.any() else np.nan,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def build_sensitivity_denominator_audit(df: pd.DataFrame) -> pd.DataFrame:
+    """Return one canonical aggregate denominator table for sensitivity outputs."""
+
+    ensure_required_columns(df, ["pco2_threshold_any", "any_hypercap_icd"])
+    any_gas = to_binary_flag(maybe_series(df, ["pco2_threshold_any"])).eq(1)
+    any_icd = to_binary_flag(maybe_series(df, ["any_hypercap_icd"])).eq(1)
+    gas_hours = maybe_numeric(df, ["dt_qualifying_hypercapnia_hours", "time_to_gas_hrs"])
+    unknown = to_binary_flag(maybe_series(df, ["unknown_hypercap_threshold"])).eq(1)
+    first_admission = first_eligible_admission_mask(df)
+    admin_only = _administrative_only_rfv_mask(df)
+    broad = any_icd | any_gas
+    masks = {
+        "Broad EHR cohort": broad,
+        "Blood-gas-positive": any_gas,
+        "ICD-positive": any_icd,
+        "Gas-only": any_gas & (~any_icd),
+        "ICD-only": any_icd & (~any_gas),
+        "Both ICD + gas": any_icd & any_gas,
+        "UNKNOWN-source gas": unknown,
+        "First qualifying gas <=24h": any_gas & gas_hours.le(24),
+        "First qualifying gas <6h": any_gas & gas_hours.lt(6),
+        "First admission per patient": first_admission,
+        "Exclude administrative-only RFV": ~admin_only,
+        "Exclude any UNKNOWN-source gas evidence": ~unknown,
+        "Gas-positive excluding UNKNOWN-source gas": any_gas & (~unknown),
+    }
+    broad_denominator = int(broad.sum())
+    return pd.DataFrame(
+        [
+            {
+                "denominator_label": label,
+                "N_admissions": int(mask.fillna(False).sum()),
+                "percent_of_broad_cohort": round(int(mask.fillna(False).sum()) / max(broad_denominator, 1) * 100, 2),
+                "definition": _sensitivity_denominator_definition(label),
+                "row_level_identifiers_exported": False,
+            }
+            for label, mask in masks.items()
+        ]
+    )
+
+
+def _sensitivity_denominator_definition(label: str) -> str:
+    """Return a concise denominator definition for the sensitivity audit."""
+
+    definitions = {
+        "Broad EHR cohort": "Any ICD hypercapnia/OHS/RF code or qualifying PCO2 after ED anchor through discharge.",
+        "Blood-gas-positive": "Any qualifying PCO2 after ED anchor through discharge.",
+        "ICD-positive": "Any hypercapnia/OHS/RF ICD phenotype.",
+        "Gas-only": "Qualifying PCO2 and no hypercapnia/OHS/RF ICD phenotype.",
+        "ICD-only": "Hypercapnia/OHS/RF ICD phenotype and no qualifying PCO2.",
+        "Both ICD + gas": "Both hypercapnia/OHS/RF ICD phenotype and qualifying PCO2.",
+        "UNKNOWN-source gas": "Any qualifying gas classified as UNKNOWN/indeterminate source.",
+        "First qualifying gas <=24h": "Qualifying PCO2 at or before 24h from ED anchor.",
+        "First qualifying gas <6h": "Qualifying PCO2 before 6h from ED anchor.",
+        "First admission per patient": "First eligible admission per subject_id by deterministic ordering.",
+        "Exclude administrative-only RFV": "Broad cohort after removing admissions with Administrative RFV and no non-administrative RFV labels.",
+        "Exclude any UNKNOWN-source gas evidence": "Broad cohort after removing admissions with any UNKNOWN/indeterminate-source gas evidence.",
+        "Gas-positive excluding UNKNOWN-source gas": "Blood-gas-positive admissions after removing admissions with any UNKNOWN/indeterminate-source gas evidence.",
+    }
+    return definitions.get(label, "")
 
 
 TABLE1_SUMMARY_MEDIAN_IQR = "median [IQR]"
@@ -6961,8 +7394,6 @@ timing_panel_titles = {
     "Late acidemia": "Late acidemia",
     "No acidemia": "No acidemia",
 }
-sensitivity_strip_text = "Sensitivity analysis: first-priority RFV only"
-
 cohort_construction = pd.DataFrame(
     [
         {
@@ -7277,10 +7708,8 @@ sensitivity_route_plot_path = render_manuscript_prevalence_panels(
     alias_keys=["figure_s2_png"],
     title=FIGURE_SPECS["sensitivity_route_plot"]["title"],
     facet_label_map=route_panel_titles,
-    x_max=100.0,
+    x_max=prevalence_lollipop_xmax(route_sensitivity, cap=100.0),
     y_label="First-priority presenting-concern category",
-    strip_text=sensitivity_strip_text,
-    muted_marks=True,
     height=5.8,
 )
 note_export(sensitivity_route_plot_path)
@@ -7300,13 +7729,16 @@ sensitivity_age_plot_path = render_manuscript_prevalence_panels(
     alias_keys=["figure_s3_png"],
     title=FIGURE_SPECS["sensitivity_age_plot"]["title"],
     facet_label_map=age_panel_titles,
-    x_max=100.0,
+    x_max=prevalence_lollipop_xmax(age_sensitivity, cap=100.0),
     y_label="First-priority presenting-concern category",
-    strip_text=sensitivity_strip_text,
-    muted_marks=True,
     height=6.1,
 )
 note_export(sensitivity_age_plot_path)
+
+for table1_source_frame in (analytic_df, gas_only_df, icd_only_df, both_df):
+    table1_source_frame["ed_triage_acuity_missing_unknown"] = (
+        pd.to_numeric(table1_source_frame["ed_triage_acuity"], errors="coerce").isna().astype(int)
+    )
 
 table1_group_frames = {
     "Overall": analytic_df,
@@ -7356,6 +7788,13 @@ table1_triage_acuity_rows = [
     table1_row(f"ED triage acuity: {int(acuity)}", "ed_triage_acuity", TABLE1_SUMMARY_COUNT_PCT, acuity)
     for acuity in sorted(pd.to_numeric(analytic_df["ed_triage_acuity"], errors="coerce").dropna().unique().tolist())
 ]
+table1_triage_acuity_rows.append(
+    table1_row(
+        "ED triage acuity missing/unknown",
+        "ed_triage_acuity_missing_unknown",
+        TABLE1_SUMMARY_COUNT_PCT,
+    )
+)
 table1_ascertainment_rows = [
     table1_row("ICD-positive", "any_hypercap_icd", TABLE1_SUMMARY_COUNT_PCT),
     table1_row("Blood-gas criteria met", "pco2_threshold_any", TABLE1_SUMMARY_COUNT_PCT),
@@ -7466,10 +7905,17 @@ rfv_counts = (
 )
 for column in ("Percent", "ci_lower", "ci_upper"):
     rfv_counts[column] = rfv_counts[column].round(2)
-rfv_counts_for_combined = rfv_counts[["RFV category", "Count", "Percent"]].copy()
-rfv_counts_for_combined["95% CI"] = rfv_counts.apply(
+table_2_submission = rfv_counts[["RFV category", "Count", "Percent"]].copy()
+table_2_submission["95% CI"] = rfv_counts.apply(
     lambda row: f"{row['ci_lower']:.2f}-{row['ci_upper']:.2f}",
     axis=1,
+)
+table_2_submission = table_2_submission.rename(
+    columns={
+        "RFV category": "NHAMCS RFV category",
+        "Count": "n admissions",
+        "Percent": "% admissions",
+    }
 )
 rfv_primary_counts = (
     analytic_df[RFV_PRIMARY_COL_SENSITIVITY].value_counts().rename_axis("RFV category").reset_index(name="Count")
@@ -7481,37 +7927,45 @@ table2_notes = pd.DataFrame(
         "note": [
             "Primary RFV prevalence is multi-label: each admission contributes once to every assigned RFV category across RFV1_name..RFV5_name.",
             "Categories are not mutually exclusive; percentages represent the percent of admissions with at least one mapped label and may sum to more than 100%.",
-            "The Combined_View and RFV_Prevalence sheets report patient-cluster bootstrap 95% confidence intervals for admission-level RFV category prevalence.",
-            "Sensitivity outputs use RFV1_name only and yield a mutually exclusive distribution that sums to approximately 100%.",
+            "The Table_2 sheet reports patient-cluster bootstrap 95% confidence intervals for admission-level RFV category prevalence.",
+            "Source diagnostics and first-priority RFV sensitivity outputs are exported in separate private workbooks.",
         ]
     }
 )
-max_len = max(len(cc_counts), len(rfv_counts_for_combined))
-combined_table_2 = pd.DataFrame(index=range(max_len))
-for column in cc_counts.columns:
-    combined_table_2[column] = cc_counts[column]
-combined_table_2["spacer"] = ""
-for column in rfv_counts_for_combined.columns:
-    combined_table_2[f"RFV_{column}"] = rfv_counts_for_combined[column]
 table_2_xlsx_path = write_excel_export(
     "table_2_xlsx",
     {
-        "Combined_View": combined_table_2,
-        "RFV_Prevalence": rfv_counts,
-        "Labels_per_Admission": table2_labels_per_encounter,
-        "RFV_Uncodable_Diagnostics": rfv_uncodable_diagnostics,
-        "RFV_Label_Coverage": rfv_label_coverage_audit,
+        "Table_2": table_2_submission,
         "Notes": table2_notes,
     },
 )
 table_2_pdf_path = write_pdf_table_export(
     "table_2_pdf",
-    combined_table_2.fillna(""),
-    title="Table 2. Common raw chief complaints and NLP-derived RFV prevalence",
+    table_2_submission.fillna(""),
+    title="Table 2. NLP-derived NHAMCS RFV category prevalence",
     builder="render_table_2_pdf",
     font_size=7,
     scale_x=1.0,
     scale_y=1.12,
+)
+table_2_source_workbook_path = write_excel_export(
+    "table_2_source_workbook",
+    {
+        "RFV_Prevalence_Source": rfv_counts,
+        "Top_Raw_Triage_Entries": cc_counts,
+        "Labels_per_Admission": table2_labels_per_encounter,
+        "RFV_Uncodable_Diagnostics": rfv_uncodable_diagnostics,
+        "RFV_Label_Coverage": rfv_label_coverage_audit,
+        "Notes": pd.DataFrame(
+            {
+                "note": [
+                    "Private source workbook for Table 2 diagnostics; not a submission-facing table.",
+                    "RFV prevalence is multi-label and admission-level.",
+                    "Top raw triage entries are retained here for internal review only.",
+                ]
+            }
+        ),
+    },
 )
 sensitivity_table_2_path = write_excel_export(
     "sensitivity_table_2",
@@ -7520,7 +7974,7 @@ sensitivity_table_2_path = write_excel_export(
         "Notes": pd.DataFrame(
             {
                 "note": [
-                    "Sensitivity analysis: RFV1_name only. Each admission contributes only its primary predicted category.",
+                    "Sensitivity analysis: first-priority RFV assignment only. Each admission contributes only its first predicted RFV category.",
                     "Percentages in this workbook are mutually exclusive and should sum to approximately 100% after rounding.",
                 ]
             }
@@ -7529,6 +7983,7 @@ sensitivity_table_2_path = write_excel_export(
 )
 note_export(table_2_xlsx_path)
 note_export(table_2_pdf_path)
+note_export(table_2_source_workbook_path)
 note_export(sensitivity_table_2_path)
 ```
 
@@ -7567,16 +8022,16 @@ ascertainment_overlap_set_sizes = build_source_specific_overlap_set_sizes(ascert
 overlap_total = int(ascertainment_overlap_intersections["Count"].sum())
 if overlap_total != int(len(analytic_df)):
     raise AssertionError(
-        f"Figure 1 Panel C source-specific overlap counts sum to {overlap_total:,}, "
+        f"Figure S6 source-specific overlap counts sum to {overlap_total:,}, "
         f"not analytic cohort N={len(analytic_df):,}."
     )
 overlap_labels = set(ascertainment_overlap_intersections["intersection_label"].astype(str))
 if "ICD only" in overlap_labels:
-    raise AssertionError("Figure 1 Panel C source-specific overlap labels must not use ambiguous 'ICD only'.")
+    raise AssertionError("Figure S6 source-specific overlap labels must not use ambiguous 'ICD only'.")
 if "ICD + no gas" not in overlap_labels:
-    raise AssertionError("Figure 1 Panel C source-specific overlap labels are missing 'ICD + no gas'.")
+    raise AssertionError("Figure S6 source-specific overlap labels are missing 'ICD + no gas'.")
 if "Indeterminate gas only" not in overlap_labels:
-    raise AssertionError("Figure 1 Panel C source-specific overlap labels are missing 'Indeterminate gas only'.")
+    raise AssertionError("Figure S6 source-specific overlap labels are missing 'Indeterminate gas only'.")
 for source_label, expected_count in {
     "ABG-positive": figure1_source_counts["ABG criteria met"],
     "VBG-positive": figure1_source_counts["VBG criteria met"],
@@ -7591,7 +8046,7 @@ for source_label, expected_count in {
     )
     if observed_count != expected_count:
         raise AssertionError(
-            f"Figure 1 Panel C {source_label} set size drifted: observed {observed_count}; expected {expected_count}."
+            f"Figure S6 {source_label} set size drifted: observed {observed_count}; expected {expected_count}."
         )
 icd_no_gas_count = int(
     ascertainment_overlap_intersections.loc[
@@ -7601,7 +8056,7 @@ icd_no_gas_count = int(
 )
 if icd_no_gas_count != figure1_route_counts["ICD-only"]:
     raise AssertionError(
-        f"Figure 1 Panel C ICD + no gas count is {icd_no_gas_count}; expected ICD-only stratum N={figure1_route_counts['ICD-only']}."
+        f"Figure S6 ICD + no gas count is {icd_no_gas_count}; expected ICD-only stratum N={figure1_route_counts['ICD-only']}."
     )
 unknown_gas_count = figure1_source_counts["UNKNOWN-source gas"]
 ascertainment_overlap_indeterminate_audit = pd.DataFrame(
@@ -7610,7 +8065,7 @@ ascertainment_overlap_indeterminate_audit = pd.DataFrame(
             "audit_item": "indeterminate_or_unknown_gas_positive",
             "count": unknown_gas_count,
             "plotted": True,
-            "note": "Shown as UNKNOWN-source gas in Figure 1 Panel C and Figure S6; Figure 2 remains limited to ABG/VBG/ICD overlapping ascertainment indicators.",
+            "note": "Shown as UNKNOWN-source gas in supplement Figure S6; Figure 2 remains limited to ABG/VBG/ICD overlapping ascertainment indicators.",
         }
     ]
 )
@@ -7740,17 +8195,14 @@ ascertainment_flow_workbook_path = write_excel_export(
 )
 note_export(ascertainment_flow_workbook_path)
 
-fig = plt.figure(figsize=get_figure_size("figure_1_pdf", height=9.4))
+fig = plt.figure(figsize=get_figure_size("figure_1_pdf", height=5.8))
 figure1_grid = fig.add_gridspec(
+    1,
     2,
-    2,
-    height_ratios=[1.12, 1.08],
-    hspace=0.14,
-    wspace=0.08,
+    wspace=0.10,
 )
 flow_ax = fig.add_subplot(figure1_grid[0, 0])
 nlp_ax = fig.add_subplot(figure1_grid[0, 1])
-overlap_ax = fig.add_subplot(figure1_grid[1, :])
 draw_ascertainment_flow_panel(
     flow_ax,
     chief_complaint_present_n=chief_complaint_present_n,
@@ -7769,12 +8221,7 @@ draw_nlp_workflow_panel(
     unique_cats=unique_cats,
     panel_title="B. Chief-concern NLP classification",
 )
-draw_compact_ascertainment_indicator_overlap_panel(
-    overlap_ax,
-    ascertainment_overlap_intersections,
-    panel_title="C. Source-specific ascertainment overlap",
-)
-fig.subplots_adjust(left=0.035, right=0.99, top=0.975, bottom=0.04)
+fig.subplots_adjust(left=0.035, right=0.99, top=0.965, bottom=0.055)
 figure_1_pdf_path = save_and_render_figure(fig, "figure_1_pdf")
 note_export(figure_1_pdf_path)
 
@@ -7873,7 +8320,7 @@ for y_pos, row in zip(y_positions, time_summary.itertuples(index=False), strict=
         linestyle="none",
         marker="o",
         markersize=7.5,
-        color=ANALYSIS_COLORS["dark"],
+        color=rfv_display_color(row.category),
     )
     ax.text(
         float(row.q3) + 0.35,
@@ -8174,8 +8621,19 @@ matrix_ax.set_yticks(matrix_y_positions)
 matrix_ax.set_yticklabels([])
 matrix_ax.set_xticks(x_positions)
 matrix_ax.set_xticklabels(overlap_display["intersection_label"], rotation=38, ha="right", rotation_mode="anchor")
+for col_idx, (_, row) in enumerate(overlap_matrix.iterrows()):
+    active_rows = [row_idx for row_idx, membership in enumerate(matrix_set_order) if bool(row[membership])]
+    if len(active_rows) > 1:
+        matrix_ax.vlines(
+            col_idx,
+            min(active_rows),
+            max(active_rows),
+            color=ANALYSIS_COLORS["dark"],
+            linewidth=1.1,
+            zorder=2,
+        )
 for row_idx, membership in enumerate(matrix_set_order):
-    matrix_ax.hlines(row_idx, x_positions.min() - 0.4, x_positions.max() + 0.4, color="#e5e7eb", linewidth=0.8)
+    matrix_ax.hlines(row_idx, x_positions.min() - 0.4, x_positions.max() + 0.4, color="#e5e7eb", linewidth=0.8, zorder=1)
     for col_idx, active in enumerate(overlap_matrix[membership]):
         matrix_ax.scatter(
             col_idx,
@@ -8184,6 +8642,7 @@ for row_idx, membership in enumerate(matrix_set_order):
             color=ANALYSIS_COLORS["dark"] if active else "#d9dde3",
             edgecolor=ANALYSIS_COLORS["dark"] if active else "#d9dde3",
             marker="o",
+            zorder=3,
         )
 matrix_ax.spines["top"].set_visible(False)
 matrix_ax.spines["right"].set_visible(False)
@@ -8274,10 +8733,8 @@ timing_acidemia_sensitivity_plot_path = render_manuscript_prevalence_panels(
     alias_keys=["figure_s5_png"],
     title=FIGURE_SPECS["timing_acidemia_sensitivity_plot"]["title"],
     facet_label_map=timing_panel_titles,
-    x_max=100.0,
+    x_max=prevalence_lollipop_xmax(acidemia_timing_sensitivity, cap=100.0),
     y_label="First-priority presenting-concern category",
-    strip_text=sensitivity_strip_text,
-    muted_marks=True,
     height=6.2,
 )
 note_export(timing_acidemia_sensitivity_plot_path)
@@ -8700,6 +9157,7 @@ timing_safeguard_interpretation_flags = build_timing_safeguard_interpretation_fl
 timing_safeguard_main_text_table = format_timing_safeguard_main_text_table(
     timing_safeguard_grouped_prevalence,
     timing_safeguard_denominators,
+    administrative_prevalence=timing_safeguard_canonical_prevalence,
 )
 timing_safeguard_notes = pd.DataFrame(
     {
@@ -8707,7 +9165,7 @@ timing_safeguard_notes = pd.DataFrame(
             "Primary analysis remains the broad EHR-ascertained admission-level cohort.",
             "Timing-safeguard cohorts test whether ED-triage RFV patterns persist when qualifying hypercapnia is closer to ED presentation.",
             "First qualifying gas within 6h uses the existing <6h timing stratum; the 24h cohort includes gases at or before 24h.",
-            "ICD-positive only includes all ICD-positive admissions, with or without a qualifying gas.",
+            "ICD-positive includes all ICD-positive admissions, with or without a qualifying gas.",
             "ICD + early gas requires any ICD-positive phenotype plus a qualifying gas at or before 24h.",
             "Workbook contains aggregate comparisons only; row-level identifiers and raw chief complaint text are not exported.",
             (
@@ -8809,7 +9267,6 @@ figure_2_png_path = render_manuscript_prevalence_panels(
     facet_label_map=figure2_route_panel_titles,
     facet_strip_label_map=figure2_route_strip_labels,
     highlight_categories={"Respiratory"},
-    highlight_color=ANALYSIS_COLORS["accent"],
     x_max=55.0,
     emphasize_ci=True,
     height=5.8,
@@ -9377,16 +9834,22 @@ note_export(candidate_definition_summary_path)
 sensitivity_suite_path = write_excel_export(
     "sensitivity_suite",
     {
+        "Denominator_Audit": build_sensitivity_denominator_audit(analytic_df),
         "Gas_Source": build_gas_source_sensitivity_summary(analytic_df),
-        "ICD_Era": build_icd_era_sensitivity_summary(analytic_df),
         "Administrative_Exclusion": build_administrative_exclusion_sensitivity(analytic_df),
         "PCO2_Thresholds": build_pco2_threshold_sensitivity_summary(analytic_df),
+        "Analytic_Cohort_Thresholds": build_analytic_cohort_threshold_sensitivity_summary(analytic_df),
+        "First_Admission_Grouped": first_admission_comparisons["overall_grouped"],
         "First_Admission_Counts": first_admission_counts,
         "Timing_Denominators": timing_safeguard_denominators,
         "Notes": pd.DataFrame(
             {
                 "note": [
                     "Sensitivity analyses are descriptive and do not redefine the primary cohort.",
+                    "Denominator_Audit is the source of truth for sensitivity cohort denominators.",
+                    "PCO2_Thresholds is restricted to blood-gas-positive admissions; Analytic_Cohort_Thresholds retains ICD-positive admissions while varying gas thresholds.",
+                    "Stricter PCO2 threshold rows use source-specific exported PCO2 evidence; all-gas maximum-threshold sensitivity would require a cohort-export expansion.",
+                    "ICD-era sensitivity is intentionally not included in this submission-facing suite.",
                     "No p-values, regression models, or new prediction models are added.",
                     "Administrative-only exclusion uses the current canonical Administrative RFV label when present.",
                 ]
@@ -9411,10 +9874,8 @@ acidemia_severity_sensitivity_plot_path = render_manuscript_prevalence_panels(
     alias_keys=["figure_s4_png"],
     title=FIGURE_SPECS["acidemia_severity_sensitivity_plot"]["title"],
     facet_label_map=ph_panel_titles,
-    x_max=100.0,
+    x_max=prevalence_lollipop_xmax(ph_sensitivity, cap=100.0),
     y_label="First-priority presenting-concern category",
-    strip_text=sensitivity_strip_text,
-    muted_marks=True,
     height=6.2,
 )
 note_export(acidemia_severity_sensitivity_plot_path)

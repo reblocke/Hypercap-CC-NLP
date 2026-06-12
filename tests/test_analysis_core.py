@@ -68,10 +68,16 @@ HELPER_FUNCTIONS = [
     "build_acid_base_source_missingness_table",
     "build_candidate_definition_membership",
     "summarize_candidate_definition_yield",
+    "_administrative_only_rfv_mask",
     "build_administrative_exclusion_sensitivity",
     "build_gas_source_sensitivity_summary",
     "build_icd_era_sensitivity_summary",
+    "_any_numeric_candidate_ge",
+    "source_specific_pco2_threshold_mask",
     "build_pco2_threshold_sensitivity_summary",
+    "build_analytic_cohort_threshold_sensitivity_summary",
+    "build_sensitivity_denominator_audit",
+    "_sensitivity_denominator_definition",
     "build_acidemia_ph_source_audit",
     "build_acidemia_severity_denominator_audit",
     "build_acidemia_timing_denominator_audit",
@@ -184,10 +190,16 @@ derive_acid_base_state = HELPERS["derive_acid_base_state"]
 build_acid_base_source_missingness_table = HELPERS["build_acid_base_source_missingness_table"]
 build_candidate_definition_membership = HELPERS["build_candidate_definition_membership"]
 summarize_candidate_definition_yield = HELPERS["summarize_candidate_definition_yield"]
+_administrative_only_rfv_mask = HELPERS["_administrative_only_rfv_mask"]
 build_administrative_exclusion_sensitivity = HELPERS["build_administrative_exclusion_sensitivity"]
 build_gas_source_sensitivity_summary = HELPERS["build_gas_source_sensitivity_summary"]
 build_icd_era_sensitivity_summary = HELPERS["build_icd_era_sensitivity_summary"]
+source_specific_pco2_threshold_mask = HELPERS["source_specific_pco2_threshold_mask"]
 build_pco2_threshold_sensitivity_summary = HELPERS["build_pco2_threshold_sensitivity_summary"]
+build_analytic_cohort_threshold_sensitivity_summary = HELPERS[
+    "build_analytic_cohort_threshold_sensitivity_summary"
+]
+build_sensitivity_denominator_audit = HELPERS["build_sensitivity_denominator_audit"]
 build_acidemia_ph_source_audit = HELPERS["build_acidemia_ph_source_audit"]
 build_acidemia_severity_denominator_audit = HELPERS["build_acidemia_severity_denominator_audit"]
 build_acidemia_timing_denominator_audit = HELPERS["build_acidemia_timing_denominator_audit"]
@@ -918,6 +930,7 @@ def test_frozen_acid_base_bands_and_states_are_deterministic() -> None:
 def test_candidate_definition_and_sensitivity_summaries_are_aggregate_and_source_aware() -> None:
     df = pd.DataFrame(
         {
+            "subject_id": [1, 2, 3, 4],
             "any_hypercap_icd": [1, 0, 0, 1],
             "pco2_threshold_any": [0, 1, 1, 1],
             "dt_qualifying_hypercapnia_hours": [np.nan, 5.0, 30.0, 20.0],
@@ -947,6 +960,10 @@ def test_candidate_definition_and_sensitivity_summaries_are_aggregate_and_source
 
     membership = build_candidate_definition_membership(df)
     assert membership["Broad EHR hypercapnia cohort"].tolist() == [True, True, True, True]
+    assert membership["Any qualifying gas"].tolist() == [False, True, True, True]
+    assert membership["Gas-only"].tolist() == [False, True, True, False]
+    assert membership["ICD-only"].tolist() == [True, False, False, False]
+    assert membership["Both ICD + gas"].tolist() == [False, False, False, True]
     assert membership["Early gas <=6h"].tolist() == [False, True, False, False]
     assert membership["ICD + early gas"].tolist() == [False, False, False, True]
     assert membership["Exclude post-ventilation-only gas"].tolist() == [True, True, False, True]
@@ -957,19 +974,148 @@ def test_candidate_definition_and_sensitivity_summaries_are_aggregate_and_source
     assert retained["Exclude post-ventilation-only gas"] == 3
 
     gas_source_summary = build_gas_source_sensitivity_summary(df).set_index("sensitivity")
-    assert gas_source_summary.loc["Exclude UNKNOWN-source gas", "N_admissions"] == 3
+    assert gas_source_summary.loc["Exclude any UNKNOWN-source gas evidence", "N_admissions"] == 3
+    assert gas_source_summary.loc["Gas-positive excluding UNKNOWN-source gas", "N_admissions"] == 2
     assert gas_source_summary.loc["Any qualifying gas", "N_admissions"] == 3
 
-    admin_summary = build_administrative_exclusion_sensitivity(df).set_index("sensitivity")
-    assert admin_summary.loc["Exclude administrative-only RFV", "excluded_administrative_only_n"] == 1
-    assert admin_summary.loc["Exclude administrative-only RFV", "N_admissions"] == 3
+    admin_summary = build_administrative_exclusion_sensitivity(df)
+    admin_exclusion = admin_summary.loc[
+        admin_summary["sensitivity"].eq("Exclude administrative-only RFV")
+        & admin_summary["grouped_rfv_category"].eq("Respiratory")
+    ].squeeze()
+    assert admin_exclusion["excluded_administrative_only_n"] == 1
+    assert admin_exclusion["N_admissions"] == 3
+    assert admin_exclusion["percent_with_category"] == pytest.approx(66.67)
 
     threshold_summary = build_pco2_threshold_sensitivity_summary(df).set_index("threshold_sensitivity")
-    assert threshold_summary.loc["Primary thresholds", "N_retained"] == 4
-    assert threshold_summary.loc["Exclude UNKNOWN-source gas", "N_retained"] == 3
+    assert threshold_summary.loc["Primary thresholds", "N_denominator"] == 3
+    assert threshold_summary.loc["Primary thresholds", "N_retained"] == 3
+    assert threshold_summary.loc["Exclude any UNKNOWN-source gas evidence", "N_retained"] == 2
+
+    analytic_threshold_summary = build_analytic_cohort_threshold_sensitivity_summary(df).set_index(
+        "threshold_sensitivity"
+    )
+    assert analytic_threshold_summary.loc["Primary thresholds", "N_denominator"] == 4
+    assert analytic_threshold_summary.loc["Primary thresholds", "N_retained"] == 4
+
+    denominator_audit = build_sensitivity_denominator_audit(df).set_index("denominator_label")
+    assert denominator_audit.loc["Blood-gas-positive", "N_admissions"] == 3
+    assert denominator_audit.loc["ICD-positive", "N_admissions"] == 2
+    assert denominator_audit.loc["Gas-only", "N_admissions"] == 2
+    assert denominator_audit.loc["ICD-only", "N_admissions"] == 1
+    assert denominator_audit.loc["Both ICD + gas", "N_admissions"] == 1
+    assert denominator_audit.loc["First admission per patient", "N_admissions"] == 4
+    assert denominator_audit.loc["Exclude administrative-only RFV", "N_admissions"] == 3
+    assert denominator_audit.loc["Exclude any UNKNOWN-source gas evidence", "N_admissions"] == 3
 
     icd_era_summary = build_icd_era_sensitivity_summary(df)
     assert set(icd_era_summary["icd_era"]) == {"pre_ICD10", "ICD10_era"}
+
+
+def test_pco2_threshold_sensitivity_uses_overlapping_source_specific_evidence() -> None:
+    df = pd.DataFrame(
+        {
+            "any_hypercap_icd": [0, 0, 1],
+            "pco2_threshold_any": [1, 1, 0],
+            "qualifying_pco2_mmhg": [49.0, 52.0, np.nan],
+            "qualifying_site_group": ["ABG", "VBG", "UNKNOWN"],
+            "first_abg_hypercap_pco2_mmhg": [49.0, np.nan, np.nan],
+            "first_vbg_hypercap_pco2_mmhg": [56.0, 52.0, np.nan],
+            "first_other_pco2": [np.nan, 58.0, np.nan],
+            "unknown_hypercap_threshold": [0, 1, 0],
+            "has_group_respiratory": [1, 0, 1],
+        }
+    )
+
+    stricter_mask = source_specific_pco2_threshold_mask(
+        df,
+        abg_threshold=50.0,
+        vbg_threshold=55.0,
+        unknown_threshold=55.0,
+    )
+    assert stricter_mask.tolist() == [True, True, False]
+
+    threshold_summary = build_pco2_threshold_sensitivity_summary(df).set_index("threshold_sensitivity")
+    assert threshold_summary.loc["ABG>=50 VBG>=55 UNKNOWN>=55", "N_retained"] == 2
+    assert (
+        threshold_summary.loc["ABG>=50 VBG>=55 UNKNOWN>=55", "pco2_evidence_rule"]
+        == "source-specific exported PCO2 evidence"
+    )
+
+    analytic_summary = build_analytic_cohort_threshold_sensitivity_summary(df).set_index(
+        "threshold_sensitivity"
+    )
+    assert analytic_summary.loc["ABG>=50 VBG>=55 UNKNOWN>=55", "N_retained"] == 3
+
+
+def test_administrative_only_mask_handles_grouped_and_canonical_indicators() -> None:
+    common = {
+        "subject_id": [1, 2, 3],
+        "any_hypercap_icd": [1, 1, 0],
+        "pco2_threshold_any": [0, 0, 1],
+        "dt_qualifying_hypercapnia_hours": [np.nan, np.nan, 5.0],
+        "ed_anchor_time": pd.to_datetime(["2020-01-01", "2020-01-02", "2020-01-03"]),
+        "admittime": pd.to_datetime(["2020-01-01", "2020-01-02", "2020-01-03"]),
+        "hadm_id": [11, 12, 13],
+        "ed_stay_id": [21, 22, 23],
+        "unknown_hypercap_threshold": [0, 0, 0],
+    }
+    grouped_only_df = pd.DataFrame(
+        {
+            **common,
+            "has_group_administrative": [1, 1, 0],
+            "has_group_respiratory": [1, 0, 1],
+        }
+    )
+
+    assert _administrative_only_rfv_mask(grouped_only_df).tolist() == [False, True, False]
+    admin_summary = build_administrative_exclusion_sensitivity(grouped_only_df)
+    admin_exclusion = admin_summary.loc[
+        admin_summary["sensitivity"].eq("Exclude administrative-only RFV")
+        & admin_summary["grouped_rfv_category"].eq("Respiratory")
+    ].squeeze()
+    assert admin_exclusion["excluded_administrative_only_n"] == 1
+    assert admin_exclusion["N_admissions"] == 2
+    assert admin_exclusion["n_with_category"] == 2
+
+    denominator_audit = build_sensitivity_denominator_audit(grouped_only_df).set_index("denominator_label")
+    assert denominator_audit.loc["Exclude administrative-only RFV", "N_admissions"] == 2
+
+    canonical_only_df = pd.DataFrame(
+        {
+            **common,
+            "has_rfv_administrative": [1, 1, 0],
+            "has_rfv_respiratory": [1, 0, 1],
+            "has_group_respiratory": [1, 0, 1],
+        }
+    )
+    assert _administrative_only_rfv_mask(canonical_only_df).tolist() == [False, True, False]
+    canonical_admin_summary = build_administrative_exclusion_sensitivity(canonical_only_df)
+    canonical_admin_exclusion = canonical_admin_summary.loc[
+        canonical_admin_summary["sensitivity"].eq("Exclude administrative-only RFV")
+        & canonical_admin_summary["grouped_rfv_category"].eq("Respiratory")
+    ].squeeze()
+    assert canonical_admin_exclusion["excluded_administrative_only_n"] == 1
+    assert canonical_admin_exclusion["N_admissions"] == 2
+
+
+def test_sensitivity_denominator_audit_requires_subject_id_for_first_admission() -> None:
+    df = pd.DataFrame(
+        {
+            "any_hypercap_icd": [1, 0],
+            "pco2_threshold_any": [0, 1],
+            "dt_qualifying_hypercapnia_hours": [np.nan, 4.0],
+            "unknown_hypercap_threshold": [0, 0],
+            "has_rfv_administrative": [0, 0],
+        }
+    )
+
+    with pytest.raises(KeyError, match="subject_id"):
+        build_sensitivity_denominator_audit(df)
+
+    df_with_missing_subject = df.assign(subject_id=[1, pd.NA])
+    with pytest.raises(ValueError, match="missing subject_id"):
+        build_sensitivity_denominator_audit(df_with_missing_subject)
 
 
 def test_acid_base_source_missingness_output_is_aggregate_only() -> None:

@@ -6,7 +6,7 @@ This document maps journal-submission outputs to their producing pipeline stages
 
 | Manuscript item | Producing stage | Primary output |
 |---|---|---|
-| Figure 1: analytic cohort construction, source-specific overlap, ascertainment definitions, and NLP workflow | `Hypercap CC NLP Analysis.qmd` | `Results/YYYY-MM-DD/Figure 1.pdf` |
+| Figure 1: analytic cohort construction, ascertainment definitions, and NLP workflow | `Hypercap CC NLP Analysis.qmd` | `Results/YYYY-MM-DD/Figure 1.pdf` |
 | Figure 2: presenting-concern prevalence by overlapping ascertainment indicator | `Hypercap CC NLP Analysis.qmd` | `Results/YYYY-MM-DD/Figure 2.pdf`, `Figure 2.xlsx` |
 | Figure 3: presenting-concern prevalence by age group | `Hypercap CC NLP Analysis.qmd` | `Results/YYYY-MM-DD/Figure 3.pdf`, `Figure 3.xlsx` |
 | Figure 4: presenting-concern prevalence by acidemia severity | `Hypercap CC NLP Analysis.qmd` | `Results/YYYY-MM-DD/Figure 4.pdf`, `Figure 4.xlsx` |
