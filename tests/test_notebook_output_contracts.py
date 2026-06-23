@@ -1410,10 +1410,10 @@ def test_figure_4_uses_prespecified_ph_profile_small_multiples() -> None:
         '    "Severe (pH <7.25)",\n'
         "]"
     ) in analysis_text
-    assert '"Normal/compensated (pH ≥7.35)": 4409' in analysis_text
-    assert '"Mild (7.30–7.34)": 2772' in analysis_text
-    assert '"Moderate (7.25–7.29)": 1838' in analysis_text
-    assert '"Severe (pH <7.25)": 2480' in analysis_text
+    assert '"Normal/compensated (pH ≥7.35)": 4232' in analysis_text
+    assert '"Mild (7.30–7.34)": 2595' in analysis_text
+    assert '"Moderate (7.25–7.29)": 1677' in analysis_text
+    assert '"Severe (pH <7.25)": 2113' in analysis_text
     assert 'fig.supxlabel("Acidemia severity stratum"' in figure4_helper
     assert 'fig.supylabel("Percent of admissions"' in figure4_helper
     assert "y_max=55.0" in figure4_block

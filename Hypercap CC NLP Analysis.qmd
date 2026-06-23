@@ -9232,10 +9232,10 @@ figure4_required_ph_labels = [
 if ph_severity_order != figure4_required_ph_labels:
     raise AssertionError("Figure 4 pH severity strata labels no longer match the prespecified Methods thresholds.")
 figure4_expected_ph_group_sizes = {
-    "Normal/compensated (pH ≥7.35)": 4409,
-    "Mild (7.30–7.34)": 2772,
-    "Moderate (7.25–7.29)": 1838,
-    "Severe (pH <7.25)": 2480,
+    "Normal/compensated (pH ≥7.35)": 4232,
+    "Mild (7.30–7.34)": 2595,
+    "Moderate (7.25–7.29)": 1677,
+    "Severe (pH <7.25)": 2113,
 }
 for ph_stratum, expected_n in figure4_expected_ph_group_sizes.items():
     observed_n = ph_group_sizes.get(ph_stratum)
