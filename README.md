@@ -4,16 +4,18 @@
 
 **Links & IDs**
 - Repository: https://github.com/reblocke/Hypercap-CC-NLP
-- Release intent: journal-submission code snapshot `v0.1.1`
+- Current software release: journal-submission code snapshot `v0.1.1`
+- Current manuscript preprint: *Emergency Department Presenting Concerns Among Admissions With Hypercapnia: A Retrospective NLP Study of MIMIC-IV*, medRxiv, 2026, DOI [10.64898/2026.07.03.26357242](https://doi.org/10.64898/2026.07.03.26357242)
 - Related abstract: *C75-09 Chief Complaint Profiles in Hypercapnic Respiratory Failure: A Natural Language Processing Study of MIMIC-IV*, American Journal of Respiratory and Critical Care Medicine, 2026;212(Supplement_1), DOI [10.1093/ajrccm/aamag162.4737](https://doi.org/10.1093/ajrccm/aamag162.4737)
 - Machine-readable index: [`llms.txt`](./llms.txt)
 - Statistical environment: Python 3.11, Quarto, BigQuery-backed MIMIC-IV access
 
 ## Cite This Work
-Please cite the GitHub release matching the code you used, the relevant MIMIC-IV resources, and the ATS abstract when referring to the presented findings. Repository citation metadata is provided in [`CITATION.cff`](./CITATION.cff). Do not cite this repository as a final journal article until an accepted manuscript record exists.
+Please cite the GitHub release matching the code you used, the relevant MIMIC-IV resources, and the current medRxiv preprint and/or ATS abstract as appropriate when referring to the presented findings. Repository citation metadata is provided in [`CITATION.cff`](./CITATION.cff). The manuscript is currently a medRxiv preprint; no final journal article has been accepted or published.
 
-Current related scholarly output:
+Current related scholarly outputs:
 
+- Merdad RH, Ramirez M, Christenson M, Pettine WW, Locke BW. **Emergency Department Presenting Concerns Among Admissions With Hypercapnia: A Retrospective NLP Study of MIMIC-IV.** medRxiv. 2026. DOI [10.64898/2026.07.03.26357242](https://doi.org/10.64898/2026.07.03.26357242). [Preprint record](https://www.medrxiv.org/content/10.64898/2026.07.03.26357242v1).
 - Merdad RH, Crawford M, Christenson M, Pettine W, Locke B. **C75-09 Chief Complaint Profiles in Hypercapnic Respiratory Failure: A Natural Language Processing Study of MIMIC-IV.** American Journal of Respiratory and Critical Care Medicine. 2026;212(Supplement_1). DOI [10.1093/ajrccm/aamag162.4737](https://doi.org/10.1093/ajrccm/aamag162.4737).
 
 Key source-data citations:

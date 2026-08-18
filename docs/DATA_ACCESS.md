@@ -32,6 +32,7 @@ Users without restricted data access can inspect code, run static/unit tests, an
 
 ## Citation
 
-Users should cite the relevant MIMIC-IV resources according to PhysioNet requirements, cite this repository release when referencing the analysis code, and cite the ATS 2026 abstract when referencing the presented findings:
+Users should cite the relevant MIMIC-IV resources according to PhysioNet requirements, cite this repository release when referencing the analysis code, and cite the current medRxiv preprint and/or ATS 2026 abstract as appropriate when referencing the study findings:
 
+- Merdad RH, Ramirez M, Christenson M, Pettine WW, Locke BW. Emergency Department Presenting Concerns Among Admissions With Hypercapnia: A Retrospective NLP Study of MIMIC-IV. medRxiv. 2026. DOI `10.64898/2026.07.03.26357242`.
 - Merdad RH, Crawford M, Christenson M, Pettine W, Locke B. C75-09 Chief Complaint Profiles in Hypercapnic Respiratory Failure: A Natural Language Processing Study of MIMIC-IV. American Journal of Respiratory and Critical Care Medicine. 2026;212(Supplement_1). DOI `10.1093/ajrccm/aamag162.4737`.

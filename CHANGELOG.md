@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Added the current medRxiv preprint metadata (DOI
+  `10.64898/2026.07.03.26357242`) while retaining the ATS 2026 abstract as a
+  separate scholarly record with its distinct author list.
+- Corrected documentation status to reflect the existing public `v0.1.1`
+  release without changing its version or release date.
+
 ## v0.1.1 - 2026-06-05
 
 - Refreshed journal-submission metadata with verified ATS 2026 abstract DOI `10.1093/ajrccm/aamag162.4737`.

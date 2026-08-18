@@ -1,8 +1,8 @@
 # Hypercap-CC-NLP
 
 Repository: https://github.com/reblocke/Hypercap-CC-NLP
-Repository status: private journal-submission code release; planned public release only after final privacy review.
-Current software release: v0.1.1 metadata refresh planned from v0.1.0 sanitized code snapshot.
+Repository status: public journal-submission code release; restricted inputs remain excluded.
+Current software release: v0.1.1 metadata refresh of the v0.1.0 sanitized code snapshot.
 
 ## Purpose
 
@@ -14,14 +14,20 @@ performance, and generates manuscript-facing aggregate tables and figures.
 
 ## Scholarly Records
 
+- Current manuscript preprint: Emergency Department Presenting Concerns Among
+  Admissions With Hypercapnia: A Retrospective NLP Study of MIMIC-IV.
+- Preprint citation: Merdad RH, Ramirez M, Christenson M, Pettine WW, Locke BW.
+  medRxiv. 2026.
+- Preprint DOI: https://doi.org/10.64898/2026.07.03.26357242
+- Preprint record: https://www.medrxiv.org/content/10.64898/2026.07.03.26357242v1
 - ATS 2026 abstract: C75-09 Chief Complaint Profiles in Hypercapnic Respiratory
   Failure: A Natural Language Processing Study of MIMIC-IV.
 - Abstract DOI: https://doi.org/10.1093/ajrccm/aamag162.4737
 - Abstract page: https://academic.oup.com/ajrccm/article/212/Supplement_1/aamag162.4737/8684677
 - Journal/proceedings metadata: American Journal of Respiratory and Critical Care
   Medicine, 2026, volume 212, issue Supplement_1.
-- Journal manuscript status: pending submission/review; do not claim a final
-  journal article until an accepted citation exists.
+- Manuscript status: medRxiv preprint posted; no final journal article has been
+  accepted or published.
 
 ## Data Sources And Restrictions
 
@@ -71,8 +77,8 @@ local input workbooks. Missing private inputs are expected in a clean public clo
 
 ## Agent Cautions
 
-- Keep the root `CITATION.cff` as a software citation. The ATS abstract is a
-  related scholarly output until a final article exists.
+- Keep the root `CITATION.cff` as a software citation. The medRxiv preprint and
+  ATS abstract are separate related scholarly outputs until a final article exists.
 - Do not copy abstract/manuscript text into Markdown beyond concise original
   summaries and citation metadata.
 - Do not remove MIMIC access warnings or make the pipeline appear runnable without

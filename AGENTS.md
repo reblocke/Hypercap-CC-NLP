@@ -2,22 +2,22 @@
 
 ## Project Purpose
 
-This private repository contains the sanitized Quarto/Python code release for a
+This repository contains the sanitized Quarto/Python code release for a
 MIMIC-IV study of chief complaint profiles in hypercapnic respiratory failure. It
-supports journal submission and the ATS 2026 abstract, not a published journal
-article yet.
+supports the current medRxiv manuscript preprint and the ATS 2026 abstract, not a
+final accepted or published journal article.
 
 ## Public And Data-Safety Rules
 
-- Treat this repository as eventually public. Do not add row-level MIMIC data,
+- Treat this repository as public. Do not add row-level MIMIC data,
   patient or encounter identifiers, annotation workbooks, generated results,
   manuscript drafts, credentials, private reviewer material, or publisher text.
 - Keep `MIMIC tabular data/`, `Results/`, `artifacts/`, `debug/`, `Drafts/`,
   and local `.env` files ignored and untracked.
 - Cite and link DOI, PhysioNet, MIMIC, and journal records rather than mirroring
   copyrighted or restricted source material.
-- Keep manuscript status conservative: ATS abstract published; journal manuscript
-  pending submission/review until a final accepted record exists.
+- Keep manuscript status conservative: medRxiv preprint posted and ATS abstract
+  published; no final journal article has been accepted or published.
 
 ## Orientation
 

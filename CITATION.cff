@@ -1,8 +1,8 @@
 cff-version: 1.2.0
 message: >-
   If you use this repository, please cite the GitHub release matching the code
-  you used, the relevant MIMIC-IV resources, and the ATS abstract when referring
-  to the presented findings.
+  you used, the relevant MIMIC-IV resources, and the current medRxiv preprint
+  and/or ATS abstract as appropriate when referring to the presented findings.
 title: Hypercap-CC-NLP
 type: software
 authors:
@@ -37,6 +37,25 @@ abstract: >-
   Quarto-first reproducibility code for a MIMIC-IV study of presenting-concern
   profiles in hypercapnic respiratory failure.
 references:
+  - type: article
+    title: >-
+      Emergency Department Presenting Concerns Among Admissions With
+      Hypercapnia: A Retrospective NLP Study of MIMIC-IV
+    authors:
+      - family-names: Merdad
+        given-names: R. H.
+      - family-names: Ramirez
+        given-names: M.
+      - family-names: Christenson
+        given-names: M.
+      - family-names: Pettine
+        given-names: W. W.
+      - family-names: Locke
+        given-names: B. W.
+    year: 2026
+    journal: medRxiv
+    doi: 10.64898/2026.07.03.26357242
+    url: https://www.medrxiv.org/content/10.64898/2026.07.03.26357242v1
   - type: article
     title: >-
       C75-09 Chief Complaint Profiles in Hypercapnic Respiratory Failure: A
