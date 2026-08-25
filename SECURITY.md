@@ -2,7 +2,7 @@
 
 ## Reporting
 
-Do not open public issues or pull requests containing credentials, tokens, PHI/PII, MIMIC-derived row-level data, annotation workbooks, generated debug logs, or unpublished manuscript drafts.
+Do not open public issues or pull requests containing credentials, tokens, PHI/PII, MIMIC-derived row-level data, annotation workbooks, or generated debug logs.
 
 Report security or data-exposure concerns privately to the repository maintainer.
 

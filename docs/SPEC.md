@@ -4,7 +4,7 @@ This document is the canonical current-state contract for the pipeline. Use [`RE
 
 ## Public Release Boundary
 
-The public repository contains source code, specifications, tests, and documentation only. It must not track row-level MIMIC-derived data, annotation workbooks, generated results, draft manuscripts, debug logs, local environment files, or release asset zips.
+The public repository contains source code, specifications, tests, and documentation only. It must not track row-level MIMIC-derived data, annotation workbooks, generated results, debug logs, local environment files, or release asset zips.
 
 Generated manuscript assets are created locally under `Results/YYYY-MM-DD/` and should be distributed, when appropriate, as GitHub/Zenodo release assets with checksums and a manifest. They are not committed to git.
 
@@ -179,6 +179,6 @@ A valid private pipeline run satisfies all of the following:
 
 A valid public release branch additionally satisfies:
 
-- no tracked row-level data, generated outputs, drafts, debug logs, local metadata, Office/PDF/image exports, or generated Excel workbooks
+- no tracked row-level data, generated outputs, debug logs, local metadata, generated Office/PDF/image exports, or generated Excel workbooks
 - no tracked `MIMIC tabular data/`, `Drafts/`, `Results/`, `artifacts/`, `debug/`, `outputs/`, `tmp/`, or `Legacy Code/`
 - release assets, if distributed, are attached outside git with a manifest and checksums

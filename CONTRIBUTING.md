@@ -4,7 +4,7 @@ Contributions should improve reproducibility, portability, documentation clarity
 
 ## Rules
 
-- Do not submit PHI/PII, MIMIC-derived row-level data, annotation workbooks, generated results, draft manuscripts, credentials, or local environment files.
+- Do not submit PHI/PII, MIMIC-derived row-level data, annotation workbooks, generated results, credentials, or local environment files.
 - Keep core analysis logic in the canonical `.qmd` notebooks unless a project maintainer explicitly approves a different architecture.
 - Keep `src/hypercap_cc_nlp/` focused on QA, contracts, audits, parity checks, scripts, and tests.
 - Use `uv` for dependency management and Ruff for linting/formatting.

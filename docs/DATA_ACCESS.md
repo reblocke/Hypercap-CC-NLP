@@ -21,7 +21,6 @@ The public repository must not contain:
 - annotation workbooks
 - generated result folders
 - debug logs or run manifests
-- manuscript drafts or cover letters
 - credentials or local environment files
 
 Aggregate manuscript figures/tables may be distributed outside git as reviewed release assets with checksums and a manifest.
