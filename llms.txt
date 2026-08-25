@@ -38,7 +38,7 @@ performance, and generates manuscript-facing aggregate tables and figures.
 - Required local handoff workbooks and annotation workbooks are restricted and
   ignored by git.
 - This repository must not contain row-level MIMIC data, encounter identifiers,
-  annotation workbooks, generated debug logs, drafts, or credentials.
+  annotation workbooks, generated debug logs, or credentials.
 
 ## Pipeline Order
 
@@ -70,7 +70,7 @@ local input workbooks. Missing private inputs are expected in a clean public clo
   resources only.
 - Aggregate manuscript figures/tables may be distributed as GitHub or Zenodo
   release assets with checksums and a manifest.
-- Do not commit generated PDFs, Excel workbooks, manuscript drafts, release ZIPs,
+- Do not commit generated PDFs, Excel workbooks, release ZIPs,
   debug folders, or row-level data.
 - See `data_dictionary.md` and `data_dictionary.csv` for variable-level
   documentation without restricted rows.

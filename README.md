@@ -5,7 +5,7 @@
 **Links & IDs**
 - Repository: https://github.com/reblocke/Hypercap-CC-NLP
 - Current software release: journal-submission code snapshot `v0.1.1`
-- Current manuscript preprint: *Emergency Department Presenting Concerns Among Admissions With Hypercapnia: A Retrospective NLP Study of MIMIC-IV*, medRxiv, 2026, DOI [10.64898/2026.07.03.26357242](https://doi.org/10.64898/2026.07.03.26357242)
+- Current manuscript preprint: *Emergency Department Presenting Concerns Among Admissions With Hypercapnia: A Retrospective NLP Study of MIMIC-IV*, medRxiv, 2026, DOI [10.64898/2026.07.03.26357242](https://doi.org/10.64898/2026.07.03.26357242); [repository PDF](preprint/2026.07.03.26357242v1.pdf)
 - Related abstract: *C75-09 Chief Complaint Profiles in Hypercapnic Respiratory Failure: A Natural Language Processing Study of MIMIC-IV*, American Journal of Respiratory and Critical Care Medicine, 2026;212(Supplement_1), DOI [10.1093/ajrccm/aamag162.4737](https://doi.org/10.1093/ajrccm/aamag162.4737)
 - Machine-readable index: [`llms.txt`](./llms.txt)
 - Statistical environment: Python 3.11, Quarto, BigQuery-backed MIMIC-IV access
@@ -15,7 +15,7 @@ Please cite the GitHub release matching the code you used, the relevant MIMIC-IV
 
 Current related scholarly outputs:
 
-- Merdad RH, Ramirez M, Christenson M, Pettine WW, Locke BW. **Emergency Department Presenting Concerns Among Admissions With Hypercapnia: A Retrospective NLP Study of MIMIC-IV.** medRxiv. 2026. DOI [10.64898/2026.07.03.26357242](https://doi.org/10.64898/2026.07.03.26357242). [Preprint record](https://www.medrxiv.org/content/10.64898/2026.07.03.26357242v1).
+- Merdad RH, Ramirez M, Christenson M, Pettine WW, Locke BW. **Emergency Department Presenting Concerns Among Admissions With Hypercapnia: A Retrospective NLP Study of MIMIC-IV.** medRxiv. 2026. DOI [10.64898/2026.07.03.26357242](https://doi.org/10.64898/2026.07.03.26357242). [Preprint record](https://www.medrxiv.org/content/10.64898/2026.07.03.26357242v1). [Repository PDF](preprint/2026.07.03.26357242v1.pdf).
 - Merdad RH, Crawford M, Christenson M, Pettine W, Locke B. **C75-09 Chief Complaint Profiles in Hypercapnic Respiratory Failure: A Natural Language Processing Study of MIMIC-IV.** American Journal of Respiratory and Critical Care Medicine. 2026;212(Supplement_1). DOI [10.1093/ajrccm/aamag162.4737](https://doi.org/10.1093/ajrccm/aamag162.4737).
 
 Key source-data citations:
@@ -24,7 +24,7 @@ Key source-data citations:
 - MIMIC-IV-ED v2.2, DOI [10.13026/5ntk-km72](https://doi.org/10.13026/5ntk-km72).
 
 ## Data Access And Ethics
-This repository does not distribute row-level data, MIMIC-derived workbooks, annotation workbooks, generated debug logs, or draft manuscript files. The pipeline requires credentialed access to:
+This repository does not distribute row-level data, MIMIC-derived workbooks, annotation workbooks, or generated debug logs. The pipeline requires credentialed access to:
 
 - MIMIC-IV HOSP and ICU on BigQuery
 - MIMIC-IV-ED on BigQuery
@@ -206,6 +206,7 @@ RUN_MANIFEST_REQUIRE_CLEAN_GIT=1 RESULTS_DATE=2026-04-29 make quarto-pipeline-au
 ```text
 ├── Annotation/                  # Public classifier resources only; private annotation workbooks are ignored
 ├── docs/                        # Specification, decisions, data-access, and manuscript mapping docs
+├── preprint/                    # Public medRxiv preprint and citation details
 ├── scripts/                     # QA/reproducibility utility scripts
 ├── specs/                       # Versioned analysis specs such as blood-gas item IDs
 ├── src/hypercap_cc_nlp/         # QA/contracts/audit/parity helpers; notebooks remain runtime-self-contained
@@ -219,7 +220,7 @@ RUN_MANIFEST_REQUIRE_CLEAN_GIT=1 RESULTS_DATE=2026-04-29 make quarto-pipeline-au
 └── README.md
 ```
 
-Not tracked in the public repository: `MIMIC tabular data/`, `Drafts/`, `Results/`, `artifacts/`, `debug/`, `outputs/`, `tmp/`, legacy notebooks, local environment files, Office/PDF/image exports, and generated Excel workbooks.
+Not tracked in the public repository: `MIMIC tabular data/`, `Drafts/`, `Results/`, `artifacts/`, `debug/`, `outputs/`, `tmp/`, legacy notebooks, local environment files, generated Office/PDF/image exports, and generated Excel workbooks.
 Also not tracked: `CONTINUITY.md`, which is a local agent/session ledger rather than a public project artifact.
 
 ## Environment

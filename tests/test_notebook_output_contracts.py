@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import csv
-from pathlib import Path
+import hashlib
 import re
 import subprocess
+from pathlib import Path
 
 import yaml
-
 
 WORK_DIR = Path(__file__).resolve().parents[1]
 
@@ -1700,13 +1700,49 @@ def test_public_release_git_hygiene_patterns() -> None:
         text=True,
     )
     tracked_paths = completed.stdout.splitlines()
-    forbidden_pattern = re.compile(
+    forbidden_path_pattern = re.compile(
         r"(^MIMIC tabular data/|^Drafts/|^Results/|^debug/|^outputs/|"
         r"^artifacts/|^tmp/|^Legacy Code/|^\.codex/|^\.jupyter/|"
-        r"\.DS_Store$|\.Rhistory$|\.(xlsx|xls|docx|pptx|pdf|png|jpg|jpeg|tif|tiff|zip|parquet)$)"
+        r"\.DS_Store$|\.Rhistory$)"
     )
-    forbidden_matches = [path for path in tracked_paths if forbidden_pattern.search(path)]
+    forbidden_matches = [
+        path for path in tracked_paths if forbidden_path_pattern.search(path)
+    ]
     assert forbidden_matches == []
+
+    forbidden_binary_suffixes = {
+        ".jpeg",
+        ".jpg",
+        ".parquet",
+        ".png",
+        ".pptx",
+        ".tif",
+        ".tiff",
+        ".xls",
+        ".xlsx",
+        ".zip",
+    }
+    tracked_binary_paths = [
+        WORK_DIR / path
+        for path in tracked_paths
+        if Path(path).suffix.casefold()
+        in forbidden_binary_suffixes | {".docx", ".pdf"}
+    ]
+    assert not [
+        path for path in tracked_binary_paths if path.suffix.casefold() in forbidden_binary_suffixes
+    ]
+
+    for binary_path in tracked_binary_paths:
+        notice_path = binary_path.parent / "README.md"
+        assert notice_path.is_file()
+        notice_text = notice_path.read_text().casefold()
+        digest = hashlib.sha256(binary_path.read_bytes()).hexdigest()
+        assert digest in notice_text
+        if binary_path.suffix.casefold() == ".docx":
+            assert "not intended for use" in notice_text
+            assert "files are stored unchanged" in notice_text
+        else:
+            assert "unchanged copy" in notice_text
 
 
 def test_makefile_and_readme_document_analysis_as_the_merged_stage() -> None:
