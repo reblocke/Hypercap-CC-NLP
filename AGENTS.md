@@ -11,7 +11,7 @@ final accepted or published journal article.
 
 - Treat this repository as public. Do not add row-level MIMIC data,
   patient or encounter identifiers, annotation workbooks, generated results,
-  or credentials.
+  credentials, private reviewer material, or publisher text.
 - Keep `MIMIC tabular data/`, `Results/`, `artifacts/`, `debug/`, `Drafts/`,
   and local `.env` files ignored and untracked.
 - Cite and link DOI, PhysioNet, MIMIC, and journal records rather than mirroring
