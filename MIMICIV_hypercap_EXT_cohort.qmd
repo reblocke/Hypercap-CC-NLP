@@ -374,6 +374,30 @@ IMV_SOURCE_RECORD_NO_TIME_COLUMN = (
 )
 
 
+def prepare_archive_export_frame(
+    frame: pd.DataFrame,
+    *,
+    export_name: str,
+) -> pd.DataFrame:
+    """Return a detached archive frame with internal-only IMV fields removed."""
+    if not isinstance(frame, pd.DataFrame):
+        raise TypeError(f"{export_name} archive source must be a pandas DataFrame")
+
+    export_frame = frame.drop(
+        columns=[IMV_SOURCE_RECORD_NO_TIME_COLUMN],
+        errors="ignore",
+    ).copy(deep=True)
+    forbidden_columns = sorted(
+        {IMV_SOURCE_RECORD_NO_TIME_COLUMN}.intersection(export_frame.columns)
+    )
+    if forbidden_columns:
+        raise AssertionError(
+            f"{export_name} archive retains internal-only columns: "
+            f"{forbidden_columns}"
+        )
+    return export_frame
+
+
 def normalize_mimic_item_label(value: Any) -> str:
     """Normalize a MIMIC d_items label for strict expected-label validation."""
     if value is None or pd.isna(value):
@@ -8207,8 +8231,9 @@ print(
 
 if WRITE_ARCHIVE_XLSX_EXPORTS:
     out_path = archive_xlsx_path("mimic_hypercap_EXT_bq_abg_vbg")
-    archive_cohort = df.drop(
-        columns=[IMV_SOURCE_RECORD_NO_TIME_COLUMN], errors="ignore"
+    archive_cohort = prepare_archive_export_frame(
+        df,
+        export_name="mimic_hypercap_EXT_bq_abg_vbg",
     )
     with pd.ExcelWriter(out_path, engine="openpyxl") as xw:
         archive_cohort.to_excel(xw, sheet_name="cohort", index=False)
@@ -13241,9 +13266,13 @@ print("Wrote:", gas_panels_path)
 # Also export to Excel (tabular dataset) - optional archive output
 if WRITE_ARCHIVE_XLSX_EXPORTS:
     xlsx_path = archive_xlsx_path("mimic_hypercap_EXT_EDstay_bq_gas")
+    archive_ed_df = prepare_archive_export_frame(
+        ed_df,
+        export_name="mimic_hypercap_EXT_EDstay_bq_gas",
+    )
 
     with pd.ExcelWriter(xlsx_path, engine="openpyxl") as xw:
-        ed_df.to_excel(xw, sheet_name="cohort_ed_stay", index=False)
+        archive_ed_df.to_excel(xw, sheet_name="cohort_ed_stay", index=False)
         # Optional: include QA tables if present
         try:
             miss.to_excel(xw, sheet_name="missingness", index=False)
@@ -13271,8 +13300,16 @@ all_encounters["encounter_source"] = all_encounters["has_ed_encounter"].map({1: 
 
 if WRITE_ARCHIVE_XLSX_EXPORTS:
     all_path = archive_xlsx_path("mimic_hypercap_EXT_all_encounters_bq")
+    archive_all_encounters = prepare_archive_export_frame(
+        all_encounters,
+        export_name="mimic_hypercap_EXT_all_encounters_bq",
+    )
     with pd.ExcelWriter(all_path, engine="openpyxl") as xw:
-        all_encounters.to_excel(xw, sheet_name="all_encounters", index=False)
+        archive_all_encounters.to_excel(
+            xw,
+            sheet_name="all_encounters",
+            index=False,
+        )
     print("Saved:", all_path)
 
 # 2) ED chief-complaint-only (ED-stay level)
@@ -13284,8 +13321,12 @@ ed_cc_only = ed_df.loc[mask_cc].copy()
 
 if WRITE_ARCHIVE_XLSX_EXPORTS:
     cc_path = archive_xlsx_path("mimic_hypercap_EXT_EDcc_only_edstay_bq")
+    archive_ed_cc_only = prepare_archive_export_frame(
+        ed_cc_only,
+        export_name="mimic_hypercap_EXT_EDcc_only_edstay_bq",
+    )
     with pd.ExcelWriter(cc_path, engine="openpyxl") as xw:
-        ed_cc_only.to_excel(xw, sheet_name="ed_cc_only", index=False)
+        archive_ed_cc_only.to_excel(xw, sheet_name="ed_cc_only", index=False)
     print("Saved:", cc_path)
 else:
     print("Skipping all-encounters/ED-CC archive exports (set WRITE_ARCHIVE_XLSX_EXPORTS=1 to enable).")

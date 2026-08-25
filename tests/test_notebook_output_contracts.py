@@ -220,6 +220,42 @@ def test_imv_timing_handoff_fields_and_aggregate_cohort_audit_are_registered() -
     )[0]
 
 
+def test_optional_archive_exports_sanitize_internal_imv_fields() -> None:
+    cohort_text = (WORK_DIR / "MIMICIV_hypercap_EXT_cohort.qmd").read_text()
+
+    assert "def prepare_archive_export_frame(" in cohort_text
+    assert "columns=[IMV_SOURCE_RECORD_NO_TIME_COLUMN]" in cohort_text
+    assert "archive retains internal-only columns" in cohort_text
+
+    expected_sanitized_frames = {
+        "archive_cohort": "df",
+        "archive_ed_df": "ed_df",
+        "archive_all_encounters": "all_encounters",
+        "archive_ed_cc_only": "ed_cc_only",
+    }
+    for archive_frame, source_frame in expected_sanitized_frames.items():
+        assert (
+            f"{archive_frame} = prepare_archive_export_frame(\n"
+            f"        {source_frame},"
+        ) in cohort_text
+
+    for unsanitized_write_pattern in (
+        r"(?<![A-Za-z0-9_])df\.to_excel\(",
+        r"(?<![A-Za-z0-9_])ed_df\.to_excel\(",
+        r"(?<![A-Za-z0-9_])all_encounters\.to_excel\(",
+        r"(?<![A-Za-z0-9_])ed_cc_only\.to_excel\(",
+    ):
+        assert re.search(unsanitized_write_pattern, cohort_text) is None
+
+    for sanitized_write in (
+        'archive_cohort.to_excel(xw, sheet_name="cohort"',
+        'archive_ed_df.to_excel(xw, sheet_name="cohort_ed_stay"',
+        "archive_all_encounters.to_excel(",
+        'archive_ed_cc_only.to_excel(xw, sheet_name="ed_cc_only"',
+    ):
+        assert sanitized_write in cohort_text
+
+
 def test_imv_timing_analysis_outputs_bootstrap_and_privacy_contract() -> None:
     analysis_text = (WORK_DIR / "Hypercap CC NLP Analysis.qmd").read_text()
 

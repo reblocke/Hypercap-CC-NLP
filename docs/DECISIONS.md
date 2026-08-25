@@ -1,5 +1,40 @@
 # Decisions
 
+## 2026-08-25 - IMV acceptance safeguards are source-derived and immutable
+
+Status: accepted
+
+Context:
+- A split-machine handoff can carry internally consistent but stale derived IMV
+  fields unless the analysis stage reconstructs them from component timestamps.
+- Semantic parity is not a reliable control if a captured baseline can be
+  altered after capture or if substantive sheet names are misclassified as
+  documentation by substring.
+- The untimed-official-source flag is an internal QA field and must not leak
+  through optional row-level archive paths.
+
+Decision:
+- Recompute all reconstructable IMV timing fields from the three robust source
+  timestamps at the analysis boundary and reject any mismatch.
+- Treat captured parity baselines as immutable evidence: validate every copy
+  against its schema-versioned manifest before comparing current outputs, and
+  fail closed on any integrity or inventory error.
+- Use an exact normalized per-workbook documentation-sheet allowlist; names that
+  merely contain documentation-like tokens remain substantive.
+- Route every optional row-level cohort archive through one nonmutating export
+  sanitizer that drops and asserts absence of internal-only fields.
+
+Consequences:
+- The existing schema-v1 baseline remains usable when its recorded semantic
+  signatures validate; it is not silently overwritten or recaptured after a
+  parity failure.
+- These safeguards should not change scientific estimates. Any numerical drift
+  on the corrected successor run is an acceptance blocker requiring separate
+  investigation.
+- A successor commit requires the complete restricted-data rerun, parity check,
+  archive-enabled privacy smoke test, and aggregate/visual QA before scientific
+  acceptance is restored.
+
 ## 2026-08-25 - IMV timing is a noncausal sensitivity anchored to the qualifying gas
 
 Status: accepted

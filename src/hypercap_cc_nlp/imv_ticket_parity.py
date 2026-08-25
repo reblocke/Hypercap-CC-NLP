@@ -8,12 +8,14 @@ import math
 import shutil
 import subprocess
 import unicodedata
+from zipfile import BadZipFile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
+from openpyxl.utils.exceptions import InvalidFileException
 
 from .workflow_contracts import CANONICAL_COHORT_FILENAME, CANONICAL_NLP_FILENAME
 
@@ -48,7 +50,14 @@ BASELINE_RESULT_WORKBOOKS = (
     "Candidate_Definition_Yield_Composition.xlsx",
     "Sensitivity_Analysis_Suite.xlsx",
 )
-NOTE_SHEET_TOKENS = ("note", "definition", "readme")
+DOCUMENTATION_SHEETS_BY_WORKBOOK = {
+    "Table 1.xlsx": frozenset({"notes"}),
+    "Table 2.xlsx": frozenset({"notes"}),
+    "Figure 2.xlsx": frozenset({"notes"}),
+    "Supplementary_Table_Acid_Base_Source_Missingness.xlsx": frozenset({"notes"}),
+    "Candidate_Definition_Yield_Composition.xlsx": frozenset({"notes"}),
+    "Sensitivity_Analysis_Suite.xlsx": frozenset({"notes"}),
+}
 NUMERIC_ATOL = 1e-9
 
 
@@ -82,7 +91,9 @@ def _canonical_value(value: object) -> list[object]:
     return ["text", _normalize_text(value)]
 
 
-def _require_columns(frame: pd.DataFrame, columns: tuple[str, ...], *, label: str) -> None:
+def _require_columns(
+    frame: pd.DataFrame, columns: tuple[str, ...], *, label: str
+) -> None:
     missing = [column for column in columns if column not in frame.columns]
     if missing:
         raise KeyError(f"{label} is missing required columns: {missing}")
@@ -125,9 +136,11 @@ def _read_first_sheet(path: Path) -> pd.DataFrame:
     return pd.read_excel(path, sheet_name=0, engine="openpyxl")
 
 
-def _sheet_is_notes(sheet_name: str) -> bool:
-    normalized = sheet_name.casefold()
-    return any(token in normalized for token in NOTE_SHEET_TOKENS)
+def _sheet_is_documentation(workbook_name: str, sheet_name: str) -> bool:
+    normalized = _normalize_text(sheet_name).casefold()
+    return normalized in DOCUMENTATION_SHEETS_BY_WORKBOOK.get(
+        workbook_name, frozenset()
+    )
 
 
 def _frame_signature(frame: pd.DataFrame) -> dict[str, object]:
@@ -151,8 +164,7 @@ def _workbook_signature(path: Path) -> dict[str, object]:
     return {
         "file": path.name,
         "sheets": {
-            sheet_name: _frame_signature(frame)
-            for sheet_name, frame in sheets.items()
+            sheet_name: _frame_signature(frame) for sheet_name, frame in sheets.items()
         },
     }
 
@@ -226,9 +238,7 @@ def _compare_workbooks(baseline_path: Path, current_path: Path) -> dict[str, obj
             "missing_current": True,
             "sheet_results": {},
         }
-    baseline_sheets = pd.read_excel(
-        baseline_path, sheet_name=None, engine="openpyxl"
-    )
+    baseline_sheets = pd.read_excel(baseline_path, sheet_name=None, engine="openpyxl")
     current_sheets = pd.read_excel(current_path, sheet_name=None, engine="openpyxl")
     baseline_names = set(baseline_sheets)
     current_names = set(current_sheets)
@@ -242,7 +252,7 @@ def _compare_workbooks(baseline_path: Path, current_path: Path) -> dict[str, obj
         comparison = _compare_frames(
             baseline_sheets[sheet_name], current_sheets[sheet_name]
         )
-        notes_sheet = _sheet_is_notes(sheet_name)
+        notes_sheet = _sheet_is_documentation(baseline_path.name, sheet_name)
         comparison["notes_sheet"] = notes_sheet
         if not comparison["equal"]:
             if notes_sheet:
@@ -252,7 +262,7 @@ def _compare_workbooks(baseline_path: Path, current_path: Path) -> dict[str, obj
         sheet_results[sheet_name] = comparison
 
     for sheet_name in missing_sheets + extra_sheets:
-        if _sheet_is_notes(sheet_name):
+        if _sheet_is_documentation(baseline_path.name, sheet_name):
             warnings += 1
         else:
             failures += 1
@@ -343,6 +353,320 @@ def capture_imv_ticket_baseline(
     return {"manifest_path": str(manifest_path), **manifest}
 
 
+def _append_integrity_error(
+    errors: list[dict[str, str]],
+    code: str,
+    *,
+    artifact: str | None = None,
+    sheet: str | None = None,
+) -> None:
+    error = {"code": code}
+    if artifact is not None:
+        error["artifact"] = artifact
+    if sheet is not None:
+        error["sheet"] = sheet
+    errors.append(error)
+
+
+def _is_nonnegative_integer(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def _is_sha256(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _valid_results_date(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").strftime("%Y-%m-%d") == value
+    except ValueError:
+        return False
+
+
+def _validate_baseline_handoff(
+    path: Path,
+    manifest_section: object,
+    *,
+    artifact: str,
+    columns: tuple[str, ...],
+    hash_key: str,
+    errors: list[dict[str, str]],
+) -> pd.DataFrame | None:
+    if not isinstance(manifest_section, dict):
+        _append_integrity_error(errors, "manifest_section_invalid", artifact=artifact)
+        return None
+    if set(manifest_section) != {"rows", hash_key}:
+        _append_integrity_error(
+            errors, "manifest_section_fields_invalid", artifact=artifact
+        )
+    expected_rows = manifest_section.get("rows")
+    expected_hash = manifest_section.get(hash_key)
+    manifest_entry_valid = True
+    if not _is_nonnegative_integer(expected_rows):
+        _append_integrity_error(errors, "manifest_rows_invalid", artifact=artifact)
+        manifest_entry_valid = False
+    if not _is_sha256(expected_hash):
+        _append_integrity_error(errors, "manifest_hash_invalid", artifact=artifact)
+        manifest_entry_valid = False
+    if not path.exists():
+        _append_integrity_error(errors, "baseline_copy_missing", artifact=artifact)
+        return None
+    try:
+        frame = _read_first_sheet(path)
+        _validate_unique_admissions(frame, label=f"baseline {artifact}")
+        actual_hash = _semantic_hash(
+            frame,
+            columns=columns,
+            sort_by=("hadm_id",),
+            label=f"baseline {artifact}",
+        )
+    except (BadZipFile, InvalidFileException, KeyError, OSError, ValueError, TypeError):
+        _append_integrity_error(errors, "baseline_copy_invalid", artifact=artifact)
+        return None
+    if manifest_entry_valid:
+        if len(frame) != expected_rows:
+            _append_integrity_error(
+                errors, "baseline_row_count_mismatch", artifact=artifact
+            )
+        if actual_hash != expected_hash:
+            _append_integrity_error(
+                errors, "baseline_semantic_hash_mismatch", artifact=artifact
+            )
+    return frame
+
+
+def _validate_baseline_integrity(
+    semantic_dir: Path,
+    manifest_path: Path,
+) -> tuple[
+    dict[str, object] | None,
+    pd.DataFrame | None,
+    pd.DataFrame | None,
+    dict[str, object],
+]:
+    errors: list[dict[str, str]] = []
+    checked_handoffs = 0
+    checked_workbooks = 0
+    checked_sheets = 0
+
+    if not manifest_path.exists():
+        _append_integrity_error(errors, "manifest_missing")
+        integrity = {
+            "status": "fail",
+            "failure_count": len(errors),
+            "errors": errors,
+            "checked": {"handoffs": 0, "workbooks": 0, "sheets": 0},
+        }
+        return None, None, None, integrity
+    try:
+        loaded = json.loads(manifest_path.read_text())
+    except (json.JSONDecodeError, OSError, UnicodeError):
+        _append_integrity_error(errors, "manifest_unreadable")
+        integrity = {
+            "status": "fail",
+            "failure_count": len(errors),
+            "errors": errors,
+            "checked": {"handoffs": 0, "workbooks": 0, "sheets": 0},
+        }
+        return None, None, None, integrity
+    if not isinstance(loaded, dict):
+        _append_integrity_error(errors, "manifest_root_invalid")
+        integrity = {
+            "status": "fail",
+            "failure_count": len(errors),
+            "errors": errors,
+            "checked": {"handoffs": 0, "workbooks": 0, "sheets": 0},
+        }
+        return None, None, None, integrity
+    manifest: dict[str, object] = loaded
+    expected_manifest_fields = {
+        "schema_version",
+        "captured_at_utc",
+        "source_commit",
+        "results_date",
+        "cohort",
+        "classifier",
+        "result_workbooks",
+    }
+    if set(manifest) != expected_manifest_fields:
+        _append_integrity_error(errors, "manifest_fields_invalid")
+    schema_version = manifest.get("schema_version")
+    if not _is_nonnegative_integer(schema_version) or schema_version != 1:
+        _append_integrity_error(errors, "unsupported_schema_version")
+    source_commit = manifest.get("source_commit")
+    if not isinstance(source_commit, str) or not source_commit.strip():
+        _append_integrity_error(errors, "source_commit_invalid")
+    captured_at_utc = manifest.get("captured_at_utc")
+    try:
+        captured_at = datetime.fromisoformat(str(captured_at_utc))
+        valid_captured_at = captured_at.tzinfo is not None
+    except ValueError:
+        valid_captured_at = False
+    if not isinstance(captured_at_utc, str) or not valid_captured_at:
+        _append_integrity_error(errors, "captured_at_utc_invalid")
+
+    baseline_results_date = manifest.get("results_date")
+    valid_results_date = _valid_results_date(baseline_results_date)
+    if not valid_results_date:
+        _append_integrity_error(errors, "results_date_invalid")
+
+    baseline_data_dir = semantic_dir / "MIMIC tabular data"
+    expected_data_inventory = {
+        CANONICAL_COHORT_FILENAME,
+        CANONICAL_NLP_FILENAME,
+    }
+    actual_data_inventory = (
+        {
+            path.name
+            for path in baseline_data_dir.glob("*.xlsx")
+            if path.is_file() and not path.name.startswith("~$")
+        }
+        if baseline_data_dir.exists()
+        else set()
+    )
+    if actual_data_inventory != expected_data_inventory:
+        _append_integrity_error(errors, "handoff_inventory_mismatch")
+
+    baseline_cohort = _validate_baseline_handoff(
+        baseline_data_dir / CANONICAL_COHORT_FILENAME,
+        manifest.get("cohort"),
+        artifact="cohort",
+        columns=MEMBERSHIP_COLUMNS,
+        hash_key="membership_sha256",
+        errors=errors,
+    )
+    if baseline_cohort is not None:
+        checked_handoffs += 1
+    baseline_nlp = _validate_baseline_handoff(
+        baseline_data_dir / CANONICAL_NLP_FILENAME,
+        manifest.get("classifier"),
+        artifact="classifier",
+        columns=RFV_ASSIGNMENT_COLUMNS,
+        hash_key="rfv_assignment_sha256",
+        errors=errors,
+    )
+    if baseline_nlp is not None:
+        checked_handoffs += 1
+
+    result_manifest = manifest.get("result_workbooks")
+    if not isinstance(result_manifest, dict):
+        _append_integrity_error(errors, "workbook_manifest_invalid")
+        result_manifest = {}
+    expected_workbook_inventory = set(BASELINE_RESULT_WORKBOOKS)
+    if set(result_manifest) != expected_workbook_inventory:
+        _append_integrity_error(errors, "workbook_manifest_inventory_mismatch")
+
+    baseline_results_dir = (
+        semantic_dir / "Results" / str(baseline_results_date)
+        if valid_results_date
+        else None
+    )
+    actual_workbook_inventory = (
+        {
+            path.name
+            for path in baseline_results_dir.glob("*.xlsx")
+            if path.is_file() and not path.name.startswith("~$")
+        }
+        if baseline_results_dir is not None and baseline_results_dir.exists()
+        else set()
+    )
+    if actual_workbook_inventory != expected_workbook_inventory:
+        _append_integrity_error(errors, "workbook_copy_inventory_mismatch")
+
+    if baseline_results_dir is not None:
+        for filename in BASELINE_RESULT_WORKBOOKS:
+            recorded_signature = result_manifest.get(filename)
+            if not isinstance(recorded_signature, dict):
+                _append_integrity_error(
+                    errors, "workbook_manifest_entry_invalid", artifact=filename
+                )
+                continue
+            workbook_path = baseline_results_dir / filename
+            if not workbook_path.exists():
+                _append_integrity_error(
+                    errors, "baseline_workbook_missing", artifact=filename
+                )
+                continue
+            try:
+                actual_signature = _workbook_signature(workbook_path)
+            except (BadZipFile, InvalidFileException, OSError, ValueError, TypeError):
+                _append_integrity_error(
+                    errors, "baseline_workbook_invalid", artifact=filename
+                )
+                continue
+            checked_workbooks += 1
+            recorded_sheets = recorded_signature.get("sheets")
+            actual_sheets = actual_signature["sheets"]
+            if set(recorded_signature) != {"file", "sheets"}:
+                _append_integrity_error(
+                    errors, "workbook_manifest_fields_invalid", artifact=filename
+                )
+            if recorded_signature.get("file") != filename:
+                _append_integrity_error(
+                    errors, "workbook_filename_mismatch", artifact=filename
+                )
+            if not isinstance(recorded_sheets, dict):
+                _append_integrity_error(
+                    errors, "workbook_sheet_manifest_invalid", artifact=filename
+                )
+                continue
+            if set(recorded_sheets) != set(actual_sheets):
+                _append_integrity_error(
+                    errors, "workbook_sheet_inventory_mismatch", artifact=filename
+                )
+            for sheet_name in sorted(set(recorded_sheets) & set(actual_sheets)):
+                checked_sheets += 1
+                if recorded_sheets[sheet_name] != actual_sheets[sheet_name]:
+                    _append_integrity_error(
+                        errors,
+                        "workbook_sheet_signature_mismatch",
+                        artifact=filename,
+                        sheet=sheet_name,
+                    )
+
+    integrity = {
+        "status": "fail" if errors else "pass",
+        "failure_count": len(errors),
+        "errors": errors,
+        "checked": {
+            "handoffs": checked_handoffs,
+            "workbooks": checked_workbooks,
+            "sheets": checked_sheets,
+        },
+    }
+    return manifest, baseline_cohort, baseline_nlp, integrity
+
+
+def _baseline_integrity_failure_report(
+    *,
+    manifest_path: Path,
+    manifest: dict[str, object] | None,
+    results_date: str,
+    integrity: dict[str, object],
+) -> dict[str, object]:
+    return {
+        "status": "fail",
+        "baseline_manifest_path": str(manifest_path),
+        "baseline_results_date": manifest.get("results_date") if manifest else None,
+        "current_results_date": results_date,
+        "baseline_integrity": integrity,
+        "cohort_membership": {"status": "not_compared"},
+        "rfv_assignments": {"status": "not_compared"},
+        "workbooks": {},
+        "summary": {
+            "baseline_integrity_failures": int(integrity["failure_count"]),
+            "workbook_failures": 0,
+            "workbook_warnings": 0,
+        },
+    }
+
+
 def compare_imv_ticket_baseline(
     work_dir: Path,
     *,
@@ -353,27 +677,28 @@ def compare_imv_ticket_baseline(
     work_dir = work_dir.resolve()
     semantic_dir = baseline_dir.resolve() / "imv_ticket_semantic"
     manifest_path = semantic_dir / "semantic_manifest.json"
-    if not manifest_path.exists():
-        raise FileNotFoundError(manifest_path)
-    manifest = json.loads(manifest_path.read_text())
+    manifest, baseline_cohort, baseline_nlp, integrity = _validate_baseline_integrity(
+        semantic_dir, manifest_path
+    )
+    if integrity["status"] != "pass":
+        return _baseline_integrity_failure_report(
+            manifest_path=manifest_path,
+            manifest=manifest,
+            results_date=results_date,
+            integrity=integrity,
+        )
+    if manifest is None or baseline_cohort is None or baseline_nlp is None:
+        raise AssertionError("Passing baseline integrity requires all baseline inputs")
 
     current_data_dir = work_dir / "MIMIC tabular data"
-    baseline_data_dir = semantic_dir / "MIMIC tabular data"
     current_results_dir = work_dir / "Results" / results_date
-    baseline_results_dir = semantic_dir / "Results" / manifest["results_date"]
+    baseline_results_date = str(manifest["results_date"])
+    baseline_results_dir = semantic_dir / "Results" / baseline_results_date
 
-    baseline_cohort = _read_first_sheet(
-        baseline_data_dir / CANONICAL_COHORT_FILENAME
-    )
-    current_cohort = _read_first_sheet(
-        current_data_dir / CANONICAL_COHORT_FILENAME
-    )
-    baseline_nlp = _read_first_sheet(baseline_data_dir / CANONICAL_NLP_FILENAME)
+    current_cohort = _read_first_sheet(current_data_dir / CANONICAL_COHORT_FILENAME)
     current_nlp = _read_first_sheet(current_data_dir / CANONICAL_NLP_FILENAME)
     for label, frame in (
-        ("baseline cohort", baseline_cohort),
         ("current cohort", current_cohort),
-        ("baseline NLP", baseline_nlp),
         ("current NLP", current_nlp),
     ):
         _validate_unique_admissions(frame, label=label)
@@ -408,8 +733,7 @@ def compare_imv_ticket_baseline(
         and membership_baseline_hash == membership_current_hash
     )
     rfv_equal = (
-        len(baseline_nlp) == len(current_nlp)
-        and rfv_baseline_hash == rfv_current_hash
+        len(baseline_nlp) == len(current_nlp) and rfv_baseline_hash == rfv_current_hash
     )
     workbook_results = {
         filename: _compare_workbooks(
@@ -434,8 +758,9 @@ def compare_imv_ticket_baseline(
     return {
         "status": status,
         "baseline_manifest_path": str(manifest_path),
-        "baseline_results_date": manifest["results_date"],
+        "baseline_results_date": baseline_results_date,
         "current_results_date": results_date,
+        "baseline_integrity": integrity,
         "cohort_membership": {
             "equal": membership_equal,
             "baseline_rows": int(len(baseline_cohort)),
@@ -452,6 +777,7 @@ def compare_imv_ticket_baseline(
         },
         "workbooks": workbook_results,
         "summary": {
+            "baseline_integrity_failures": 0,
             "workbook_failures": int(workbook_failures),
             "workbook_warnings": int(workbook_warnings),
         },

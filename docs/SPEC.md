@@ -194,12 +194,20 @@ union of `no_observed_imv` and `qualifying_gas_before_imv`; indeterminate rows
 are excluded.
 
 The cohort keeps its untimed-official-source evidence flag only in memory and
-asserts it before export. Because that flag is deliberately absent from the
-eleven-field private handoff, the analysis-stage validator accepts either
+asserts it before export. Every optional row-level archive export must pass
+through the same nonmutating sanitizer that drops this internal field and
+asserts its absence; no archive path may write the in-memory frame directly.
+Because that flag is deliberately absent from the eleven-field private handoff,
+the analysis-stage validator accepts either
 `no_observed_imv` or the cohort's fail-closed `timing_indeterminate` value only
 when the exported row has no robust timestamp, no legacy IMV evidence, a
 `missing` source, and a nonmissing qualifying-gas time. Every timing state that
-is reconstructable from the handoff is revalidated exactly.
+is reconstructable from the handoff is revalidated exactly. The analysis stage
+must first recompute robust presence, the exact minimum timestamp and its
+source/tie label, signed hours, strict temporal order, nullable indicators, and
+legacy discordance from the three component timestamps plus the qualifying-gas
+and legacy fields. Supplied derived values must never be used as their own
+validation reference.
 
 ### Aggregate QA and manuscript outputs
 
@@ -230,10 +238,19 @@ is reconstructable from the handoff is revalidated exactly.
 `scripts/imv_ticket_parity.py` provides a private semantic safeguard for the
 ticket. `capture` requires an explicit baseline ID/path and results date and
 stores the pre-ticket private handoffs plus the 14 enumerated existing result
-workbooks under that ignored baseline. `compare` checks admission membership,
-RFV1-RFV5 codes and labels, and all non-note workbook cells against the same
-baseline; note/definition-only changes are warnings. The comparison writes only
-an aggregate JSON report (by default under
+workbooks under that ignored baseline. Before comparing current outputs,
+`compare` must validate the captured copies against the schema-versioned
+manifest: exact handoff row counts and semantic hashes, the exact workbook
+inventory, and every stored per-sheet signature. A missing, altered,
+incomplete, or unsupported baseline fails closed and current-output comparison
+is skipped. Once baseline integrity passes, `compare` checks admission
+membership, RFV1-RFV5 codes and labels, and all substantive workbook cells
+against that same baseline. Only exact normalized documentation-sheet names in
+the per-workbook allowlist (currently `Notes` for the 14-workbook contract) may
+produce warning-only changes; a substantive name that merely contains
+`note`, `definition`, or `readme` remains failure-eligible. The comparison
+writes only an aggregate JSON report, including aggregate baseline-integrity
+status (by default under
 `debug/pipeline_parity/imv_ticket/<run-id>/semantic_report.json`) and never emits
 row-level differences. Baseline copies, current results, and reports are ignored
 and must not be committed.
@@ -317,7 +334,10 @@ A valid private pipeline run satisfies all of the following:
 - the IMV timing QA audit, sensitivity workbook, Figure S10 source/display
   files, and prespecified summary exist and contain aggregate data only
 - the explicit IMV-ticket parity comparison passes for cohort membership,
-  RFV1-RFV5 assignments, and the 14 prespecified existing workbooks
+  RFV1-RFV5 assignments, and the 14 prespecified existing workbooks after the
+  captured baseline itself passes manifest-integrity validation
+- an archive-enabled cohort smoke test confirms the in-memory-only untimed IMV
+  source flag is absent from every optional row-level workbook export
 - QA payloads land under `artifacts/qa/cohort/`, `artifacts/qa/rater_agreement/`, `artifacts/qa/analysis/`, and `artifacts/qa/baselines/`
 - no generated outputs are written to the repository root or to `Drafts/`
 - each renderable notebook remains self-contained at runtime and free of repo-local runtime imports

@@ -1517,10 +1517,115 @@ def _nullable_boolean_mismatch(observed: pd.Series, expected: pd.Series) -> pd.S
     return presence_mismatch | value_mismatch
 
 
-def validate_imv_timing_analysis_contract(df: pd.DataFrame) -> dict[str, int]:
-    """Fail closed if cohort-provided IMV/gas timing fields violate the ticket contract."""
+def _coerce_contract_datetime_for_analysis(
+    values: pd.Series,
+    *,
+    field_name: str,
+) -> pd.Series:
+    """Parse a handoff timestamp while rejecting nonmissing unparseable values."""
 
-    ensure_required_columns(df, [*IMV_TIMING_REQUIRED_INPUT_COLS, "pco2_threshold_any"])
+    parsed = pd.to_datetime(values, errors="coerce", format="mixed")
+    invalid = values.notna() & parsed.isna()
+    if bool(invalid.any()):
+        raise ValueError(
+            f"{field_name} contains nonmissing unparseable timestamps; "
+            f"violations={int(invalid.sum())}."
+        )
+    return parsed
+
+
+def _coerce_contract_numeric_for_analysis(
+    values: pd.Series,
+    *,
+    field_name: str,
+) -> pd.Series:
+    """Parse a numeric handoff field while rejecting malformed/nonfinite values."""
+
+    parsed = pd.to_numeric(values, errors="coerce")
+    unparseable = values.notna() & parsed.isna()
+    nonfinite = parsed.notna() & ~np.isfinite(parsed)
+    if bool(unparseable.any() or nonfinite.any()):
+        raise ValueError(
+            f"{field_name} contains nonmissing unparseable or nonfinite values; "
+            f"unparseable={int(unparseable.sum())}, "
+            f"nonfinite={int(nonfinite.sum())}."
+        )
+    return parsed.astype("float64")
+
+
+def _select_first_observed_imv_for_analysis(
+    *,
+    first_intubation_procedure_time: pd.Timestamp | None,
+    first_invasive_ventilation_procedure_time: pd.Timestamp | None,
+    first_derived_imv_starttime: pd.Timestamp | None,
+) -> tuple[pd.Timestamp, str]:
+    """Reconstruct the exact earliest robust IMV timestamp and source."""
+
+    raw_values = {
+        "intubation_procedure": first_intubation_procedure_time,
+        "invasive_ventilation_procedure": first_invasive_ventilation_procedure_time,
+        "derived_ventilation_episode": first_derived_imv_starttime,
+    }
+    observed = {
+        source_name: timestamp
+        for source_name, raw_value in raw_values.items()
+        if not pd.isna(timestamp := pd.to_datetime(raw_value, errors="coerce"))
+    }
+    if not observed:
+        return pd.NaT, "missing"
+
+    earliest_time = min(observed.values())
+    earliest_sources = [
+        source_name
+        for source_name, timestamp in observed.items()
+        if timestamp == earliest_time
+    ]
+    if len(earliest_sources) > 1:
+        return earliest_time, "multiple_sources_same_time"
+    return earliest_time, earliest_sources[0]
+
+
+def _legacy_imv_timing_discordant_for_analysis(
+    *,
+    gas_positive: bool,
+    qualifying_pco2_time: pd.Timestamp | None,
+    robust_imv_observed: bool,
+    first_observed_imv_time: pd.Timestamp | None,
+    legacy_imv_flag: bool,
+    legacy_first_imv_time: pd.Timestamp | None,
+) -> int:
+    """Reconstruct legacy-versus-robust presence and strict-order discordance."""
+
+    robust_present = bool(robust_imv_observed)
+    legacy_present = bool(legacy_imv_flag)
+    if robust_present != legacy_present:
+        return 1
+    if not gas_positive or not robust_present or not legacy_present:
+        return 0
+
+    gas_time = pd.to_datetime(qualifying_pco2_time, errors="coerce")
+    robust_time = pd.to_datetime(first_observed_imv_time, errors="coerce")
+    legacy_time = pd.to_datetime(legacy_first_imv_time, errors="coerce")
+    if pd.isna(gas_time) or pd.isna(robust_time) or pd.isna(legacy_time):
+        return 0
+
+    def _strict_relation(imv_time: pd.Timestamp) -> str:
+        if imv_time < gas_time:
+            return "imv_before_qualifying_gas"
+        if gas_time < imv_time:
+            return "qualifying_gas_before_imv"
+        return "exact_tie"
+
+    return int(_strict_relation(robust_time) != _strict_relation(legacy_time))
+
+
+def validate_imv_timing_analysis_contract(df: pd.DataFrame) -> dict[str, int]:
+    """Reconstruct and fail closed on drift in cohort-provided IMV timing fields."""
+
+    ensure_required_columns(
+        df,
+        [*IMV_TIMING_REQUIRED_INPUT_COLS, "pco2_threshold_any", "first_imv_time"],
+    )
     if df["hadm_id"].isna().any() or df["hadm_id"].duplicated().any():
         raise ValueError("IMV timing analysis requires one nonmissing row per hadm_id.")
     if df["subject_id"].isna().any():
@@ -1541,47 +1646,84 @@ def validate_imv_timing_analysis_contract(df: pd.DataFrame) -> dict[str, int]:
             "Every admission without a qualifying gas must be not_applicable_no_qualifying_gas."
         )
 
-    robust_imv = coerce_nullable_boolean(
+    source_time_columns = [
+        "first_intubation_procedure_time",
+        "first_invasive_ventilation_procedure_time",
+        "first_derived_imv_starttime",
+    ]
+    source_times = pd.DataFrame(
+        {
+            column: _coerce_contract_datetime_for_analysis(
+                df[column],
+                field_name=column,
+            )
+            for column in source_time_columns
+        },
+        index=df.index,
+    )
+    expected_selected = [
+        _select_first_observed_imv_for_analysis(
+            first_intubation_procedure_time=row.first_intubation_procedure_time,
+            first_invasive_ventilation_procedure_time=row.first_invasive_ventilation_procedure_time,
+            first_derived_imv_starttime=row.first_derived_imv_starttime,
+        )
+        for row in source_times.itertuples(index=False)
+    ]
+    expected_first_time = pd.to_datetime(
+        pd.Series([selected[0] for selected in expected_selected], index=df.index),
+        errors="coerce",
+    )
+    expected_source = pd.Series(
+        [selected[1] for selected in expected_selected],
+        index=df.index,
+        dtype="string",
+    )
+    expected_robust_imv = source_times.notna().any(axis=1)
+
+    observed_robust_imv = coerce_nullable_boolean(
         df["robust_imv_observed"], field_name="robust_imv_observed"
     )
-    if robust_imv.isna().any():
+    if observed_robust_imv.isna().any():
         raise ValueError("robust_imv_observed must be nonmissing for every analytic admission.")
-    source = df["first_observed_imv_source"].astype("string").str.strip()
-    invalid_source = ~source.isin(IMV_TIMING_SOURCE_VALUES)
+    robust_mismatch = observed_robust_imv.ne(expected_robust_imv).fillna(True)
+    if bool(robust_mismatch.any()):
+        raise ValueError(
+            "robust_imv_observed must equal presence of a reliable source timestamp; "
+            f"violations={int(robust_mismatch.sum())}."
+        )
+
+    observed_first_time = _coerce_contract_datetime_for_analysis(
+        df["first_observed_imv_time"],
+        field_name="first_observed_imv_time",
+    )
+    first_time_matches = (
+        (observed_first_time.isna() & expected_first_time.isna())
+        | observed_first_time.eq(expected_first_time).fillna(False)
+    )
+    observed_source = df["first_observed_imv_source"].astype("string").str.strip()
+    invalid_source = ~observed_source.isin(IMV_TIMING_SOURCE_VALUES)
     if bool(invalid_source.any()):
-        invalid_values = sorted(source.loc[invalid_source].dropna().unique().tolist())
+        invalid_values = sorted(
+            observed_source.loc[invalid_source].dropna().unique().tolist()
+        )
         raise ValueError(f"Unsupported first_observed_imv_source values: {invalid_values}")
-    if bool(((~robust_imv) & source.ne("missing")).any()):
-        raise ValueError("Admissions without robust IMV evidence must use source='missing'.")
+    source_mismatch = observed_source.ne(expected_source).fillna(True)
+    first_time_mismatch = ~first_time_matches
+    if bool(first_time_mismatch.any() or source_mismatch.any()):
+        raise ValueError(
+            "first_observed_imv_time/source must equal the exact earliest reliable source; "
+            f"time_violations={int(first_time_mismatch.sum())}, "
+            f"source_violations={int(source_mismatch.sum())}."
+        )
 
-    no_prior_observed = coerce_nullable_boolean(
-        df["no_prior_observed_imv"], field_name="no_prior_observed_imv"
+    qualifying_time = _coerce_contract_datetime_for_analysis(
+        df["qualifying_pco2_time"],
+        field_name="qualifying_pco2_time",
     )
-    expected_no_prior = pd.Series(pd.NA, index=df.index, dtype="boolean")
-    expected_no_prior.loc[
-        timing_order.isin({"no_observed_imv", "qualifying_gas_before_imv"})
-    ] = True
-    expected_no_prior.loc[timing_order.eq("imv_before_qualifying_gas")] = False
-    if bool(_nullable_boolean_mismatch(no_prior_observed, expected_no_prior).any()):
-        raise ValueError("no_prior_observed_imv is inconsistent with imv_qualifying_gas_order.")
-
-    imv_preceded = coerce_nullable_boolean(
-        df["imv_preceded_qualifying_gas"],
-        field_name="imv_preceded_qualifying_gas",
+    legacy_first_imv_time = _coerce_contract_datetime_for_analysis(
+        df["first_imv_time"],
+        field_name="first_imv_time",
     )
-    expected_preceded = pd.Series(pd.NA, index=df.index, dtype="boolean")
-    expected_preceded.loc[
-        timing_order.isin({"no_observed_imv", "qualifying_gas_before_imv"})
-    ] = False
-    expected_preceded.loc[timing_order.eq("imv_before_qualifying_gas")] = True
-    if bool(_nullable_boolean_mismatch(imv_preceded, expected_preceded).any()):
-        raise ValueError("imv_preceded_qualifying_gas is inconsistent with timing order.")
-
-    qualifying_time = pd.to_datetime(df["qualifying_pco2_time"], errors="coerce")
-    observed_imv_time = pd.to_datetime(df["first_observed_imv_time"], errors="coerce")
-    hours = pd.to_numeric(df["hours_from_imv_to_qualifying_gas"], errors="coerce")
-    if bool((robust_imv.eq(True) & observed_imv_time.notna() & source.eq("missing")).any()):
-        raise ValueError("Timestamped robust IMV evidence requires a nonmissing source label.")
     legacy_imv = to_binary_flag(df["imv_flag"]).eq(1)
     expected_timing_order = pd.Series(
         "not_applicable_no_qualifying_gas",
@@ -1590,40 +1732,32 @@ def validate_imv_timing_analysis_contract(df: pd.DataFrame) -> dict[str, int]:
     )
     expected_timing_order.loc[gas_positive & qualifying_time.isna()] = "timing_indeterminate"
     expected_timing_order.loc[
-        gas_positive & qualifying_time.notna() & robust_imv.eq(False) & legacy_imv
+        gas_positive & qualifying_time.notna() & ~expected_robust_imv & legacy_imv
     ] = "timing_indeterminate"
     no_timestamp_or_legacy_evidence = (
         gas_positive
         & qualifying_time.notna()
-        & robust_imv.eq(False)
+        & ~expected_robust_imv
         & ~legacy_imv
-        & observed_imv_time.isna()
-        & source.eq("missing")
     )
     expected_timing_order.loc[no_timestamp_or_legacy_evidence] = "no_observed_imv"
     expected_timing_order.loc[
-        gas_positive & qualifying_time.notna() & robust_imv.eq(True) & observed_imv_time.isna()
-    ] = "timing_indeterminate"
-    expected_timing_order.loc[
         gas_positive
         & qualifying_time.notna()
-        & robust_imv.eq(True)
-        & observed_imv_time.notna()
-        & qualifying_time.lt(observed_imv_time)
+        & expected_robust_imv
+        & qualifying_time.lt(expected_first_time)
     ] = "qualifying_gas_before_imv"
     expected_timing_order.loc[
         gas_positive
         & qualifying_time.notna()
-        & robust_imv.eq(True)
-        & observed_imv_time.notna()
-        & observed_imv_time.lt(qualifying_time)
+        & expected_robust_imv
+        & expected_first_time.lt(qualifying_time)
     ] = "imv_before_qualifying_gas"
     expected_timing_order.loc[
         gas_positive
         & qualifying_time.notna()
-        & robust_imv.eq(True)
-        & observed_imv_time.notna()
-        & observed_imv_time.eq(qualifying_time)
+        & expected_robust_imv
+        & expected_first_time.eq(qualifying_time)
     ] = "timing_indeterminate"
     # The cohort retains an internal, non-exported flag for an official source
     # record whose timestamp is unusable. Such rows are intentionally
@@ -1654,26 +1788,110 @@ def validate_imv_timing_analysis_contract(df: pd.DataFrame) -> dict[str, int]:
             "imv_qualifying_gas_order is inconsistent with the strict cohort fields: "
             f"{mismatch_counts}"
         )
-    gas_before = timing_order.eq("qualifying_gas_before_imv")
-    imv_before = timing_order.eq("imv_before_qualifying_gas")
-    indeterminate = timing_order.eq("timing_indeterminate")
-    if bool((gas_before & ~hours.lt(0)).any()):
-        raise ValueError("qualifying_gas_before_imv rows must have strictly negative timing hours.")
-    if bool((imv_before & ~hours.gt(0)).any()):
-        raise ValueError("imv_before_qualifying_gas rows must have strictly positive timing hours.")
-    if bool((gas_positive & qualifying_time.isna() & ~indeterminate).any()):
-        raise ValueError("Gas-positive rows with missing qualifying_pco2_time must be indeterminate.")
-    if bool((gas_positive & robust_imv.eq(True) & observed_imv_time.isna() & ~indeterminate).any()):
-        raise ValueError("Robust IMV evidence with missing first_observed_imv_time must be indeterminate.")
-    if bool((gas_positive & hours.eq(0) & ~indeterminate).any()):
-        raise ValueError("Exact IMV/qualifying-gas timestamp ties must be indeterminate.")
 
-    legacy_discordant = coerce_nullable_boolean(
+    # The hidden untimed-source flag determines which of the two accepted
+    # classifications applies. Once the exported order is accepted, its
+    # dependent nullable flags must still agree with that classification.
+    effective_expected_order = expected_timing_order.copy()
+    effective_expected_order.loc[permitted_untimed_source_indeterminate] = (
+        "timing_indeterminate"
+    )
+    expected_preceded = pd.Series(pd.NA, index=df.index, dtype="boolean")
+    expected_preceded.loc[
+        effective_expected_order.isin(
+            {"no_observed_imv", "qualifying_gas_before_imv"}
+        )
+    ] = False
+    expected_preceded.loc[
+        effective_expected_order.eq("imv_before_qualifying_gas")
+    ] = True
+    observed_preceded = coerce_nullable_boolean(
+        df["imv_preceded_qualifying_gas"],
+        field_name="imv_preceded_qualifying_gas",
+    )
+    if bool(_nullable_boolean_mismatch(observed_preceded, expected_preceded).any()):
+        raise ValueError(
+            "imv_preceded_qualifying_gas is inconsistent with source-derived timing order."
+        )
+
+    expected_no_prior = pd.Series(pd.NA, index=df.index, dtype="boolean")
+    expected_no_prior.loc[
+        effective_expected_order.isin(
+            {"no_observed_imv", "qualifying_gas_before_imv"}
+        )
+    ] = True
+    expected_no_prior.loc[
+        effective_expected_order.eq("imv_before_qualifying_gas")
+    ] = False
+    observed_no_prior = coerce_nullable_boolean(
+        df["no_prior_observed_imv"], field_name="no_prior_observed_imv"
+    )
+    if bool(_nullable_boolean_mismatch(observed_no_prior, expected_no_prior).any()):
+        raise ValueError(
+            "no_prior_observed_imv is inconsistent with source-derived timing order."
+        )
+
+    expected_hours = (
+        qualifying_time - expected_first_time
+    ).dt.total_seconds() / 3600.0
+    observed_hours = _coerce_contract_numeric_for_analysis(
+        df["hours_from_imv_to_qualifying_gas"],
+        field_name="hours_from_imv_to_qualifying_gas",
+    )
+    comparable_hours = expected_hours.notna() & observed_hours.notna()
+    hours_mismatch = expected_hours.notna().ne(observed_hours.notna())
+    hours_mismatch |= comparable_hours & ~np.isclose(
+        expected_hours.fillna(0.0),
+        observed_hours.fillna(0.0),
+        rtol=0.0,
+        atol=1e-12,
+    )
+    if bool(hours_mismatch.any()):
+        raise ValueError(
+            "hours_from_imv_to_qualifying_gas must equal the exact source-derived timestamp difference; "
+            f"violations={int(hours_mismatch.sum())}."
+        )
+
+    observed_legacy_discordant = coerce_nullable_boolean(
         df["legacy_imv_timing_discordant"],
         field_name="legacy_imv_timing_discordant",
     )
-    if legacy_discordant.isna().any():
+    if observed_legacy_discordant.isna().any():
         raise ValueError("legacy_imv_timing_discordant must be nonmissing.")
+    expected_legacy_discordant = pd.Series(
+        [
+            bool(
+                _legacy_imv_timing_discordant_for_analysis(
+                    gas_positive=bool(gas_flag),
+                    qualifying_pco2_time=gas_time,
+                    robust_imv_observed=bool(robust_flag),
+                    first_observed_imv_time=robust_time,
+                    legacy_imv_flag=bool(legacy_flag),
+                    legacy_first_imv_time=legacy_time,
+                )
+            )
+            for gas_flag, gas_time, robust_flag, robust_time, legacy_flag, legacy_time in zip(
+                gas_positive,
+                qualifying_time,
+                expected_robust_imv,
+                expected_first_time,
+                legacy_imv,
+                legacy_first_imv_time,
+                strict=False,
+            )
+        ],
+        index=df.index,
+        dtype="boolean",
+    )
+    legacy_discordance_mismatch = _nullable_boolean_mismatch(
+        observed_legacy_discordant,
+        expected_legacy_discordant,
+    )
+    if bool(legacy_discordance_mismatch.any()):
+        raise ValueError(
+            "legacy_imv_timing_discordant differs from the source-derived presence/order rule; "
+            f"violations={int(legacy_discordance_mismatch.sum())}."
+        )
 
     gas_stratum_counts = timing_order.loc[gas_positive].value_counts()
     reconciled_n = int(
@@ -1684,7 +1902,7 @@ def validate_imv_timing_analysis_contract(df: pd.DataFrame) -> dict[str, int]:
         raise AssertionError(
             f"IMV timing strata sum to {reconciled_n}, not gas-positive N={gas_positive_n}."
         )
-    no_prior_n = int((gas_positive & no_prior_observed.eq(True)).sum())
+    no_prior_n = int((gas_positive & observed_no_prior.eq(True)).sum())
     if no_prior_n <= 0:
         raise ValueError(
             "The no-prior-observed-IMV sensitivity must be nonempty."

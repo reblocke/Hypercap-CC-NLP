@@ -57,6 +57,10 @@ HELPER_FUNCTIONS = [
     "build_timing_safeguard_interpretation_flags",
     "coerce_nullable_boolean",
     "_nullable_boolean_mismatch",
+    "_coerce_contract_datetime_for_analysis",
+    "_coerce_contract_numeric_for_analysis",
+    "_select_first_observed_imv_for_analysis",
+    "_legacy_imv_timing_discordant_for_analysis",
     "validate_imv_timing_analysis_contract",
     "prepare_imv_timing_gas_positive_frame",
     "_binary_count_denominator_pct",
@@ -1259,6 +1263,7 @@ def _synthetic_imv_timing_frame() -> pd.DataFrame:
                     "age": 40 + row_number,
                     "death_in_hosp": int(row_number % 3 == 0),
                     "imv_flag": int(bool(spec["robust"])),
+                    "first_imv_time": spec["imv_time"],
                     "abg_hypercap_threshold": int(row_number % 2 == 0),
                     "vbg_hypercap_threshold": int(row_number % 2 == 1),
                     "any_hypercap_icd": int(row_number % 3 == 0),
@@ -1292,6 +1297,7 @@ def _synthetic_imv_timing_frame() -> pd.DataFrame:
             "age": 72,
             "death_in_hosp": 0,
             "imv_flag": 0,
+            "first_imv_time": pd.NaT,
             "abg_hypercap_threshold": 0,
             "vbg_hypercap_threshold": 0,
             "any_hypercap_icd": 1,
@@ -1391,6 +1397,95 @@ def test_imv_timing_analysis_rejects_reconstructable_order_mismatch() -> None:
     frame.loc[imv_before_row, "no_prior_observed_imv"] = True
 
     with pytest.raises(ValueError, match="strict cohort fields"):
+        validate_imv_timing_analysis_contract(frame)
+
+
+def test_imv_timing_analysis_rejects_robust_flag_not_derived_from_sources() -> None:
+    frame = _synthetic_imv_timing_frame()
+    gas_before_row = frame.index[2]
+    frame.loc[gas_before_row, "robust_imv_observed"] = 0
+
+    with pytest.raises(ValueError, match="robust_imv_observed must equal presence"):
+        validate_imv_timing_analysis_contract(frame)
+
+
+def test_imv_timing_analysis_rejects_self_consistent_nonminimum_anchor() -> None:
+    frame = _synthetic_imv_timing_frame()
+    gas_before_row = frame.index[2]
+    gas_time = frame.loc[gas_before_row, "qualifying_pco2_time"]
+    frame.loc[gas_before_row, "first_observed_imv_time"] = gas_time + pd.Timedelta(
+        hours=2
+    )
+    frame.loc[gas_before_row, "hours_from_imv_to_qualifying_gas"] = -2.0
+
+    with pytest.raises(ValueError, match="exact earliest reliable source"):
+        validate_imv_timing_analysis_contract(frame)
+
+
+def test_imv_timing_analysis_rejects_incorrect_tied_source_label() -> None:
+    frame = _synthetic_imv_timing_frame()
+    gas_before_row = frame.index[2]
+    frame.loc[gas_before_row, "first_intubation_procedure_time"] = frame.loc[
+        gas_before_row, "first_derived_imv_starttime"
+    ]
+
+    with pytest.raises(
+        ValueError,
+        match=r"source_violations=1",
+    ):
+        validate_imv_timing_analysis_contract(frame)
+
+
+def test_imv_timing_analysis_rejects_same_sign_inexact_hours() -> None:
+    frame = _synthetic_imv_timing_frame()
+    gas_before_row = frame.index[2]
+    frame.loc[gas_before_row, "hours_from_imv_to_qualifying_gas"] = -0.5
+
+    with pytest.raises(ValueError, match="exact source-derived timestamp difference"):
+        validate_imv_timing_analysis_contract(frame)
+
+
+def test_imv_timing_analysis_rejects_incorrect_legacy_discordance() -> None:
+    frame = _synthetic_imv_timing_frame()
+    gas_before_row = frame.index[2]
+    frame.loc[gas_before_row, "imv_flag"] = 0
+
+    with pytest.raises(ValueError, match="source-derived presence/order rule"):
+        validate_imv_timing_analysis_contract(frame)
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    [
+        "first_derived_imv_starttime",
+        "first_observed_imv_time",
+        "first_imv_time",
+    ],
+)
+def test_imv_timing_analysis_rejects_unparseable_nonmissing_timestamps(
+    field_name: str,
+) -> None:
+    frame = _synthetic_imv_timing_frame()
+    no_observed_row = frame.index[0]
+    frame[field_name] = frame[field_name].astype("object")
+    frame.loc[no_observed_row, field_name] = "not-a-time"
+
+    with pytest.raises(ValueError, match="nonmissing unparseable timestamps"):
+        validate_imv_timing_analysis_contract(frame)
+
+
+@pytest.mark.parametrize("invalid_hours", ["bad", np.inf, -np.inf])
+def test_imv_timing_analysis_rejects_malformed_or_nonfinite_hours(
+    invalid_hours: object,
+) -> None:
+    frame = _synthetic_imv_timing_frame()
+    no_observed_row = frame.index[0]
+    frame["hours_from_imv_to_qualifying_gas"] = frame[
+        "hours_from_imv_to_qualifying_gas"
+    ].astype("object")
+    frame.loc[no_observed_row, "hours_from_imv_to_qualifying_gas"] = invalid_hours
+
+    with pytest.raises(ValueError, match="unparseable or nonfinite values"):
         validate_imv_timing_analysis_contract(frame)
 
 

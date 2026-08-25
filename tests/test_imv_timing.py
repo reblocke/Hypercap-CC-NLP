@@ -12,6 +12,7 @@ WORK_DIR = Path(__file__).resolve().parents[1]
 COHORT_NOTEBOOK = WORK_DIR / "MIMICIV_hypercap_EXT_cohort.qmd"
 HELPER_NAMES = {
     "normalize_mimic_item_label",
+    "prepare_archive_export_frame",
     "select_first_observed_imv",
     "classify_imv_qualifying_gas_order",
     "legacy_imv_timing_discordant",
@@ -28,7 +29,14 @@ def _load_imv_helpers() -> dict[str, object]:
         for node in tree.body
         if isinstance(node, ast.FunctionDef) and node.name in HELPER_NAMES
     ]
-    namespace = {"Any": Any, "pd": pd, "re": re}
+    namespace = {
+        "Any": Any,
+        "IMV_SOURCE_RECORD_NO_TIME_COLUMN": (
+            "_imv_source_record_evidence_without_reliable_timestamp"
+        ),
+        "pd": pd,
+        "re": re,
+    }
     exec(
         compile(
             ast.Module(body=selected, type_ignores=[]),
@@ -49,6 +57,7 @@ classify_imv_qualifying_gas_order = HELPERS[
 ]
 legacy_imv_timing_discordant = HELPERS["legacy_imv_timing_discordant"]
 normalize_mimic_item_label = HELPERS["normalize_mimic_item_label"]
+prepare_archive_export_frame = HELPERS["prepare_archive_export_frame"]
 
 
 def _classify(
@@ -189,3 +198,31 @@ def test_expected_procedure_labels_normalize_to_contract_values() -> None:
     assert normalize_mimic_item_label(" Invasive-Ventilation ") == (
         "invasive ventilation"
     )
+
+
+def test_archive_export_sanitizer_drops_internal_imv_flag_without_mutation() -> None:
+    internal_column = "_imv_source_record_evidence_without_reliable_timestamp"
+    source = pd.DataFrame(
+        {
+            "hadm_id": [1, 2],
+            internal_column: [False, True],
+            "value": ["a", "b"],
+        }
+    )
+    original = source.copy(deep=True)
+
+    exported = prepare_archive_export_frame(source, export_name="test_archive")
+
+    assert internal_column not in exported.columns
+    assert list(exported.columns) == ["hadm_id", "value"]
+    assert exported is not source
+    pd.testing.assert_frame_equal(source, original)
+
+
+def test_archive_export_sanitizer_returns_detached_copy_when_flag_absent() -> None:
+    source = pd.DataFrame({"value": [1]})
+
+    exported = prepare_archive_export_frame(source, export_name="test_archive")
+    exported.loc[0, "value"] = 99
+
+    assert source.loc[0, "value"] == 1

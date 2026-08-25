@@ -238,9 +238,13 @@ uv run python scripts/imv_ticket_parity.py compare \
 ```
 
 This private QA control checks unchanged cohort membership, RFV1-RFV5 code and
-label assignments, and 14 existing manuscript workbooks. Captured baselines and
-results remain under ignored locations; the comparison emits an aggregate-only
-JSON status report and does not export row-level differences.
+label assignments, and 14 existing manuscript workbooks. Before current outputs
+are compared, every captured baseline copy is checked against its recorded
+manifest row counts, semantic hashes, workbook inventory, and sheet signatures;
+altered or incomplete baselines fail closed. Only exact allowlisted
+documentation sheets are warning-eligible. Captured baselines and results remain
+under ignored locations; the comparison emits an aggregate-only JSON status
+report and does not export row-level differences.
 
 ## Repository Layout
 
