@@ -125,6 +125,7 @@ BQ_PHYSIONET_PROJECT=physionet-data
 BQ_DATASET_HOSP=mimiciv_3_1_hosp
 BQ_DATASET_ICU=mimiciv_3_1_icu
 BQ_DATASET_ED=mimiciv_ed
+BQ_DATASET_DERIVED=mimiciv_derived
 WORK_DIR=/path/to/Hypercap-CC-NLP  # optional but recommended
 # GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json  # optional
 ```
@@ -198,6 +199,7 @@ ENV_KNOBS: tuple[str, ...] = (
     "COHORT_FAIL_ON_OMR_ATTACH_INCONSISTENCY",
     "COHORT_ALLOW_EMPTY_OMR",
     "COHORT_ANTHRO_MIN_BMI_COVERAGE",
+    "BQ_DATASET_DERIVED",
     "RUN_MANIFEST_STAGE_SCOPE",
     "RUN_MANIFEST_REQUIRE_CLEAN_GIT",
     "GOOGLE_APPLICATION_CREDENTIALS",
@@ -343,6 +345,148 @@ def collect_run_manifest(
         },
     }
 
+# Helper group: robust IMV timing relative to the qualifying gas.
+# These helpers use exact timestamps without rounding, buffers, or tolerance windows.
+
+IMV_OBSERVED_SOURCE_VALUES = frozenset(
+    {
+        "intubation_procedure",
+        "invasive_ventilation_procedure",
+        "derived_ventilation_episode",
+        "multiple_sources_same_time",
+        "missing",
+    }
+)
+
+IMV_QUALIFYING_GAS_ORDER_VALUES = frozenset(
+    {
+        "not_applicable_no_qualifying_gas",
+        "no_observed_imv",
+        "qualifying_gas_before_imv",
+        "imv_before_qualifying_gas",
+        "timing_indeterminate",
+    }
+)
+
+# Internal construction/QA field. This must never enter a cohort workbook.
+IMV_SOURCE_RECORD_NO_TIME_COLUMN = (
+    "_imv_source_record_evidence_without_reliable_timestamp"
+)
+
+
+def normalize_mimic_item_label(value: Any) -> str:
+    """Normalize a MIMIC d_items label for strict expected-label validation."""
+    if value is None or pd.isna(value):
+        return ""
+    return re.sub(r"[^a-z0-9]+", " ", str(value).strip().casefold()).strip()
+
+
+def select_first_observed_imv(
+    *,
+    first_intubation_procedure_time: pd.Timestamp | None,
+    first_invasive_ventilation_procedure_time: pd.Timestamp | None,
+    first_derived_imv_starttime: pd.Timestamp | None,
+) -> tuple[pd.Timestamp, str]:
+    """Return the earliest reliable observed IMV time and its exact source enum."""
+    raw_values = {
+        "intubation_procedure": first_intubation_procedure_time,
+        "invasive_ventilation_procedure": first_invasive_ventilation_procedure_time,
+        "derived_ventilation_episode": first_derived_imv_starttime,
+    }
+    source_times = {
+        source: pd.to_datetime(value, errors="coerce")
+        for source, value in raw_values.items()
+    }
+    observed = {
+        source: timestamp
+        for source, timestamp in source_times.items()
+        if not pd.isna(timestamp)
+    }
+    if not observed:
+        return pd.NaT, "missing"
+
+    earliest_time = min(observed.values())
+    earliest_sources = [
+        source for source, timestamp in observed.items() if timestamp == earliest_time
+    ]
+    if len(earliest_sources) > 1:
+        return earliest_time, "multiple_sources_same_time"
+    return earliest_time, earliest_sources[0]
+
+
+def classify_imv_qualifying_gas_order(
+    *,
+    gas_positive: bool,
+    qualifying_pco2_time: pd.Timestamp | None,
+    robust_imv_observed: bool,
+    first_observed_imv_time: pd.Timestamp | None,
+    legacy_imv_flag: bool,
+    source_record_imv_evidence_without_reliable_timestamp: bool = False,
+) -> str:
+    """Classify strict temporal ordering without a buffer or tolerance window."""
+    if not gas_positive:
+        return "not_applicable_no_qualifying_gas"
+
+    qualifying_time = pd.to_datetime(qualifying_pco2_time, errors="coerce")
+    if pd.isna(qualifying_time):
+        return "timing_indeterminate"
+
+    if not robust_imv_observed:
+        # A source record without a usable time, or a legacy-only signal, is
+        # insufficient to declare no observed IMV.
+        if source_record_imv_evidence_without_reliable_timestamp or legacy_imv_flag:
+            return "timing_indeterminate"
+        return "no_observed_imv"
+
+    observed_imv_time = pd.to_datetime(first_observed_imv_time, errors="coerce")
+    if pd.isna(observed_imv_time):
+        return "timing_indeterminate"
+
+    if qualifying_time < observed_imv_time:
+        return "qualifying_gas_before_imv"
+    if observed_imv_time < qualifying_time:
+        return "imv_before_qualifying_gas"
+    return "timing_indeterminate"
+
+
+def legacy_imv_timing_discordant(
+    *,
+    gas_positive: bool,
+    qualifying_pco2_time: pd.Timestamp | None,
+    robust_imv_observed: bool,
+    first_observed_imv_time: pd.Timestamp | None,
+    legacy_imv_flag: bool,
+    legacy_first_imv_time: pd.Timestamp | None,
+) -> int:
+    """Flag robust-versus-legacy disagreement in IMV presence or comparable ordering.
+
+    Presence discordance is flagged whenever robust evidence and the combined
+    legacy IMV flag differ. Ordering discordance is evaluated only when the
+    admission is gas-positive and both robust and legacy IMV timestamps are
+    available; missing legacy timing is not itself treated as disagreement.
+    """
+    robust_present = bool(robust_imv_observed)
+    legacy_present = bool(legacy_imv_flag)
+    if robust_present != legacy_present:
+        return 1
+    if not gas_positive or not robust_present or not legacy_present:
+        return 0
+
+    gas_time = pd.to_datetime(qualifying_pco2_time, errors="coerce")
+    robust_time = pd.to_datetime(first_observed_imv_time, errors="coerce")
+    legacy_time = pd.to_datetime(legacy_first_imv_time, errors="coerce")
+    if pd.isna(gas_time) or pd.isna(robust_time) or pd.isna(legacy_time):
+        return 0
+
+    def _strict_relation(imv_time: pd.Timestamp) -> str:
+        if imv_time < gas_time:
+            return "imv_before_qualifying_gas"
+        if gas_time < imv_time:
+            return "qualifying_gas_before_imv"
+        return "exact_tie"
+
+    return int(_strict_relation(robust_time) != _strict_relation(legacy_time))
+
 # Helper group: local cohort contract helpers.
 # Contract validation stays in the cohort notebook so the stage renders without src/ imports.
 
@@ -377,6 +521,7 @@ COHORT_REQUIRED_AUDIT_SUFFIXES = (
     "qualifying_ph_pairing_completeness_audit.csv",
     "timing_integrity_audit.csv",
     "ventilation_timing_audit.csv",
+    "imv_qualifying_gas_timing_audit.csv",
     "anthropometric_cleaning_audit.csv",
 )
 
@@ -1400,6 +1545,412 @@ def validate_cohort_contract(
                 }
             )
 
+    imv_gas_positive_n = 0
+    imv_strata_reconciliation_n = 0
+    imv_classification_mismatch_n = 0
+    imv_source_mismatch_n = 0
+    imv_hours_mismatch_n = 0
+    imv_required_fields = {
+        "first_derived_imv_starttime",
+        "first_intubation_procedure_time",
+        "first_invasive_ventilation_procedure_time",
+        "first_observed_imv_time",
+        "first_observed_imv_source",
+        "robust_imv_observed",
+        "imv_qualifying_gas_order",
+        "imv_preceded_qualifying_gas",
+        "no_prior_observed_imv",
+        "hours_from_imv_to_qualifying_gas",
+        "legacy_imv_timing_discordant",
+        IMV_SOURCE_RECORD_NO_TIME_COLUMN,
+        "pco2_threshold_any",
+        "qualifying_pco2_time",
+        "imv_flag",
+        "first_imv_time",
+    }
+    missing_imv_fields = sorted(imv_required_fields.difference(df.columns))
+    if missing_imv_fields:
+        findings.append(
+            {
+                "severity": "error",
+                "code": "imv_qualifying_gas_fields_missing",
+                "message": f"Missing required robust IMV timing fields: {missing_imv_fields}.",
+            }
+        )
+    else:
+        gas_positive = (
+            pd.to_numeric(df["pco2_threshold_any"], errors="coerce")
+            .fillna(0)
+            .astype(int)
+            .eq(1)
+        )
+        imv_gas_positive_n = int(gas_positive.sum())
+        order_values = df["imv_qualifying_gas_order"].astype("string")
+        invalid_order_values = sorted(
+            set(order_values.dropna().astype(str)).difference(
+                IMV_QUALIFYING_GAS_ORDER_VALUES
+            )
+        )
+        if invalid_order_values:
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": "imv_qualifying_gas_order_invalid_values",
+                    "message": (
+                        "imv_qualifying_gas_order contains unsupported values: "
+                        f"{invalid_order_values}."
+                    ),
+                }
+            )
+
+        invalid_source_values = sorted(
+            set(
+                df["first_observed_imv_source"]
+                .astype("string")
+                .dropna()
+                .astype(str)
+            ).difference(IMV_OBSERVED_SOURCE_VALUES)
+        )
+        if invalid_source_values:
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": "first_observed_imv_source_invalid_values",
+                    "message": (
+                        "first_observed_imv_source contains unsupported values: "
+                        f"{invalid_source_values}."
+                    ),
+                }
+            )
+
+        gas_order_values = {
+            "no_observed_imv",
+            "qualifying_gas_before_imv",
+            "imv_before_qualifying_gas",
+            "timing_indeterminate",
+        }
+        gas_invalid_n = int((gas_positive & ~order_values.isin(gas_order_values)).sum())
+        nongas_invalid_n = int(
+            (
+                ~gas_positive
+                & ~order_values.eq("not_applicable_no_qualifying_gas").fillna(False)
+            ).sum()
+        )
+        imv_strata_reconciliation_n = int(
+            order_values.loc[gas_positive].isin(gas_order_values).sum()
+        )
+        if gas_invalid_n or imv_strata_reconciliation_n != imv_gas_positive_n:
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": "imv_gas_positive_strata_do_not_reconcile",
+                    "message": (
+                        "Every gas-positive admission must have exactly one of the four IMV timing strata; "
+                        f"gas_positive={imv_gas_positive_n}, classified={imv_strata_reconciliation_n}, "
+                        f"invalid={gas_invalid_n}."
+                    ),
+                }
+            )
+        if nongas_invalid_n:
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": "imv_nongas_classification_invalid",
+                    "message": (
+                        "All admissions without a qualifying gas must be classified as "
+                        "not_applicable_no_qualifying_gas; "
+                        f"violations={nongas_invalid_n}."
+                    ),
+                }
+            )
+
+        source_time_columns = [
+            "first_intubation_procedure_time",
+            "first_invasive_ventilation_procedure_time",
+            "first_derived_imv_starttime",
+        ]
+        source_times = df[source_time_columns].apply(
+            lambda column: pd.to_datetime(column, errors="coerce")
+        )
+        robust_expected = source_times.notna().any(axis=1)
+        robust_actual = (
+            pd.to_numeric(df["robust_imv_observed"], errors="coerce")
+            .fillna(0)
+            .astype(int)
+            .eq(1)
+        )
+        source_record_no_time_numeric = pd.to_numeric(
+            df[IMV_SOURCE_RECORD_NO_TIME_COLUMN], errors="coerce"
+        )
+        source_record_no_time_invalid_n = int(
+            (
+                source_record_no_time_numeric.isna()
+                | ~source_record_no_time_numeric.isin({0, 1})
+            ).sum()
+        )
+        source_record_no_time_actual = (
+            source_record_no_time_numeric.fillna(0).astype(int).eq(1)
+        )
+        if source_record_no_time_invalid_n:
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": "imv_source_record_no_time_flag_invalid",
+                    "message": (
+                        "Internal source-record IMV evidence-without-time flag must be "
+                        f"nonmissing binary; violations={source_record_no_time_invalid_n}."
+                    ),
+                }
+            )
+        robust_mismatch_n = int((robust_expected != robust_actual).sum())
+        if robust_mismatch_n:
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": "robust_imv_observed_mismatch",
+                    "message": (
+                        "robust_imv_observed must equal presence of any reliable source timestamp; "
+                        f"violations={robust_mismatch_n}."
+                    ),
+                }
+            )
+
+        expected_selected = [
+            select_first_observed_imv(
+                first_intubation_procedure_time=row.first_intubation_procedure_time,
+                first_invasive_ventilation_procedure_time=row.first_invasive_ventilation_procedure_time,
+                first_derived_imv_starttime=row.first_derived_imv_starttime,
+            )
+            for row in df[source_time_columns].itertuples(index=False)
+        ]
+        expected_first_time = pd.to_datetime(
+            pd.Series([value[0] for value in expected_selected], index=df.index),
+            errors="coerce",
+        )
+        actual_first_time = pd.to_datetime(df["first_observed_imv_time"], errors="coerce")
+        source_record_no_time_inconsistent_n = int(
+            (
+                source_record_no_time_actual
+                & (robust_actual | actual_first_time.notna())
+            ).sum()
+        )
+        if source_record_no_time_inconsistent_n:
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": "imv_source_record_no_time_flag_inconsistent",
+                    "message": (
+                        "Source-record evidence without a reliable timestamp must have "
+                        "robust_imv_observed=0 and missing first_observed_imv_time; "
+                        f"violations={source_record_no_time_inconsistent_n}."
+                    ),
+                }
+            )
+        first_time_matches = (
+            (expected_first_time.isna() & actual_first_time.isna())
+            | expected_first_time.eq(actual_first_time).fillna(False)
+        )
+        first_time_mismatch_n = int((~first_time_matches).sum())
+        expected_source = pd.Series(
+            [value[1] for value in expected_selected],
+            index=df.index,
+            dtype="string",
+        )
+        actual_source = df["first_observed_imv_source"].astype("string")
+        imv_source_mismatch_n = int(
+            (~actual_source.eq(expected_source).fillna(False)).sum()
+        )
+        if first_time_mismatch_n or imv_source_mismatch_n:
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": "first_observed_imv_selection_mismatch",
+                    "message": (
+                        "First observed IMV time/source must equal the exact earliest reliable source; "
+                        f"time_violations={first_time_mismatch_n}, "
+                        f"source_violations={imv_source_mismatch_n}."
+                    ),
+                }
+            )
+
+        qualifying_times = pd.to_datetime(df["qualifying_pco2_time"], errors="coerce")
+        legacy_flags = (
+            pd.to_numeric(df["imv_flag"], errors="coerce")
+            .fillna(0)
+            .astype(int)
+            .eq(1)
+        )
+        expected_orders = pd.Series(
+            [
+                classify_imv_qualifying_gas_order(
+                    gas_positive=bool(gas_flag),
+                    qualifying_pco2_time=gas_time,
+                    robust_imv_observed=bool(robust_flag),
+                    first_observed_imv_time=imv_time,
+                    legacy_imv_flag=bool(legacy_flag),
+                    source_record_imv_evidence_without_reliable_timestamp=bool(
+                        source_record_no_time_flag
+                    ),
+                )
+                for (
+                    gas_flag,
+                    gas_time,
+                    robust_flag,
+                    imv_time,
+                    legacy_flag,
+                    source_record_no_time_flag,
+                ) in zip(
+                    gas_positive,
+                    qualifying_times,
+                    robust_actual,
+                    actual_first_time,
+                    legacy_flags,
+                    source_record_no_time_actual,
+                    strict=False,
+                )
+            ],
+            index=df.index,
+            dtype="string",
+        )
+        imv_classification_mismatch_n = int(
+            (~order_values.eq(expected_orders).fillna(False)).sum()
+        )
+        if imv_classification_mismatch_n:
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": "imv_qualifying_gas_classification_mismatch",
+                    "message": (
+                        "Stored IMV/gas ordering differs from strict timestamp classification in "
+                        f"{imv_classification_mismatch_n} rows."
+                    ),
+                }
+            )
+
+        expected_preceded = pd.Series(pd.NA, index=df.index, dtype="boolean")
+        expected_preceded.loc[expected_orders.eq("imv_before_qualifying_gas")] = True
+        expected_preceded.loc[
+            expected_orders.isin({"no_observed_imv", "qualifying_gas_before_imv"})
+        ] = False
+        expected_no_prior = pd.Series(pd.NA, index=df.index, dtype="boolean")
+        expected_no_prior.loc[
+            expected_orders.isin({"no_observed_imv", "qualifying_gas_before_imv"})
+        ] = True
+        expected_no_prior.loc[expected_orders.eq("imv_before_qualifying_gas")] = False
+        for column_name, expected_boolean in (
+            ("imv_preceded_qualifying_gas", expected_preceded),
+            ("no_prior_observed_imv", expected_no_prior),
+        ):
+            actual_boolean = df[column_name].astype("boolean")
+            matches = (
+                (actual_boolean.isna() & expected_boolean.isna())
+                | actual_boolean.eq(expected_boolean).fillna(False)
+            )
+            mismatch_n = int((~matches).sum())
+            if mismatch_n:
+                findings.append(
+                    {
+                        "severity": "error",
+                        "code": f"{column_name}_mismatch",
+                        "message": (
+                            f"{column_name} differs from the prespecified nullable mapping in "
+                            f"{mismatch_n} rows."
+                        ),
+                    }
+                )
+
+        expected_hours = (
+            qualifying_times - actual_first_time
+        ).dt.total_seconds() / 3600.0
+        actual_hours = pd.to_numeric(
+            df["hours_from_imv_to_qualifying_gas"], errors="coerce"
+        )
+        comparable_hours = expected_hours.notna() & actual_hours.notna()
+        imv_hours_mismatch_n = int(
+            (
+                (expected_hours.notna() != actual_hours.notna())
+                | (
+                    comparable_hours
+                    & ~np.isclose(
+                        expected_hours.fillna(0.0),
+                        actual_hours.fillna(0.0),
+                        rtol=0.0,
+                        atol=1e-12,
+                    )
+                )
+            ).sum()
+        )
+        sign_violation_n = int(
+            (
+                (expected_orders.eq("qualifying_gas_before_imv") & actual_hours.ge(0))
+                | (expected_orders.eq("imv_before_qualifying_gas") & actual_hours.le(0))
+            ).sum()
+        )
+        exact_tie_not_indeterminate_n = int(
+            (
+                gas_positive
+                & robust_actual
+                & qualifying_times.notna()
+                & actual_first_time.notna()
+                & qualifying_times.eq(actual_first_time)
+                & ~order_values.eq("timing_indeterminate").fillna(False)
+            ).sum()
+        )
+        if imv_hours_mismatch_n or sign_violation_n or exact_tie_not_indeterminate_n:
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": "imv_qualifying_gas_hours_or_sign_mismatch",
+                    "message": (
+                        "IMV-to-qualifying-gas hours/sign or exact-tie classification drifted; "
+                        f"value_violations={imv_hours_mismatch_n}, "
+                        f"sign_violations={sign_violation_n}, "
+                        f"tie_violations={exact_tie_not_indeterminate_n}."
+                    ),
+                }
+            )
+
+        expected_legacy_discordance = pd.Series(
+            [
+                legacy_imv_timing_discordant(
+                    gas_positive=bool(gas_flag),
+                    qualifying_pco2_time=gas_time,
+                    robust_imv_observed=bool(robust_flag),
+                    first_observed_imv_time=imv_time,
+                    legacy_imv_flag=bool(legacy_flag),
+                    legacy_first_imv_time=legacy_time,
+                )
+                for gas_flag, gas_time, robust_flag, imv_time, legacy_flag, legacy_time in zip(
+                    gas_positive,
+                    qualifying_times,
+                    robust_actual,
+                    actual_first_time,
+                    legacy_flags,
+                    pd.to_datetime(df["first_imv_time"], errors="coerce"),
+                    strict=False,
+                )
+            ],
+            index=df.index,
+            dtype="Int64",
+        )
+        actual_legacy_discordance = pd.to_numeric(
+            df["legacy_imv_timing_discordant"], errors="coerce"
+        ).astype("Int64")
+        legacy_discordance_mismatch_n = int(
+            (~actual_legacy_discordance.eq(expected_legacy_discordance).fillna(False)).sum()
+        )
+        if legacy_discordance_mismatch_n:
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": "legacy_imv_timing_discordant_mismatch",
+                    "message": (
+                        "legacy_imv_timing_discordant differs from its documented presence/order rule in "
+                        f"{legacy_discordance_mismatch_n} rows."
+                    ),
+                }
+            )
+
     ph_uom_pairs = (
         ("lab_abg_ph", "lab_abg_ph_uom"),
         ("lab_vbg_ph", "lab_vbg_ph_uom"),
@@ -1482,6 +2033,14 @@ def validate_cohort_contract(
         "first_hco3_icd_only_coverage_rate": hco3_icd_only_coverage_rate,
         "first_hco3_source_value_mismatch_n": hco3_source_value_mismatch_n,
         "hco3_band_qc_inconsistency_n": hco3_band_qc_inconsistency_n,
+        "imv_gas_positive_n": imv_gas_positive_n,
+        "imv_strata_reconciliation_n": imv_strata_reconciliation_n,
+        "imv_classification_mismatch_n": imv_classification_mismatch_n,
+        "imv_source_mismatch_n": imv_source_mismatch_n,
+        "imv_hours_mismatch_n": imv_hours_mismatch_n,
+        "imv_source_record_evidence_without_reliable_timestamp_n": (
+            int(source_record_no_time_actual.sum()) if not missing_imv_fields else 0
+        ),
         "po2_triplet_coverage_by_site": po2_triplet_coverage_by_site,
         "anthro_source_counts": anthro_source_counts,
         "findings": findings,
@@ -4319,13 +4878,21 @@ PHYS = os.getenv("BQ_PHYSIONET_PROJECT", "physionet-data").strip()  # hosting pr
 HOSP = os.getenv("BQ_DATASET_HOSP", "mimiciv_3_1_hosp").strip()
 ICU  = os.getenv("BQ_DATASET_ICU",  "mimiciv_3_1_icu").strip()
 ED   = os.getenv("BQ_DATASET_ED",   "").strip()
+DERIVED = os.getenv("BQ_DATASET_DERIVED", "mimiciv_derived").strip()
+if not DERIVED:
+    raise ValueError("BQ_DATASET_DERIVED must name the MIMIC-IV derived dataset.")
 
 # BigQuery client
 client = bigquery.Client(project=WORK_PROJECT)
 
 print("Project:", WORK_PROJECT)
 print("PhysioNet host:", PHYS)
-print("HOSP (pref):", HOSP, "ICU (pref):", ICU, "ED (pref):", ED)
+print(
+    "HOSP (pref):", HOSP,
+    "ICU (pref):", ICU,
+    "ED (pref):", ED,
+    "DERIVED (required):", DERIVED,
+)
 print("WORK_DIR:", WORK_DIR)
 ```
 
@@ -4405,6 +4972,65 @@ def resolve_dataset(preferred: str, candidates: list[str], probe_table: str, lab
         f"No accessible {label} dataset found for probe table '{probe_table}'. Tried: {ordered}"
     )
 
+
+def validate_derived_dataset(
+    dataset: str,
+    *,
+    expected_mimic_version: str = "3.1",
+) -> dict[str, str]:
+    """Fail closed unless the configured derived dataset is built from MIMIC-IV 3.1."""
+    # Required release contract: mimic_version = 3.1.
+    metadata_fqtn = f"{PHYS}.{dataset}._metadata"
+    ventilation_fqtn = f"{PHYS}.{dataset}.ventilation"
+    if not table_exists(metadata_fqtn):
+        raise RuntimeError(
+            "Configured MIMIC-IV derived dataset metadata table is absent or inaccessible: "
+            f"{metadata_fqtn}. Set BQ_DATASET_DERIVED to the release-managed derived dataset."
+        )
+
+    metadata_sql = f"""
+    SELECT
+      CAST(attribute AS STRING) AS attribute,
+      CAST(value AS STRING) AS value
+    FROM `{metadata_fqtn}`
+    WHERE LOWER(TRIM(CAST(attribute AS STRING))) = 'mimic_version'
+    """
+    try:
+        metadata = run_sql_bq(metadata_sql)
+    except Exception as exc:
+        raise RuntimeError(
+            "Unable to read the expected attribute/value schema from derived metadata table "
+            f"{metadata_fqtn}."
+        ) from exc
+
+    if set(metadata.columns) != {"attribute", "value"}:
+        raise RuntimeError(
+            f"Derived metadata query returned unexpected columns for {metadata_fqtn}: "
+            f"{sorted(metadata.columns)}."
+        )
+    if len(metadata) != 1:
+        raise RuntimeError(
+            f"Derived metadata must contain exactly one mimic_version row; found {len(metadata)} "
+            f"in {metadata_fqtn}."
+        )
+    observed_version = str(metadata.iloc[0]["value"]).strip()
+    if observed_version != expected_mimic_version:
+        raise RuntimeError(
+            "MIMIC-IV derived dataset version mismatch: "
+            f"expected {expected_mimic_version}, observed {observed_version!r} in {metadata_fqtn}."
+        )
+    if not table_exists(ventilation_fqtn):
+        raise RuntimeError(
+            "Required official derived ventilation table is absent or inaccessible: "
+            f"{ventilation_fqtn}. No legacy timing fallback is permitted for IMV classification."
+        )
+    return {
+        "dataset": dataset,
+        "metadata_table": metadata_fqtn,
+        "ventilation_table": ventilation_fqtn,
+        "mimic_version": observed_version,
+    }
+
 # Resolve HOSP/ICU/ED names so notebook runs across v3.1 naming variants.
 HOSP, HOSP_PROBE = resolve_dataset(
     preferred=HOSP,
@@ -4418,6 +5044,15 @@ ICU, ICU_PROBE = resolve_dataset(
     probe_table="icustays",
     label="ICU",
 )
+ICU_MIMIC_VERSION = "3.1"
+ICU_3_1_DATASET_ALIASES = frozenset({"mimiciv_3_1_icu", "mimiciv_v3_1_icu"})
+if ICU not in ICU_3_1_DATASET_ALIASES:
+    raise RuntimeError(
+        "The official MIMIC-IV derived ventilation join requires an explicitly "
+        "versioned MIMIC-IV 3.1 ICU dataset. "
+        f"Resolved ICU dataset {ICU!r}; accepted aliases are "
+        f"{sorted(ICU_3_1_DATASET_ALIASES)}. Unversioned fallback is not permitted."
+    )
 if not ED:
     ED = "mimiciv_ed"
 ED, ED_PROBE = resolve_dataset(
@@ -4427,12 +5062,27 @@ ED, ED_PROBE = resolve_dataset(
     label="ED",
 )
 
+DERIVED_VALIDATION = validate_derived_dataset(DERIVED)
+
 RUN_METADATA = {
     "run_utc": datetime.now(timezone.utc).isoformat(),
     "work_project": WORK_PROJECT,
     "physionet_project": PHYS,
-    "datasets": {"hosp": HOSP, "icu": ICU, "ed": ED},
-    "dataset_probes": {"hosp": HOSP_PROBE, "icu": ICU_PROBE, "ed": ED_PROBE},
+    "datasets": {"hosp": HOSP, "icu": ICU, "ed": ED, "derived": DERIVED},
+    "dataset_probes": {
+        "hosp": HOSP_PROBE,
+        "icu": ICU_PROBE,
+        "ed": ED_PROBE,
+        "derived_metadata": DERIVED_VALIDATION["metadata_table"],
+        "derived_ventilation": DERIVED_VALIDATION["ventilation_table"],
+    },
+    "derived_mimic_version": DERIVED_VALIDATION["mimic_version"],
+    "icu_release_validation": {
+        "dataset": ICU,
+        "mimic_version": ICU_MIMIC_VERSION,
+        "accepted_dataset_aliases": sorted(ICU_3_1_DATASET_ALIASES),
+        "unversioned_fallback_permitted": False,
+    },
     "notebook": "MIMICIV_hypercap_EXT_cohort.qmd",
     "blood_gas_manifest_path": BLOOD_GAS_MANIFEST["path"],
     "blood_gas_manifest_version": BLOOD_GAS_MANIFEST["version"],
@@ -6346,7 +6996,296 @@ icu_meta["icu_los_days"] = (
 print("ICU meta rows:", len(icu_meta))
 ```
 
-### 9) Ventilation flags (ICD procedures)
+### 9) Reliable observed IMV sources
+
+**Rationale:** Establish the earliest documented IMV time from the official MIMIC-IV derived ventilation concept and explicit ICU procedure events. These sources are fail-closed and do not use the broad legacy chart regex.
+
+```{python}
+#| label: mimiciv-hypercap-ext-cohort-cell-013b
+# Purpose: Validate and extract official derived IMV episodes and explicit ICU procedure events.
+
+IMV_PROCEDURE_ITEM_LABELS = {
+    224385: "Intubation",
+    225792: "Invasive Ventilation",
+}
+
+SQL["derived_imv_episodes_sql"] = f"""
+WITH hadms AS (SELECT x AS hadm_id FROM UNNEST(@hadms) AS x)
+SELECT
+  v.stay_id,
+  i.hadm_id,
+  v.starttime,
+  v.endtime,
+  v.ventilation_status
+FROM `{PHYS}.{DERIVED}.ventilation` AS v
+JOIN `{PHYS}.{ICU}.icustays` AS i
+  ON i.stay_id = v.stay_id
+JOIN hadms AS h
+  ON h.hadm_id = i.hadm_id
+WHERE v.ventilation_status = 'InvasiveVent'
+"""
+
+# Keep episode-level rows in memory for QA; only admission-level minima enter the handoff.
+derived_imv_episodes = run_sql_bq(
+    sql("derived_imv_episodes_sql"),
+    {"hadms": hadm_list},
+)
+required_derived_episode_columns = {
+    "stay_id",
+    "hadm_id",
+    "starttime",
+    "endtime",
+    "ventilation_status",
+}
+missing_derived_episode_columns = sorted(
+    required_derived_episode_columns.difference(derived_imv_episodes.columns)
+)
+if missing_derived_episode_columns:
+    raise KeyError(
+        "Official derived ventilation query missing required columns: "
+        f"{missing_derived_episode_columns}."
+    )
+derived_imv_episodes["stay_id"] = pd.to_numeric(
+    derived_imv_episodes["stay_id"], errors="coerce"
+).astype("Int64")
+derived_imv_episodes["hadm_id"] = pd.to_numeric(
+    derived_imv_episodes["hadm_id"], errors="coerce"
+).astype("Int64")
+for timestamp_column in ("starttime", "endtime"):
+    derived_imv_episodes[timestamp_column] = pd.to_datetime(
+        derived_imv_episodes[timestamp_column], errors="coerce"
+    )
+invalid_derived_statuses = sorted(
+    set(derived_imv_episodes["ventilation_status"].dropna().astype(str)).difference(
+        {"InvasiveVent"}
+    )
+)
+if invalid_derived_statuses:
+    raise ValueError(
+        "Official derived IMV extraction returned non-InvasiveVent statuses: "
+        f"{invalid_derived_statuses}."
+    )
+derived_imv_missing_starttime_rows = int(
+    derived_imv_episodes["starttime"].isna().sum()
+)
+
+first_derived_imv = (
+    derived_imv_episodes.groupby("hadm_id", as_index=False, dropna=False)
+    .agg(first_derived_imv_starttime=("starttime", "min"))
+)
+
+SQL["imv_procedure_item_validation_sql"] = f"""
+SELECT
+  itemid,
+  label
+FROM `{PHYS}.{ICU}.d_items`
+WHERE itemid IN UNNEST(@itemids)
+ORDER BY itemid
+"""
+imv_procedure_item_validation = run_sql_bq(
+    sql("imv_procedure_item_validation_sql"),
+    {"itemids": list(IMV_PROCEDURE_ITEM_LABELS)},
+)
+required_item_validation_columns = {"itemid", "label"}
+if not required_item_validation_columns.issubset(imv_procedure_item_validation.columns):
+    raise KeyError(
+        "IMV procedure d_items validation missing required columns: "
+        f"{sorted(required_item_validation_columns.difference(imv_procedure_item_validation.columns))}."
+    )
+imv_procedure_item_validation["itemid"] = pd.to_numeric(
+    imv_procedure_item_validation["itemid"], errors="coerce"
+).astype("Int64")
+observed_itemids = set(
+    imv_procedure_item_validation["itemid"].dropna().astype(int).tolist()
+)
+expected_itemids = set(IMV_PROCEDURE_ITEM_LABELS)
+if observed_itemids != expected_itemids or len(imv_procedure_item_validation) != len(expected_itemids):
+    raise RuntimeError(
+        "Required explicit IMV procedure item IDs are absent or duplicated in active ICU d_items: "
+        f"expected={sorted(expected_itemids)}, observed={sorted(observed_itemids)}."
+    )
+observed_imv_procedure_labels: dict[str, str] = {}
+for itemid, expected_label in IMV_PROCEDURE_ITEM_LABELS.items():
+    observed_label = imv_procedure_item_validation.loc[
+        imv_procedure_item_validation["itemid"].eq(itemid), "label"
+    ].iloc[0]
+    observed_imv_procedure_labels[str(itemid)] = str(observed_label)
+    if normalize_mimic_item_label(observed_label) != normalize_mimic_item_label(expected_label):
+        raise RuntimeError(
+            "MIMIC-IV ICU procedure item label mismatch: "
+            f"itemid={itemid}, expected={expected_label!r}, observed={observed_label!r}."
+        )
+
+SQL["imv_procedure_events_sql"] = f"""
+WITH hadms AS (SELECT x AS hadm_id FROM UNNEST(@hadms) AS x)
+SELECT
+  pe.hadm_id,
+  pe.stay_id,
+  pe.itemid,
+  pe.starttime
+FROM `{PHYS}.{ICU}.procedureevents` AS pe
+JOIN hadms AS h
+  ON h.hadm_id = pe.hadm_id
+WHERE pe.itemid IN UNNEST(@itemids)
+"""
+imv_procedure_events = run_sql_bq(
+    sql("imv_procedure_events_sql"),
+    {
+        "hadms": hadm_list,
+        "itemids": list(IMV_PROCEDURE_ITEM_LABELS),
+    },
+)
+required_procedure_event_columns = {"hadm_id", "stay_id", "itemid", "starttime"}
+missing_procedure_event_columns = sorted(
+    required_procedure_event_columns.difference(imv_procedure_events.columns)
+)
+if missing_procedure_event_columns:
+    raise KeyError(
+        "Explicit IMV procedureevents query missing required columns: "
+        f"{missing_procedure_event_columns}."
+    )
+for id_column in ("hadm_id", "stay_id", "itemid"):
+    imv_procedure_events[id_column] = pd.to_numeric(
+        imv_procedure_events[id_column], errors="coerce"
+    ).astype("Int64")
+imv_procedure_events["starttime"] = pd.to_datetime(
+    imv_procedure_events["starttime"], errors="coerce"
+)
+imv_procedure_missing_starttime_rows = int(
+    imv_procedure_events["starttime"].isna().sum()
+)
+imv_procedure_missing_starttime_rows_by_itemid = {
+    str(itemid): int(
+        (
+            imv_procedure_events["itemid"].eq(itemid)
+            & imv_procedure_events["starttime"].isna()
+        ).sum()
+    )
+    for itemid in IMV_PROCEDURE_ITEM_LABELS
+}
+
+# Preserve admission-level evidence even when every matching source record has
+# a missing/unparseable starttime; only the aggregate flag continues downstream.
+imv_source_record_evidence = (
+    pd.concat(
+        [
+            derived_imv_episodes[["hadm_id"]],
+            imv_procedure_events[["hadm_id"]],
+        ],
+        ignore_index=True,
+    )
+    .dropna(subset=["hadm_id"])
+    .drop_duplicates(subset=["hadm_id"])
+)
+imv_source_record_evidence[IMV_SOURCE_RECORD_NO_TIME_COLUMN] = 1
+
+robust_imv_sources = pd.DataFrame(
+    {"hadm_id": pd.Series(hadm_list, dtype="Int64")}
+).drop_duplicates()
+robust_imv_sources = robust_imv_sources.merge(
+    first_derived_imv,
+    on="hadm_id",
+    how="left",
+    validate="one_to_one",
+)
+robust_imv_sources = robust_imv_sources.merge(
+    imv_source_record_evidence,
+    on="hadm_id",
+    how="left",
+    validate="one_to_one",
+)
+for itemid, output_column in (
+    (224385, "first_intubation_procedure_time"),
+    (225792, "first_invasive_ventilation_procedure_time"),
+):
+    first_event = (
+        imv_procedure_events.loc[imv_procedure_events["itemid"].eq(itemid)]
+        .groupby("hadm_id", as_index=False, dropna=False)
+        .agg(**{output_column: ("starttime", "min")})
+    )
+    robust_imv_sources = robust_imv_sources.merge(
+        first_event,
+        on="hadm_id",
+        how="left",
+        validate="one_to_one",
+    )
+
+robust_source_time_columns = [
+    "first_intubation_procedure_time",
+    "first_invasive_ventilation_procedure_time",
+    "first_derived_imv_starttime",
+]
+for timestamp_column in robust_source_time_columns:
+    robust_imv_sources[timestamp_column] = pd.to_datetime(
+        robust_imv_sources[timestamp_column], errors="coerce"
+    )
+
+selected_imv = [
+    select_first_observed_imv(
+        first_intubation_procedure_time=row.first_intubation_procedure_time,
+        first_invasive_ventilation_procedure_time=row.first_invasive_ventilation_procedure_time,
+        first_derived_imv_starttime=row.first_derived_imv_starttime,
+    )
+    for row in robust_imv_sources.itertuples(index=False)
+]
+robust_imv_sources["first_observed_imv_time"] = [value[0] for value in selected_imv]
+robust_imv_sources["first_observed_imv_source"] = pd.Series(
+    [value[1] for value in selected_imv],
+    index=robust_imv_sources.index,
+    dtype="string",
+)
+robust_imv_sources["robust_imv_observed"] = (
+    robust_imv_sources[robust_source_time_columns].notna().any(axis=1).astype("Int64")
+)
+robust_imv_sources[IMV_SOURCE_RECORD_NO_TIME_COLUMN] = (
+    pd.to_numeric(
+        robust_imv_sources[IMV_SOURCE_RECORD_NO_TIME_COLUMN], errors="coerce"
+    )
+    .fillna(0)
+    .astype(int)
+    .eq(1)
+    & robust_imv_sources["robust_imv_observed"].eq(0)
+).astype("Int64")
+robust_time_missing_n = int(
+    (
+        robust_imv_sources["robust_imv_observed"].eq(1)
+        & robust_imv_sources["first_observed_imv_time"].isna()
+    ).sum()
+)
+if robust_time_missing_n:
+    raise AssertionError(
+        "Robust IMV evidence must have a first observed time; "
+        f"violations={robust_time_missing_n}."
+    )
+
+RUN_METADATA["imv_source_validation"] = {
+    "derived_mimic_version": DERIVED_VALIDATION["mimic_version"],
+    "derived_ventilation_status": "InvasiveVent",
+    "procedure_item_labels": observed_imv_procedure_labels,
+    "derived_episode_rows": int(len(derived_imv_episodes)),
+    "derived_episode_missing_starttime_rows": derived_imv_missing_starttime_rows,
+    "explicit_procedure_event_rows": int(len(imv_procedure_events)),
+    "explicit_procedure_event_missing_starttime_rows": imv_procedure_missing_starttime_rows,
+    "explicit_procedure_event_missing_starttime_rows_by_itemid": (
+        imv_procedure_missing_starttime_rows_by_itemid
+    ),
+    "admissions_with_robust_imv": int(
+        robust_imv_sources["robust_imv_observed"].sum()
+    ),
+    "admissions_with_source_record_imv_evidence_without_reliable_timestamp": int(
+        robust_imv_sources[IMV_SOURCE_RECORD_NO_TIME_COLUMN].sum()
+    ),
+}
+
+print(
+    "Reliable observed IMV sources:",
+    f"derived episodes={len(derived_imv_episodes):,}",
+    f"procedure events={len(imv_procedure_events):,}",
+    f"admissions with robust IMV={int(robust_imv_sources['robust_imv_observed'].sum()):,}",
+)
+```
+
+### 10) Legacy ventilation flags (ICD procedures and broad chart regex)
 
 **Rationale:** Identify IMV/NIV exposure as clinically relevant respiratory support indicators.
 
@@ -6493,13 +7432,23 @@ vent_combined["imv_flag"]       = vent_combined[["imv_flag","imv_chart_flag"]].m
 vent_combined["niv_flag"]       = vent_combined[["niv_flag","niv_chart_flag"]].max(axis=1).astype("Int64")
 vent_combined["any_vent_flag"]  = vent_combined[["imv_flag","niv_flag"]].max(axis=1).astype("Int64")
 
-vent_combined = vent_combined[["hadm_id","imv_flag","niv_flag","any_vent_flag","first_imv_time","first_niv_time"]]
+vent_combined = vent_combined[
+    [
+        "hadm_id",
+        "imv_flag",
+        "niv_flag",
+        "any_vent_flag",
+        "imv_chart_flag",
+        "first_imv_time",
+        "first_niv_time",
+    ]
+]
 print("After combining ICD + chart signals:",
       "\nIMV=1:", int((vent_combined["imv_flag"]==1).sum()),
       "\nNIV=1:", int((vent_combined["niv_flag"]==1).sum()))
 ```
 
-### 10) Assemble final DataFrame
+### 11) Assemble final DataFrame
 
 **Rationale:** Merge all derived features into a single analytic table keyed by hadm_id.
 
@@ -6518,6 +7467,132 @@ df = safe_merge_on_hadm(df, ed_triage,  right_name="ed_triage")
 df = safe_merge_on_hadm(df, ed_first,   right_name="ed_first")
 df = safe_merge_on_hadm(df, icu_meta,   right_name="icu_meta")
 df = safe_merge_on_hadm(df, vent_combined,       right_name="vent_combined")
+df = safe_merge_on_hadm(df, robust_imv_sources,   right_name="robust_imv_sources")
+
+# Canonical reliable IMV fields and strict temporal classification.
+robust_source_time_columns = [
+    "first_intubation_procedure_time",
+    "first_invasive_ventilation_procedure_time",
+    "first_derived_imv_starttime",
+]
+for timestamp_column in [
+    *robust_source_time_columns,
+    "first_observed_imv_time",
+    "qualifying_pco2_time",
+    "first_imv_time",
+]:
+    if timestamp_column not in df.columns:
+        raise KeyError(f"Required IMV timing field missing after assembly: {timestamp_column}.")
+    df[timestamp_column] = pd.to_datetime(df[timestamp_column], errors="coerce")
+
+df["robust_imv_observed"] = (
+    df[robust_source_time_columns].notna().any(axis=1).astype("Int64")
+)
+df["first_observed_imv_source"] = (
+    df["first_observed_imv_source"].astype("string").fillna("missing")
+)
+df[IMV_SOURCE_RECORD_NO_TIME_COLUMN] = (
+    pd.to_numeric(df[IMV_SOURCE_RECORD_NO_TIME_COLUMN], errors="coerce")
+    .fillna(0)
+    .astype("Int64")
+)
+
+gas_positive_for_imv = (
+    pd.to_numeric(df["pco2_threshold_any"], errors="coerce")
+    .fillna(0)
+    .astype(int)
+    .eq(1)
+)
+legacy_imv_for_qa = (
+    pd.to_numeric(df["imv_flag"], errors="coerce")
+    .fillna(0)
+    .astype(int)
+    .eq(1)
+)
+source_record_no_time_for_imv = df[IMV_SOURCE_RECORD_NO_TIME_COLUMN].eq(1)
+df["imv_qualifying_gas_order"] = pd.Series(
+    [
+        classify_imv_qualifying_gas_order(
+            gas_positive=bool(gas_positive),
+            qualifying_pco2_time=qualifying_time,
+            robust_imv_observed=bool(robust_observed),
+            first_observed_imv_time=observed_imv_time,
+            legacy_imv_flag=bool(legacy_flag),
+            source_record_imv_evidence_without_reliable_timestamp=bool(
+                source_record_no_time_flag
+            ),
+        )
+        for (
+            gas_positive,
+            qualifying_time,
+            robust_observed,
+            observed_imv_time,
+            legacy_flag,
+            source_record_no_time_flag,
+        ) in zip(
+            gas_positive_for_imv,
+            df["qualifying_pco2_time"],
+            df["robust_imv_observed"],
+            df["first_observed_imv_time"],
+            legacy_imv_for_qa,
+            source_record_no_time_for_imv,
+            strict=False,
+        )
+    ],
+    index=df.index,
+    dtype="string",
+)
+
+df["imv_preceded_qualifying_gas"] = pd.Series(pd.NA, index=df.index, dtype="boolean")
+df.loc[
+    df["imv_qualifying_gas_order"].eq("imv_before_qualifying_gas"),
+    "imv_preceded_qualifying_gas",
+] = True
+df.loc[
+    df["imv_qualifying_gas_order"].isin(
+        {"no_observed_imv", "qualifying_gas_before_imv"}
+    ),
+    "imv_preceded_qualifying_gas",
+] = False
+
+df["no_prior_observed_imv"] = pd.Series(pd.NA, index=df.index, dtype="boolean")
+df.loc[
+    df["imv_qualifying_gas_order"].isin(
+        {"no_observed_imv", "qualifying_gas_before_imv"}
+    ),
+    "no_prior_observed_imv",
+] = True
+df.loc[
+    df["imv_qualifying_gas_order"].eq("imv_before_qualifying_gas"),
+    "no_prior_observed_imv",
+] = False
+
+df["hours_from_imv_to_qualifying_gas"] = (
+    df["qualifying_pco2_time"] - df["first_observed_imv_time"]
+).dt.total_seconds() / 3600.0
+df["legacy_imv_timing_discordant"] = pd.Series(
+    [
+        legacy_imv_timing_discordant(
+            gas_positive=bool(gas_positive),
+            qualifying_pco2_time=qualifying_time,
+            robust_imv_observed=bool(robust_observed),
+            first_observed_imv_time=observed_imv_time,
+            legacy_imv_flag=bool(legacy_flag),
+            legacy_first_imv_time=legacy_time,
+        )
+        for gas_positive, qualifying_time, robust_observed, observed_imv_time, legacy_flag, legacy_time in zip(
+            gas_positive_for_imv,
+            df["qualifying_pco2_time"],
+            df["robust_imv_observed"],
+            df["first_observed_imv_time"],
+            legacy_imv_for_qa,
+            df["first_imv_time"],
+            strict=False,
+        )
+    ],
+    index=df.index,
+    dtype="Int64",
+)
 
 # Anchor to first ED presentation (per admission)
 if "ed_intime_first" not in locals():
@@ -7132,8 +8207,11 @@ print(
 
 if WRITE_ARCHIVE_XLSX_EXPORTS:
     out_path = archive_xlsx_path("mimic_hypercap_EXT_bq_abg_vbg")
+    archive_cohort = df.drop(
+        columns=[IMV_SOURCE_RECORD_NO_TIME_COLUMN], errors="ignore"
+    )
     with pd.ExcelWriter(out_path, engine="openpyxl") as xw:
-        df.to_excel(xw, sheet_name="cohort", index=False)
+        archive_cohort.to_excel(xw, sheet_name="cohort", index=False)
         try:
             qc.to_excel(xw, sheet_name="qc_abg_vbg", index=False)
         except Exception:
@@ -7252,6 +8330,10 @@ TARGET_RAW_FIELDS = {
         "hypercap_timing_class",
         "enrollment_route",
         "dt_first_imv_hours","dt_first_niv_hours","abg_before_imv","vbg_before_imv",
+        "first_derived_imv_starttime","first_intubation_procedure_time","first_invasive_ventilation_procedure_time",
+        "first_observed_imv_time","first_observed_imv_source","robust_imv_observed",
+        "imv_qualifying_gas_order","imv_preceded_qualifying_gas","no_prior_observed_imv",
+        "hours_from_imv_to_qualifying_gas","legacy_imv_timing_discordant","imv_chart_flag",
         "dt_first_imv_hours_model","dt_first_niv_hours_model",
         "imv_time_outside_window_flag","niv_time_outside_window_flag",
         "hospital_los_negative_flag","admittime_before_ed_intime_flag","dischtime_before_admittime_flag","time_integrity_any","timing_usable_for_model",
@@ -12352,6 +13434,312 @@ out_date = RUN_DATE
 cohort_qa_dir = WORK_DIR / "artifacts" / "qa" / "cohort"
 cohort_qa_dir.mkdir(parents=True, exist_ok=True)
 
+imv_timing_required_columns = {
+    "pco2_threshold_any",
+    "enrollment_route",
+    "qualifying_pco2_time",
+    "first_derived_imv_starttime",
+    "first_intubation_procedure_time",
+    "first_invasive_ventilation_procedure_time",
+    "first_observed_imv_time",
+    "first_observed_imv_source",
+    "robust_imv_observed",
+    "imv_qualifying_gas_order",
+    "imv_preceded_qualifying_gas",
+    "no_prior_observed_imv",
+    "hours_from_imv_to_qualifying_gas",
+    "legacy_imv_timing_discordant",
+    IMV_SOURCE_RECORD_NO_TIME_COLUMN,
+    "imv_flag",
+    "first_imv_time",
+    "icu_intime",
+}
+missing_imv_timing_columns = sorted(
+    imv_timing_required_columns.difference(final_cc.columns)
+)
+if missing_imv_timing_columns:
+    raise KeyError(
+        "Cannot build IMV/qualifying-gas timing audit; missing fields: "
+        f"{missing_imv_timing_columns}."
+    )
+
+analytic_n = int(len(final_cc))
+imv_gas_positive_mask = (
+    pd.to_numeric(final_cc["pco2_threshold_any"], errors="coerce")
+    .fillna(0)
+    .astype(int)
+    .eq(1)
+)
+imv_gas_positive_n = int(imv_gas_positive_mask.sum())
+imv_icd_only_mask = final_cc["enrollment_route"].astype("string").eq("ICD_ONLY")
+imv_icd_only_n = int(imv_icd_only_mask.sum())
+imv_order = final_cc["imv_qualifying_gas_order"].astype("string")
+imv_temporal_strata = [
+    "no_observed_imv",
+    "qualifying_gas_before_imv",
+    "imv_before_qualifying_gas",
+    "timing_indeterminate",
+]
+imv_temporal_counts = {
+    stratum: int((imv_gas_positive_mask & imv_order.eq(stratum)).sum())
+    for stratum in imv_temporal_strata
+}
+if sum(imv_temporal_counts.values()) != imv_gas_positive_n:
+    raise AssertionError(
+        "IMV temporal strata do not reconcile to all gas-positive admissions: "
+        f"strata_sum={sum(imv_temporal_counts.values())}, gas_positive={imv_gas_positive_n}."
+    )
+if not bool(
+    imv_order.loc[imv_icd_only_mask]
+    .eq("not_applicable_no_qualifying_gas")
+    .fillna(False)
+    .all()
+):
+    raise AssertionError(
+        "Every ICD-only admission must be classified as not_applicable_no_qualifying_gas."
+    )
+
+imv_source = final_cc["first_observed_imv_source"].astype("string")
+observed_imv_source_values = set(imv_source.dropna().astype(str))
+if not observed_imv_source_values.issubset(IMV_OBSERVED_SOURCE_VALUES):
+    raise AssertionError(
+        "Unexpected first_observed_imv_source values: "
+        f"{sorted(observed_imv_source_values.difference(IMV_OBSERVED_SOURCE_VALUES))}."
+    )
+
+robust_imv_mask = (
+    pd.to_numeric(final_cc["robust_imv_observed"], errors="coerce")
+    .fillna(0)
+    .astype(int)
+    .eq(1)
+)
+source_record_no_time_mask = (
+    pd.to_numeric(
+        final_cc[IMV_SOURCE_RECORD_NO_TIME_COLUMN], errors="coerce"
+    )
+    .fillna(0)
+    .astype(int)
+    .eq(1)
+)
+legacy_imv_mask = (
+    pd.to_numeric(final_cc["imv_flag"], errors="coerce")
+    .fillna(0)
+    .astype(int)
+    .eq(1)
+)
+qualifying_times_for_imv = pd.to_datetime(
+    final_cc["qualifying_pco2_time"], errors="coerce"
+)
+first_observed_times_for_imv = pd.to_datetime(
+    final_cc["first_observed_imv_time"], errors="coerce"
+)
+first_derived_times_for_imv = pd.to_datetime(
+    final_cc["first_derived_imv_starttime"], errors="coerce"
+)
+first_icu_times_for_imv = pd.to_datetime(final_cc["icu_intime"], errors="coerce")
+exact_imv_gas_tie_mask = (
+    imv_gas_positive_mask
+    & robust_imv_mask
+    & qualifying_times_for_imv.notna()
+    & first_observed_times_for_imv.notna()
+    & qualifying_times_for_imv.eq(first_observed_times_for_imv)
+)
+legacy_without_robust_mask = legacy_imv_mask & ~robust_imv_mask
+robust_without_legacy_mask = robust_imv_mask & ~legacy_imv_mask
+derived_first_icu_comparable_mask = (
+    first_derived_times_for_imv.notna() & first_icu_times_for_imv.notna()
+)
+derived_at_first_icu_mask = (
+    derived_first_icu_comparable_mask
+    & first_derived_times_for_imv.eq(first_icu_times_for_imv)
+)
+hours_from_imv_to_gas = pd.to_numeric(
+    final_cc["hours_from_imv_to_qualifying_gas"], errors="coerce"
+).dropna()
+
+imv_audit_rows: list[dict[str, Any]] = []
+
+
+def _append_imv_audit_count(
+    *,
+    section: str,
+    metric: str,
+    count: int,
+    denominator: int,
+    definition: str,
+    category: str = "",
+) -> None:
+    imv_audit_rows.append(
+        {
+            "section": section,
+            "metric": metric,
+            "category": category,
+            "count": int(count),
+            "denominator": int(denominator),
+            "percentage": (
+                float(count / denominator * 100.0) if denominator > 0 else np.nan
+            ),
+            "value": np.nan,
+            "units": "count_and_percent",
+            "definition": definition,
+        }
+    )
+
+
+_append_imv_audit_count(
+    section="cohort_size",
+    metric="total_analytic_admissions",
+    count=analytic_n,
+    denominator=analytic_n,
+    definition="Final ED-chief-complaint analytic admissions after unchanged primary enrollment filtering.",
+)
+_append_imv_audit_count(
+    section="cohort_size",
+    metric="total_gas_positive_admissions",
+    count=imv_gas_positive_n,
+    denominator=analytic_n,
+    definition="Analytic admissions with pco2_threshold_any equal to 1.",
+)
+_append_imv_audit_count(
+    section="cohort_size",
+    metric="total_icd_only_admissions",
+    count=imv_icd_only_n,
+    denominator=analytic_n,
+    definition="Analytic admissions in the mutually exclusive ICD_ONLY enrollment route.",
+)
+for stratum in imv_temporal_strata:
+    _append_imv_audit_count(
+        section="temporal_stratum",
+        metric="gas_positive_temporal_stratum",
+        category=stratum,
+        count=imv_temporal_counts[stratum],
+        denominator=imv_gas_positive_n,
+        definition="Mutually exclusive strict timestamp classification among gas-positive admissions.",
+    )
+
+for source_value in (
+    "intubation_procedure",
+    "invasive_ventilation_procedure",
+    "derived_ventilation_episode",
+    "multiple_sources_same_time",
+    "missing",
+):
+    _append_imv_audit_count(
+        section="imv_source",
+        metric="first_observed_imv_source",
+        category=source_value,
+        count=int(imv_source.eq(source_value).sum()),
+        denominator=analytic_n,
+        definition="Source attaining the exact earliest reliable observed IMV timestamp; missing denotes no reliable source timestamp.",
+    )
+
+for metric, mask, denominator, definition in (
+    (
+        "exact_timestamp_ties",
+        exact_imv_gas_tie_mask,
+        imv_gas_positive_n,
+        "Qualifying pCO2 time exactly equals first observed IMV time; classified timing_indeterminate.",
+    ),
+    (
+        "robust_imv_evidence_with_missing_first_observed_time",
+        source_record_no_time_mask,
+        int(robust_imv_mask.sum() + source_record_no_time_mask.sum()),
+        "An official derived/procedure IMV source record is present but no reliable source timestamp is available; robust_imv_observed remains zero and gas-positive admissions are timing_indeterminate.",
+    ),
+    (
+        "legacy_imv_flag_without_robust_imv_evidence",
+        legacy_without_robust_mask,
+        int(legacy_imv_mask.sum()),
+        "Combined legacy IMV flag is positive without any official derived/procedure IMV timestamp.",
+    ),
+    (
+        "robust_imv_evidence_without_legacy_imv_flag",
+        robust_without_legacy_mask,
+        int(robust_imv_mask.sum()),
+        "Official derived/procedure IMV evidence is present while the combined legacy IMV flag is negative.",
+    ),
+    (
+        "first_derived_imv_episode_at_first_icu_intime",
+        derived_at_first_icu_mask,
+        int(derived_first_icu_comparable_mask.sum()),
+        "First derived InvasiveVent episode starts exactly at the admission's first ICU intime; descriptive left-censoring marker only.",
+    ),
+    (
+        "legacy_imv_timing_discordant",
+        pd.to_numeric(
+            final_cc["legacy_imv_timing_discordant"], errors="coerce"
+        ).fillna(0).astype(int).eq(1),
+        analytic_n,
+        "Robust and legacy IMV evidence disagree in presence or in strict ordering when both timestamps are comparable.",
+    ),
+):
+    _append_imv_audit_count(
+        section="qa_reconciliation",
+        metric=metric,
+        count=int(mask.sum()),
+        denominator=int(denominator),
+        definition=definition,
+    )
+
+imv_audit_rows.append(
+    {
+        "section": "timing_distribution",
+        "metric": "hours_from_imv_to_qualifying_gas_nonmissing_n",
+        "category": "",
+        "count": int(len(hours_from_imv_to_gas)),
+        "denominator": analytic_n,
+        "percentage": float(len(hours_from_imv_to_gas) / analytic_n * 100.0) if analytic_n else np.nan,
+        "value": np.nan,
+        "units": "count_and_percent",
+        "definition": "Admissions with both qualifying gas and first observed IMV timestamps.",
+    }
+)
+for metric, quantile in (
+    ("minimum", 0.00),
+    ("p05", 0.05),
+    ("p25", 0.25),
+    ("median", 0.50),
+    ("p75", 0.75),
+    ("p95", 0.95),
+    ("maximum", 1.00),
+):
+    imv_audit_rows.append(
+        {
+            "section": "timing_distribution",
+            "metric": f"hours_from_imv_to_qualifying_gas_{metric}",
+            "category": "",
+            "count": pd.NA,
+            "denominator": int(len(hours_from_imv_to_gas)),
+            "percentage": np.nan,
+            "value": (
+                float(hours_from_imv_to_gas.quantile(quantile))
+                if not hours_from_imv_to_gas.empty
+                else np.nan
+            ),
+            "units": "hours",
+            "definition": "qualifying_pco2_time minus first_observed_imv_time; negative means gas first, positive means IMV first.",
+        }
+    )
+
+imv_qualifying_gas_timing_audit = pd.DataFrame(imv_audit_rows)
+restricted_audit_columns = {
+    "subject_id",
+    "hadm_id",
+    "ed_stay_id",
+    "ed_triage_cc",
+    "chief_complaint",
+}
+if restricted_audit_columns.intersection(imv_qualifying_gas_timing_audit.columns):
+    raise AssertionError("Aggregate IMV timing audit unexpectedly contains row-level fields.")
+imv_qualifying_gas_timing_audit_path = (
+    cohort_qa_dir / "imv_qualifying_gas_timing_audit.csv"
+)
+imv_qualifying_gas_timing_audit.to_csv(
+    imv_qualifying_gas_timing_audit_path,
+    index=False,
+)
+print("Wrote:", imv_qualifying_gas_timing_audit_path)
+
 gas_source_diag_required_columns = [
     "gas_source_inference_primary_tier",
     "gas_source_hint_conflict_rate",
@@ -12432,6 +13820,11 @@ qa_payload["cohort_contract_report_path"] = str(cohort_contract_paths["contract_
 qa_payload["gas_source_diagnostics_artifact_path"] = str(
     gas_source_diagnostics_artifact_path
 )
+qa_payload["imv_qualifying_gas_timing_audit_path"] = str(
+    imv_qualifying_gas_timing_audit_path
+)
+qa_payload["imv_qualifying_gas_temporal_counts"] = imv_temporal_counts
+qa_payload["robust_imv_observed_n"] = int(robust_imv_mask.sum())
 qa_payload["run_id"] = f"cohort_{RUN_TIMESTAMP}"
 qa_payload["scope_name"] = "ed_cc"
 qa_payload["n_rows"] = int(len(final_cc))
@@ -12763,6 +14156,7 @@ vitals_and_gas_qc_only_columns = [
     "first_lactate_outlier_flag",
 ]
 cohort_export_drop_columns = [
+    IMV_SOURCE_RECORD_NO_TIME_COLUMN,
     "enrolled_any",
     "enrolled_any_icd_union_secondary",
     "ed_gender",
@@ -12912,6 +14306,11 @@ cohort_manifest["outputs"] = {
         qualifying_ph_pairing_completeness_audit_path
     )
     if "qualifying_ph_pairing_completeness_audit_path" in globals()
+    else None,
+    "imv_qualifying_gas_timing_audit_path": _manifest_relpath(
+        imv_qualifying_gas_timing_audit_path
+    )
+    if "imv_qualifying_gas_timing_audit_path" in globals()
     else None,
     "vitals_outlier_scope_audit_paths": {
         "ed_spine_raw_pre_clean": _manifest_relpath(vitals_outlier_ed_spine_pre_clean_path),
@@ -13106,9 +14505,16 @@ META = {
     # Ventilation
     "imv_flag": {
         "label": "IMV flag",
-        "definition": "Indicator of invasive mechanical ventilation during admission.",
+        "definition": "Legacy indicator of invasive mechanical ventilation during admission, retained for reconciliation only.",
         "source": "ICD procedures + ICU chartevents",
         "derivation": "max(IMV ICD flag, IMV chart flag)",
+        "units": "binary (0/1)",
+    },
+    "imv_chart_flag": {
+        "label": "Legacy IMV chart flag",
+        "definition": "Legacy broad-regex indicator of charted invasive mechanical ventilation, retained for QA comparison only.",
+        "source": "mimiciv_icu.chartevents",
+        "derivation": "Any broad legacy IMV label/value regex match during the admission",
         "units": "binary (0/1)",
     },
     "niv_flag": {
@@ -13119,11 +14525,88 @@ META = {
         "units": "binary (0/1)",
     },
     "first_imv_time": {
-        "label": "First IMV time",
-        "definition": "Earliest charted time of IMV in ICU chartevents (if present).",
+        "label": "Legacy first IMV time",
+        "definition": "Earliest broad-regex charted time of IMV in ICU chartevents, retained for QA comparison only.",
         "source": "mimiciv_icu.chartevents",
         "derivation": "min charttime among IMV charted events",
         "units": "datetime",
+    },
+    "first_derived_imv_starttime": {
+        "label": "First derived IMV episode start",
+        "definition": "Earliest start time of an official MIMIC-IV derived InvasiveVent episode across all ICU stays in the admission.",
+        "source": "mimiciv_derived.ventilation",
+        "derivation": "Minimum starttime where ventilation_status equals InvasiveVent after stay_id-to-hadm_id linkage",
+        "units": "datetime",
+    },
+    "first_intubation_procedure_time": {
+        "label": "First explicit intubation procedure time",
+        "definition": "Earliest ICU procedure-event start time for itemid 224385 (Intubation) in the admission.",
+        "source": "mimiciv_icu.procedureevents",
+        "derivation": "Minimum starttime for validated d_items itemid 224385",
+        "units": "datetime",
+    },
+    "first_invasive_ventilation_procedure_time": {
+        "label": "First explicit invasive-ventilation procedure time",
+        "definition": "Earliest ICU procedure-event start time for itemid 225792 (Invasive Ventilation) in the admission.",
+        "source": "mimiciv_icu.procedureevents",
+        "derivation": "Minimum starttime for validated d_items itemid 225792",
+        "units": "datetime",
+    },
+    "first_observed_imv_time": {
+        "label": "First reliable observed IMV time",
+        "definition": "Earliest reliable documented IMV timestamp across explicit intubation, explicit invasive-ventilation procedure, and official derived ventilation episodes.",
+        "source": "mimiciv_icu.procedureevents + mimiciv_derived.ventilation",
+        "derivation": "Exact minimum nonmissing timestamp across the three reliable IMV source fields; no rounding or buffer",
+        "units": "datetime",
+    },
+    "first_observed_imv_source": {
+        "label": "First reliable observed IMV source",
+        "definition": "Source attaining first_observed_imv_time.",
+        "source": "Derived",
+        "derivation": "intubation_procedure, invasive_ventilation_procedure, derived_ventilation_episode, multiple_sources_same_time, or missing",
+        "units": "categorical",
+    },
+    "robust_imv_observed": {
+        "label": "Reliable IMV evidence observed",
+        "definition": "Indicator that at least one reliable IMV source timestamp is present.",
+        "source": "Derived",
+        "derivation": "Any nonmissing first_intubation_procedure_time, first_invasive_ventilation_procedure_time, or first_derived_imv_starttime",
+        "units": "binary (0/1)",
+    },
+    "imv_qualifying_gas_order": {
+        "label": "IMV timing relative to qualifying gas",
+        "definition": "Strict temporal classification comparing first_observed_imv_time with qualifying_pco2_time; exact ties, missing required times, and legacy-only IMV evidence are indeterminate.",
+        "source": "Derived",
+        "derivation": "not_applicable_no_qualifying_gas, no_observed_imv, qualifying_gas_before_imv, imv_before_qualifying_gas, or timing_indeterminate using exact < and > comparisons without a buffer",
+        "units": "categorical",
+    },
+    "imv_preceded_qualifying_gas": {
+        "label": "Observed IMV preceded qualifying gas",
+        "definition": "Nullable indicator that reliable observed IMV strictly preceded the earliest qualifying pCO2.",
+        "source": "Derived",
+        "derivation": "True for imv_before_qualifying_gas; False for no_observed_imv or qualifying_gas_before_imv; missing otherwise",
+        "units": "nullable boolean",
+    },
+    "no_prior_observed_imv": {
+        "label": "No observed IMV before qualifying gas",
+        "definition": "Nullable indicator for the primary sensitivity cohort with no reliable observed IMV before qualifying pCO2.",
+        "source": "Derived",
+        "derivation": "True for no_observed_imv or qualifying_gas_before_imv; False for imv_before_qualifying_gas; missing otherwise",
+        "units": "nullable boolean",
+    },
+    "hours_from_imv_to_qualifying_gas": {
+        "label": "Hours from observed IMV to qualifying gas",
+        "definition": "Signed hours from first reliable observed IMV to the earliest qualifying pCO2; negative means gas first, positive means IMV first, and zero is an exact tie.",
+        "source": "Derived",
+        "derivation": "(qualifying_pco2_time - first_observed_imv_time) in exact elapsed hours",
+        "units": "hours",
+    },
+    "legacy_imv_timing_discordant": {
+        "label": "Robust versus legacy IMV discordance",
+        "definition": "Indicator that robust and legacy evidence disagree about IMV presence, or disagree in strict gas-relative ordering when both IMV timestamps and the qualifying gas timestamp are available.",
+        "source": "Derived",
+        "derivation": "1 when robust_imv_observed differs from imv_flag, or when both are present with comparable timestamps and first_observed_imv_time versus first_imv_time yield different strict relations to qualifying_pco2_time; missing legacy timing alone is not discordance",
+        "units": "binary (0/1)",
     },
     "first_niv_time": {
         "label": "First NIV time",

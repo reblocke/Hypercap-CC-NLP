@@ -27,6 +27,21 @@ sensitivity_analyses:
   administrative_only_exclusion: true
   first_priority_rfv: true
   stricter_pco2_thresholds: true
+  imv_qualifying_gas_timing: true
+imv_qualifying_gas_timing:
+  gas_anchor: "qualifying_pco2_time"
+  strict_timestamp_ordering: true
+  temporal_buffer_hours: 0
+  exact_ties: "timing_indeterminate"
+  derived_dataset_environment_variable: "BQ_DATASET_DERIVED"
+  derived_dataset_default: "mimiciv_derived"
+  derived_table: "ventilation"
+  required_mimic_version: "3.1"
+  derived_ventilation_status: "InvasiveVent"
+  procedure_itemids: [224385, 225792]
+  includes_niv: false
+  changes_primary_cohort: false
+  causal_attribution: false
 models:
   new_regression_models: false
   new_prediction_models: false
@@ -35,3 +50,4 @@ scope_exclusions:
   - "No injuries/adverse-effects splitting"
   - "No nervous-system RFV splitting"
   - "No causal attribution model"
+  - "No NIV, ventilator-setting, extubation, or reintubation timing analysis"

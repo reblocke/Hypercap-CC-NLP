@@ -56,7 +56,7 @@ performance, and generates manuscript-facing aggregate tables and figures.
 ```bash
 uv sync --frozen
 uv run pytest -q
-uv run --with ruff ruff check src tests
+uv run ruff check src tests
 quarto check
 make -n quarto-pipeline RESULTS_DATE=2026-05-30
 ```

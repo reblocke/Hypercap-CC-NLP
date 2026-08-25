@@ -27,6 +27,8 @@ Key source-data citations:
 This repository does not distribute row-level data, MIMIC-derived workbooks, annotation workbooks, or generated debug logs. The pipeline requires credentialed access to:
 
 - MIMIC-IV HOSP and ICU on BigQuery
+- the official MIMIC-IV derived concepts dataset on BigQuery for
+  `mimiciv_derived.ventilation`
 - MIMIC-IV-ED on BigQuery
 - MIMIC-IV-Note only if note-based extensions are added
 
@@ -89,7 +91,13 @@ BQ_PHYSIONET_PROJECT=physionet-data
 BQ_DATASET_HOSP=mimiciv_3_1_hosp
 BQ_DATASET_ICU=mimiciv_3_1_icu
 BQ_DATASET_ED=mimiciv_ed
+BQ_DATASET_DERIVED=mimiciv_derived
 ```
+
+`BQ_DATASET_DERIVED` names the release-managed derived dataset. The cohort
+stage reads its `_metadata` attribute/value table and requires exactly one
+`mimic_version = 3.1` record before querying `ventilation`; it does not query a
+derived `bg` table or silently fall back to legacy regex timing.
 
 Authenticate BigQuery access:
 
@@ -108,6 +116,12 @@ make check-resources
 ```
 
 Do not commit `.env`, MIMIC exports, annotation workbooks, or generated outputs.
+
+For split-machine runs, the cohort stage must execute on a machine whose
+credentials can read HOSP, ICU, ED, and the official derived dataset. A separate
+downstream machine can run the classifier and analysis only after receiving the
+new private handoff workbook through an approved restricted-data channel. Git
+sync alone does not transfer that ignored workbook and must not be used to do so.
 
 ## Pipeline
 
@@ -150,9 +164,17 @@ A successful private run produces:
 - Four stage PDFs in `Results/YYYY-MM-DD/`
 - Canonical private handoff workbooks under `MIMIC tabular data/`
 - Manuscript tables and figures under `Results/YYYY-MM-DD/`
-- A curated `Results/YYYY-MM-DD/submission_assets/` bundle with main figures `Figure 1`-`Figure 4`, supplement figures `Figure S1`-`Figure S9`, tables, source-data workbooks, and `submission_assets_manifest.csv`
+- A curated `Results/YYYY-MM-DD/submission_assets/` bundle with main figures `Figure 1`-`Figure 4`, supplement figures `Figure S1`-`Figure S10`, tables, source-data workbooks, and `submission_assets_manifest.csv`
 - Run-level reviewer manifests `submission_manifest.xlsx`, `submission_manifest.csv`, and `OUTPUTS_README.md`
 - Aggregate supplement-ready acid-base missingness, candidate-definition, and sensitivity-suite workbooks
+- The aggregate IMV timing outputs `IMV_Qualifying_Gas_Timing_Sensitivity.xlsx`,
+  `Figure S10.pdf`, `Figure S10.xlsx`, and
+  `imv_timing_manuscript_summary.md`, plus the aggregate-only cohort QA file
+  `artifacts/qa/cohort/imv_qualifying_gas_timing_audit.csv`
+
+The IMV sensitivity compares observed timestamp order only. It does not alter
+the primary cohort or existing primary results and does not establish that IMV
+caused hypercapnia.
 
 For public release, generated manuscript outputs should be attached as GitHub/Zenodo release assets, not tracked in git.
 
@@ -168,6 +190,7 @@ The `v0.1.1` release refreshes metadata for the verified ATS abstract while pres
 | Presenting-concern prevalence by acidemia severity | `Hypercap CC NLP Analysis.qmd` | `Figure 4.pdf`, `Figure 4.xlsx` |
 | Main baseline characteristics | `Hypercap CC NLP Analysis.qmd` | `Table 1.xlsx` |
 | Common presenting-concern categories | `Hypercap CC NLP Analysis.qmd` | `Table 2.xlsx` |
+| IMV timing relative to the qualifying gas | `Hypercap CC NLP Analysis.qmd` | `Figure S10.pdf`, `Figure S10.xlsx`, `IMV_Qualifying_Gas_Timing_Sensitivity.xlsx` |
 | Classifier supplement tables | `Hypercap CC NLP Classifier.qmd` | `NLP_Classifier_Supplement_Tables.xlsx` |
 | Rater benchmark supplement tables | `Rater Agreement Analysis.qmd` | `Rater_Benchmark_Supplement_Tables.xlsx` |
 
@@ -179,7 +202,7 @@ Run code checks locally:
 
 ```bash
 uv run pytest -q
-uv run --with ruff ruff check src tests
+uv run ruff check src tests
 ```
 
 Equivalent Make targets:
@@ -200,6 +223,24 @@ Full private reproducibility audit, after restricted inputs are available:
 ```bash
 RUN_MANIFEST_REQUIRE_CLEAN_GIT=1 RESULTS_DATE=2026-04-29 make quarto-pipeline-audit
 ```
+
+For the IMV ticket, capture a named pre-change private baseline and compare the
+post-run outputs against that same explicit baseline:
+
+```bash
+uv run python scripts/imv_ticket_parity.py capture \
+  --baseline <baseline-id-or-absolute-path> \
+  --results-date <pre-ticket-results-date> \
+  --source-commit <pre-ticket-commit>
+uv run python scripts/imv_ticket_parity.py compare \
+  --baseline <same-baseline-id-or-absolute-path> \
+  --results-date <post-run-results-date>
+```
+
+This private QA control checks unchanged cohort membership, RFV1-RFV5 code and
+label assignments, and 14 existing manuscript workbooks. Captured baselines and
+results remain under ignored locations; the comparison emits an aggregate-only
+JSON status report and does not export row-level differences.
 
 ## Repository Layout
 

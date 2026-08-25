@@ -14,7 +14,7 @@ Contributions should improve reproducibility, portability, documentation clarity
 ```bash
 uv sync --frozen
 uv run pytest -q
-uv run --with ruff ruff check src tests
+uv run ruff check src tests
 make -n quarto-pipeline
 ```
 

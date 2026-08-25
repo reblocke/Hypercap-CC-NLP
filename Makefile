@@ -32,10 +32,10 @@ test:
 	uv run pytest -q
 
 lint:
-	uv run --with ruff ruff check src tests
+	uv run ruff check src tests
 
 format:
-	uv run --with ruff ruff format src tests
+	uv run ruff format src tests
 
 smoke: test
 

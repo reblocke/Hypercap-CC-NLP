@@ -1,5 +1,64 @@
 # Decisions
 
+## 2026-08-25 - IMV timing is a noncausal sensitivity anchored to the qualifying gas
+
+Status: accepted
+
+Context:
+- The primary cohort allows a qualifying blood gas at any time from ED arrival
+  through discharge, so some admissions may first satisfy the blood-gas rule
+  after invasive mechanical ventilation (IMV) has been documented.
+- Existing 6-hour and 24-hour gas sensitivities do not directly compare the
+  first qualifying PCO2 timestamp with the first reliable observed IMV
+  timestamp.
+- The legacy broad chart-label regex can count nonspecific labels such as a
+  ventilator mode without confirming invasive ventilation and is therefore not
+  sufficiently specific for the new temporal subgroup.
+
+Decision:
+- Keep the primary cohort, existing primary estimates, and all existing
+  regression/prediction-model settings unchanged.
+- Require the official
+  `{BQ_PHYSIONET_PROJECT}.{BQ_DATASET_DERIVED}.ventilation` concept filtered to
+  `ventilation_status = 'InvasiveVent'`, joined from `stay_id` to `hadm_id`
+  through ICU `icustays`.
+- Before extraction, require exactly one row in the official derived
+  `_metadata` attribute/value table with `attribute = mimic_version` and
+  `value = 3.1`. Missing metadata, a different version, or an inaccessible
+  `ventilation` table is a hard failure; a derived `bg` table and the legacy
+  regex are not fallback sources.
+- Combine the earliest official derived episode with explicit ICU
+  `procedureevents` item IDs `224385` (Intubation) and `225792` (Invasive
+  Ventilation), after validating both normalized labels against `d_items`.
+- Compare the earliest of those robust timestamps directly with
+  `qualifying_pco2_time` using strict `<` and `>` ordering. Apply no buffer or
+  rounding; exact ties, missing qualifying-gas time, and IMV evidence without a
+  reliable timestamp are indeterminate.
+- Retain `first_imv_time`, `imv_chart_flag`, and `imv_flag` only for QA and
+  discordance assessment, not temporal classification.
+- Define the sensitivity cohort as gas-positive admissions classified
+  `no_observed_imv` or `qualifying_gas_before_imv`; exclude
+  `timing_indeterminate` and ICD-only admissions.
+- Produce an aggregate cohort QA audit, a seven-sheet IMV sensitivity workbook,
+  Figure S10 with patient-cluster bootstrap intervals, and a prespecified
+  aggregate manuscript-summary Markdown file. No row-level identifiers or raw
+  chief-complaint text may enter these outputs.
+
+Consequences:
+- Temporal ordering may identify post-IMV-ascertained hypercapnia but cannot
+  establish that IMV caused, induced, or newly produced hypercapnia. Manuscript
+  language must remain neutral and must not use `iatrogenic`,
+  `ventilator-induced`, or `new-onset hypercapnia` as derived labels.
+- NIV, ventilator settings, extubation, reintubation, causal models, regression
+  adjustment, and hypothesis tests remain out of scope.
+- A full rerun requires access to HOSP, ICU, ED, and the official derived
+  dataset on the cohort-extraction machine. Split-machine execution requires a
+  securely transferred, current private handoff; repository sync alone does not
+  provide it.
+- No IMV timing counts or prevalence estimates are current until the restricted
+  pipeline reruns successfully and its aggregate outputs pass denominator and
+  privacy checks.
+
 ## 2026-06-07 - Paired qualifying-gas pH audit precedes acidemia contract change
 
 Status: accepted

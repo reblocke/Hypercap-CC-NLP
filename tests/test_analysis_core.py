@@ -55,6 +55,22 @@ HELPER_FUNCTIONS = [
     "compare_timing_safeguard_prevalence",
     "build_timing_safeguard_top_category_flags",
     "build_timing_safeguard_interpretation_flags",
+    "coerce_nullable_boolean",
+    "_nullable_boolean_mismatch",
+    "validate_imv_timing_analysis_contract",
+    "prepare_imv_timing_gas_positive_frame",
+    "_binary_count_denominator_pct",
+    "build_imv_timing_group_yield",
+    "build_imv_timing_group_characteristics",
+    "summarize_imv_timing_rfv_prevalence",
+    "paired_cluster_bootstrap_imv_no_prior_sensitivity",
+    "build_imv_timing_source_audit",
+    "build_imv_timing_definitions",
+    "assert_imv_timing_export_privacy",
+    "format_imv_timing_prevalence_for_export",
+    "select_max_imv_timing_grouped_contrast",
+    "imv_timing_interpretation_sentence",
+    "build_imv_timing_manuscript_summary",
     "classify_timing_group",
     "select_analysis_ph_with_source",
     "select_analysis_ph",
@@ -84,6 +100,7 @@ HELPER_FUNCTIONS = [
     "summarize_labels_per_encounter",
     "_ordered_categories_for_comorbidity_summary",
     "summarize_rfv_prevalence_by_comorbidity",
+    "format_median_iqr",
 ]
 HELPER_CONSTANTS = {
     "RFV_UNCODABLE_LABEL",
@@ -94,6 +111,14 @@ HELPER_CONSTANTS = {
     "COMORBIDITY_FLAGS",
     "TIMING_SAFEGUARD_COHORTS",
     "TIMING_SAFEGUARD_SIMILARITY_THRESHOLD_PP",
+    "IMV_TIMING_STRATA",
+    "IMV_TIMING_STRATUM_KEYS",
+    "IMV_TIMING_STRATUM_LABELS",
+    "IMV_TIMING_STRATUM_LABEL_MAP",
+    "IMV_TIMING_SOURCE_VALUES",
+    "IMV_TIMING_REQUIRED_INPUT_COLS",
+    "IMV_TIMING_TIMESTAMP_COLS",
+    "IMV_TIMING_FORBIDDEN_EXPORT_COLUMNS",
     "FIGURE4_USE_PAIRED_QUALIFYING_PH",
     "PREVALENCE_CI_BOOTSTRAP_REPLICATES",
     "PREVALENCE_CI_BOOTSTRAP_SEED",
@@ -177,6 +202,26 @@ build_timing_safeguard_top_category_flags = HELPERS[
 ]
 build_timing_safeguard_interpretation_flags = HELPERS[
     "build_timing_safeguard_interpretation_flags"
+]
+validate_imv_timing_analysis_contract = HELPERS[
+    "validate_imv_timing_analysis_contract"
+]
+prepare_imv_timing_gas_positive_frame = HELPERS[
+    "prepare_imv_timing_gas_positive_frame"
+]
+build_imv_timing_group_yield = HELPERS["build_imv_timing_group_yield"]
+build_imv_timing_group_characteristics = HELPERS[
+    "build_imv_timing_group_characteristics"
+]
+summarize_imv_timing_rfv_prevalence = HELPERS[
+    "summarize_imv_timing_rfv_prevalence"
+]
+paired_cluster_bootstrap_imv_no_prior_sensitivity = HELPERS[
+    "paired_cluster_bootstrap_imv_no_prior_sensitivity"
+]
+assert_imv_timing_export_privacy = HELPERS["assert_imv_timing_export_privacy"]
+build_imv_timing_manuscript_summary = HELPERS[
+    "build_imv_timing_manuscript_summary"
 ]
 classify_timing_group = HELPERS["classify_timing_group"]
 select_analysis_ph_with_source = HELPERS["select_analysis_ph_with_source"]
@@ -1145,3 +1190,215 @@ def test_acid_base_source_missingness_output_is_aggregate_only() -> None:
     forbidden_columns = {"subject_id", "hadm_id", "ed_stay_id", "chiefcomplaint", "chief_complaint"}
     assert forbidden_columns.isdisjoint(out.columns)
     assert out["row_level_identifiers_exported"].eq(False).all()
+
+
+def _synthetic_imv_timing_frame() -> pd.DataFrame:
+    gas_time = pd.Timestamp("2026-01-01 12:00:00")
+    rows: list[dict[str, object]] = []
+    stratum_specs = (
+        {
+            "order": "no_observed_imv",
+            "robust": 0,
+            "source": "missing",
+            "imv_time": pd.NaT,
+            "derived_time": pd.NaT,
+            "intubation_time": pd.NaT,
+            "ventilation_procedure_time": pd.NaT,
+            "preceded": False,
+            "no_prior": True,
+            "hours": np.nan,
+            "rfv": "Symptom – Respiratory",
+        },
+        {
+            "order": "qualifying_gas_before_imv",
+            "robust": 1,
+            "source": "derived_ventilation_episode",
+            "imv_time": gas_time + pd.Timedelta(hours=1),
+            "derived_time": gas_time + pd.Timedelta(hours=1),
+            "intubation_time": pd.NaT,
+            "ventilation_procedure_time": pd.NaT,
+            "preceded": False,
+            "no_prior": True,
+            "hours": -1.0,
+            "rfv": "Symptom – Respiratory",
+        },
+        {
+            "order": "imv_before_qualifying_gas",
+            "robust": 1,
+            "source": "intubation_procedure",
+            "imv_time": gas_time - pd.Timedelta(hours=1),
+            "derived_time": pd.NaT,
+            "intubation_time": gas_time - pd.Timedelta(hours=1),
+            "ventilation_procedure_time": pd.NaT,
+            "preceded": True,
+            "no_prior": False,
+            "hours": 1.0,
+            "rfv": "Injuries & adverse effects",
+        },
+        {
+            "order": "timing_indeterminate",
+            "robust": 1,
+            "source": "invasive_ventilation_procedure",
+            "imv_time": gas_time,
+            "derived_time": pd.NaT,
+            "intubation_time": pd.NaT,
+            "ventilation_procedure_time": gas_time,
+            "preceded": pd.NA,
+            "no_prior": pd.NA,
+            "hours": 0.0,
+            "rfv": "Injuries & adverse effects",
+        },
+    )
+    for spec in stratum_specs:
+        for _ in range(2):
+            row_number = len(rows) + 1
+            rows.append(
+                {
+                    "subject_id": row_number,
+                    "hadm_id": 100 + row_number,
+                    "age": 40 + row_number,
+                    "death_in_hosp": int(row_number % 3 == 0),
+                    "imv_flag": int(bool(spec["robust"])),
+                    "abg_hypercap_threshold": int(row_number % 2 == 0),
+                    "vbg_hypercap_threshold": int(row_number % 2 == 1),
+                    "any_hypercap_icd": int(row_number % 3 == 0),
+                    "pco2_threshold_any": 1,
+                    "qualifying_pco2_time": gas_time,
+                    "first_derived_imv_starttime": spec["derived_time"],
+                    "first_intubation_procedure_time": spec["intubation_time"],
+                    "first_invasive_ventilation_procedure_time": spec[
+                        "ventilation_procedure_time"
+                    ],
+                    "first_observed_imv_time": spec["imv_time"],
+                    "first_observed_imv_source": spec["source"],
+                    "robust_imv_observed": spec["robust"],
+                    "imv_qualifying_gas_order": spec["order"],
+                    "imv_preceded_qualifying_gas": spec["preceded"],
+                    "no_prior_observed_imv": spec["no_prior"],
+                    "hours_from_imv_to_qualifying_gas": spec["hours"],
+                    "legacy_imv_timing_discordant": 0,
+                    "RFV1_name": spec["rfv"],
+                    "RFV2_name": pd.NA,
+                    "RFV3_name": pd.NA,
+                    "RFV4_name": pd.NA,
+                    "RFV5_name": pd.NA,
+                }
+            )
+
+    rows.append(
+        {
+            "subject_id": 9,
+            "hadm_id": 109,
+            "age": 72,
+            "death_in_hosp": 0,
+            "imv_flag": 0,
+            "abg_hypercap_threshold": 0,
+            "vbg_hypercap_threshold": 0,
+            "any_hypercap_icd": 1,
+            "pco2_threshold_any": 0,
+            "qualifying_pco2_time": pd.NaT,
+            "first_derived_imv_starttime": pd.NaT,
+            "first_intubation_procedure_time": pd.NaT,
+            "first_invasive_ventilation_procedure_time": pd.NaT,
+            "first_observed_imv_time": pd.NaT,
+            "first_observed_imv_source": "missing",
+            "robust_imv_observed": 0,
+            "imv_qualifying_gas_order": "not_applicable_no_qualifying_gas",
+            "imv_preceded_qualifying_gas": pd.NA,
+            "no_prior_observed_imv": pd.NA,
+            "hours_from_imv_to_qualifying_gas": np.nan,
+            "legacy_imv_timing_discordant": 0,
+            "RFV1_name": "Symptom – Digestive",
+            "RFV2_name": pd.NA,
+            "RFV3_name": pd.NA,
+            "RFV4_name": pd.NA,
+            "RFV5_name": pd.NA,
+        }
+    )
+    return pd.DataFrame(rows)
+
+
+def test_imv_timing_analysis_partition_prevalence_and_paired_sensitivity() -> None:
+    frame = _synthetic_imv_timing_frame()
+    contract = validate_imv_timing_analysis_contract(frame)
+    assert contract["analytic_admissions"] == 9
+    assert contract["gas_positive_admissions"] == 8
+    assert contract["non_gas_admissions"] == 1
+    assert contract["gas_strata_reconciled_admissions"] == 8
+    assert contract["no_prior_observed_imv_admissions"] == 4
+
+    gas_frame = prepare_imv_timing_gas_positive_frame(frame)
+    group_yield = build_imv_timing_group_yield(gas_frame)
+    assert group_yield["admissions"].tolist() == [2, 2, 2, 2]
+    assert group_yield["admissions"].sum() == len(gas_frame)
+    characteristics = build_imv_timing_group_characteristics(gas_frame)
+    assert characteristics["admissions"].tolist() == [2, 2, 2, 2]
+
+    grouped_prevalence = summarize_imv_timing_rfv_prevalence(
+        gas_frame,
+        grouped=True,
+    )
+    assert len(grouped_prevalence) == 24
+    assert grouped_prevalence["cluster_unit"].eq("patient").all()
+    assert grouped_prevalence[["ci_lower", "ci_upper"]].notna().all().all()
+
+    comparison = paired_cluster_bootstrap_imv_no_prior_sensitivity(
+        gas_frame,
+        grouped=True,
+        n_bootstrap=400,
+        seed=17,
+    )
+    respiratory = comparison.loc[comparison["category"].eq("Respiratory")].iloc[0]
+    assert respiratory["all_gas_positive_prevalence_percent"] == pytest.approx(50.0)
+    assert respiratory["no_prior_observed_imv_prevalence_percent"] == pytest.approx(
+        100.0
+    )
+    assert respiratory["difference_pp_no_prior_minus_all"] == pytest.approx(50.0)
+    assert respiratory["absolute_difference_pp"] == pytest.approx(50.0)
+    assert comparison["cluster_unit"].eq("patient").all()
+    assert comparison["nested_paired_comparison"].eq(True).all()
+    assert comparison["null_hypothesis_test_performed"].eq(False).all()
+
+    summary = build_imv_timing_manuscript_summary(
+        group_yield,
+        grouped_prevalence,
+        comparison,
+    )
+    assert "largest absolute grouped-RFV contrast was for Respiratory" in summary
+    assert "50.0% among all gas-positive admissions versus 100.0%" in summary
+    assert "+50.0 percentage points" in summary
+    assert "does not establish that ventilation caused hypercapnia" in summary
+
+
+def test_imv_timing_analysis_accepts_untimed_official_source_handoff() -> None:
+    frame = _synthetic_imv_timing_frame()
+    untimed_source_row = frame.index[0]
+    frame.loc[untimed_source_row, "imv_qualifying_gas_order"] = "timing_indeterminate"
+    frame.loc[untimed_source_row, "imv_preceded_qualifying_gas"] = pd.NA
+    frame.loc[untimed_source_row, "no_prior_observed_imv"] = pd.NA
+
+    contract = validate_imv_timing_analysis_contract(frame)
+
+    assert contract["timing_indeterminate_admissions"] == 3
+    assert contract["no_prior_observed_imv_admissions"] == 3
+
+
+def test_imv_timing_analysis_rejects_reconstructable_order_mismatch() -> None:
+    frame = _synthetic_imv_timing_frame()
+    imv_before_row = frame.index[4]
+    frame.loc[imv_before_row, "imv_qualifying_gas_order"] = "no_observed_imv"
+    frame.loc[imv_before_row, "imv_preceded_qualifying_gas"] = False
+    frame.loc[imv_before_row, "no_prior_observed_imv"] = True
+
+    with pytest.raises(ValueError, match="strict cohort fields"):
+        validate_imv_timing_analysis_contract(frame)
+
+
+def test_imv_timing_aggregate_export_privacy_rejects_identifier_columns() -> None:
+    safe_sheet = pd.DataFrame({"temporal_stratum": ["No observed IMV"], "admissions": [2]})
+    assert_imv_timing_export_privacy({"Group_Yield": safe_sheet})
+
+    with pytest.raises(AssertionError, match="restricted columns"):
+        assert_imv_timing_export_privacy(
+            {"Unsafe": pd.DataFrame({"hadm_id": [100], "admissions": [1]})}
+        )
