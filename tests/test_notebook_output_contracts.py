@@ -1736,12 +1736,12 @@ def test_public_release_git_hygiene_patterns() -> None:
         notice_path = binary_path.parent / "README.md"
         assert notice_path.is_file()
         notice_text = notice_path.read_text().casefold()
+        digest = hashlib.sha256(binary_path.read_bytes()).hexdigest()
+        assert digest in notice_text
         if binary_path.suffix.casefold() == ".docx":
             assert "not intended for use" in notice_text
             assert "files are stored unchanged" in notice_text
         else:
-            digest = hashlib.sha256(binary_path.read_bytes()).hexdigest()
-            assert digest in notice_text
             assert "unchanged copy" in notice_text
 
 
