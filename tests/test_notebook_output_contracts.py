@@ -220,6 +220,42 @@ def test_imv_timing_handoff_fields_and_aggregate_cohort_audit_are_registered() -
     )[0]
 
 
+def test_docs_require_private_imv_source_provenance() -> None:
+    documentation_paths = (
+        WORK_DIR / "README.md",
+        WORK_DIR / "llms.txt",
+        WORK_DIR / "docs" / "SPEC.md",
+        WORK_DIR / "docs" / "DATA_ACCESS.md",
+        WORK_DIR / "data_dictionary.md",
+    )
+    for path in documentation_paths:
+        text = path.read_text()
+        assert "MIMICIV IMV source provenance.json" in text
+        assert "sidecar" in text
+    spec_text = " ".join((WORK_DIR / "docs" / "SPEC.md").read_text().split())
+    assert "Both directions of incorrect relabeling must be rejected" in spec_text
+    assert "supplied temporal stratum" in spec_text
+    assert "Digests establish transfer integrity, not independent source authenticity" in spec_text
+    assert "payload digest" in spec_text
+    assert "accepts either" not in spec_text
+
+
+def test_docs_distinguish_sealed_new_captures_from_legacy_baselines() -> None:
+    for path in (
+        WORK_DIR / "README.md",
+        WORK_DIR / "llms.txt",
+        WORK_DIR / "docs" / "SPEC.md",
+    ):
+        text = " ".join(path.read_text().split())
+        assert "producer manifests" in text
+        assert "legacy_unverified" in text
+        assert "schema-v1" in text
+    spec_text = " ".join((WORK_DIR / "docs" / "SPEC.md").read_text().split())
+    assert "schema-v2" in spec_text
+    assert "current checkout may differ from the producing commit" in spec_text
+    assert "Never recapture a baseline after a parity failure" in spec_text
+
+
 def test_optional_archive_exports_sanitize_internal_imv_fields() -> None:
     cohort_text = (WORK_DIR / "MIMICIV_hypercap_EXT_cohort.qmd").read_text()
 

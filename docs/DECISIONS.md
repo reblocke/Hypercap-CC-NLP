@@ -1,5 +1,43 @@
 # Decisions
 
+## 2026-08-25 - GitHub review requires sealed capture and untimed provenance
+
+Status: accepted
+
+Context:
+- A caller-supplied baseline SHA was not tied to the revision producing the
+  captured files. Older manifests lacked some input and workbook hashes.
+- Omitting the internal untimed-source flag from workbook exports left a
+  no-source row indistinguishable from a genuine untimed-source row downstream.
+- Capture required a pre-existing directory despite documenting a fresh-ID
+  workflow.
+
+Decision:
+- New schema-v2 captures resolve the producing commit and require clean dated
+  cohort, classifier, and analysis manifests with linked hashes for the exact
+  parsed inputs and all captured outputs. Copy and integrity-check those
+  manifests along with the captured artifacts; allow a different checkout.
+- Create fresh requested baseline targets safely without overwriting an
+  existing capture. Keep existing schema-v1 captures read-only, with mandatory
+  integrity checks and explicit `legacy_unverified` producer provenance.
+- Preserve the eleven workbook fields and keep the internal evidence flag out
+  of every Excel export. Add a required private source-evidence sidecar with
+  source-derived untimed membership, a common-source fingerprint, and a payload
+  digest; require its approved transfer and manifest checksum.
+- Derive temporal strata from timestamps and verified source evidence, and
+  reject incorrect untimed/no-observed relabeling in either direction. This
+  supersedes the earlier ambiguity allowance at the analysis boundary.
+
+Consequences:
+- Old unsealed renders cannot be relabeled as new verified captures. Preserve
+  the original baseline and disclose its historical provenance limitation;
+  never recapture it to clear a failure.
+- Split-machine runs must transfer the sidecar and producer manifests with the
+  workbook. Hashes guard integrity, not independent authenticity.
+- These changes affect validation/provenance rather than the estimand, but
+  require synthetic nonzero untimed-source tests and a complete clean-successor
+  restricted acceptance run before a new GitHub review and merge.
+
 ## 2026-08-25 - Raw IMV timestamps are validated before preparation
 
 Status: accepted

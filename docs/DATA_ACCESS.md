@@ -30,8 +30,10 @@ legacy timing fallback.
 
 The ICU dataset used for the derived `stay_id` join must also resolve explicitly
 to a versioned 3.1 alias; unversioned ICU fallback is rejected. Official derived
-or procedure source records without any usable start time are retained only as
-aggregate QA evidence and force an indeterminate temporal classification.
+or procedure source records without any usable start time force an indeterminate
+temporal classification. Source-derived admission membership is preserved in a
+required private `MIMICIV IMV source provenance.json` sidecar so analysis can
+verify this evidence; only its aggregate counts may enter manuscript outputs.
 
 Local runs also require private generated handoff workbooks under `MIMIC tabular data/` and, for the rater stage, the private adjudicated annotation workbook.
 
@@ -39,7 +41,7 @@ Local runs also require private generated handoff workbooks under `MIMIC tabular
 
 The public repository must not contain:
 
-- MIMIC-derived row-level exports
+- MIMIC-derived row-level exports or source-provenance sidecars
 - patient or encounter identifiers
 - annotation workbooks
 - generated result folders
@@ -52,16 +54,20 @@ Aggregate manuscript figures/tables may be distributed outside git as reviewed r
 
 The cohort stage must run where the authorized user can query MIMIC-IV HOSP,
 ICU, ED, and the official derived dataset. If later stages run on another
-machine, the regenerated private cohort handoff must be transferred through an
-institutionally approved restricted-data channel. Repository synchronization is
-insufficient because handoff workbooks are ignored by git, and neither the
-handoff nor any row-level IMV timestamps may be added to the public repository.
+machine, the regenerated private cohort handoff, required
+`MIMICIV IMV source provenance.json` sidecar, and producing manifests must be
+transferred together through an institutionally approved restricted-data
+channel. Verify source/destination SHA-256 equality. Repository synchronization
+is insufficient because these files are ignored by git, and neither the
+handoff, sidecar, nor any row-level IMV timestamps may be added to the public
+repository or submission/release assets.
 
 The receiving machine may run the classifier and analysis from the private
-handoff without BigQuery access, but that is a split execution rather than an
+handoff and sidecar without BigQuery access, but that is a split execution rather than an
 end-to-end render on one machine. The run record should identify which machine
-performed the credentialed cohort extraction and which handoff checksum was
-used downstream.
+performed the credentialed cohort extraction and which handoff and sidecar
+checksums were used downstream. Sidecar digests check integrity against the
+approved source transfer; they are not independent proof of source authenticity.
 
 ## Reproducibility Limit
 

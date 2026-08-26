@@ -69,6 +69,12 @@ hypercapnia. The normative definitions and validation gates are in `docs/SPEC.md
 - The eleven admission-level timing fields belong only in the ignored private
   handoffs; never commit or publish their rows. Split-machine execution requires
   an approved restricted-data transfer, not repository synchronization alone.
+- Analysis requires the cohort-produced private
+  `MIMICIV IMV source provenance.json` sidecar, including when untimed membership
+  is empty. Transfer it with the workbook and producing manifests, verify both
+  checksums, and keep it out of public/submission/release assets. Its source
+  fingerprint and membership support exact revalidation of untimed evidence;
+  a supplied indeterminate stratum is not itself proof of source evidence.
 - Aggregate outputs are `IMV_Qualifying_Gas_Timing_Sensitivity.xlsx` (seven sheets),
   `Figure S10.pdf`, `Figure S10.xlsx`, and `imv_timing_manuscript_summary.md` under
   `Results/YYYY-MM-DD/`; cohort QA is
@@ -76,6 +82,10 @@ hypercapnia. The normative definitions and validation gates are in `docs/SPEC.md
 - `scripts/imv_ticket_parity.py` verifies the captured baseline's integrity and
   compares membership, RFV assignments, and 14 existing workbooks. Baselines and
   reports stay ignored; never recapture a baseline to remove a parity failure.
+  New captures create fresh targets and require clean producer manifests at the
+  resolved source SHA plus linked input/output hashes; existing schema-v1
+  baselines retain mandatory integrity checks and report producer provenance as
+  `legacy_unverified`.
 
 ## Commands
 

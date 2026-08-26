@@ -145,8 +145,10 @@ Do not commit `.env`, MIMIC exports, annotation workbooks, or generated outputs.
 For split-machine runs, the cohort stage must execute on a machine whose
 credentials can read HOSP, ICU, ED, and the official derived dataset. A separate
 downstream machine can run the classifier and analysis only after receiving the
-new private handoff workbook through an approved restricted-data channel. Git
-sync alone does not transfer that ignored workbook and must not be used to do so.
+new private handoff workbook, required `MIMICIV IMV source provenance.json`
+sidecar, and producing manifests through an approved restricted-data channel.
+Verify source/destination SHA-256 equality for these files. Git sync alone does
+not transfer ignored restricted inputs and must not be used to do so.
 
 ## Pipeline
 
@@ -187,7 +189,8 @@ QA/debug outputs are written locally under `artifacts/qa/...` and `debug/...` an
 A successful private run produces:
 
 - Four stage PDFs in `Results/YYYY-MM-DD/`
-- Canonical private handoff workbooks under `MIMIC tabular data/`
+- Canonical private handoff workbooks and the required private
+  `MIMICIV IMV source provenance.json` sidecar under `MIMIC tabular data/`
 - Manuscript tables and figures under `Results/YYYY-MM-DD/`
 - A curated `Results/YYYY-MM-DD/submission_assets/` bundle with main figures `Figure 1`-`Figure 4`, supplement figures `Figure S1`-`Figure S10`, tables, source-data workbooks, and `submission_assets_manifest.csv`
 - Run-level reviewer manifests `submission_manifest.xlsx`, `submission_manifest.csv`, and `OUTPUTS_README.md`
@@ -262,6 +265,15 @@ uv run python scripts/imv_ticket_parity.py compare \
   --results-date <post-run-results-date>
 ```
 
+Capture creates a fresh requested baseline target; do not overwrite or recapture
+an existing baseline. New captures require clean producer manifests at the
+resolved `--source-commit`, with linked input/output hashes for both handoffs
+and all 14 workbooks. The checkout may differ from that producing commit, but
+the declared SHA alone is insufficient. Outputs from revisions without those
+sealed manifests cannot be newly captured; retain the original capture instead
+of retrospectively labeling outputs. Existing schema-v1 captures remain usable
+with `legacy_unverified` producer provenance reported explicitly.
+
 This private QA control checks unchanged cohort membership, RFV1-RFV5 code and
 label assignments, and 14 existing manuscript workbooks. Before current outputs
 are compared, every captured baseline copy is checked against its recorded
@@ -270,6 +282,12 @@ altered or incomplete baselines fail closed. Only exact allowlisted
 documentation sheets are warning-eligible. Captured baselines and results remain
 under ignored locations; the comparison emits an aggregate-only JSON status
 report and does not export row-level differences.
+
+Analysis also requires the cohort-produced private IMV provenance sidecar, even
+when its untimed-source membership is empty. It verifies the source fingerprint
+and evidence membership before accepting timing strata; an absent or mismatched
+sidecar is an input failure, not permission to infer evidence from a supplied
+stratum. See [`docs/SPEC.md`](docs/SPEC.md) for the normative contracts.
 
 ## Repository Layout
 

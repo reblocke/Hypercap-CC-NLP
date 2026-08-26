@@ -59,17 +59,68 @@ DOCUMENTATION_SHEETS_BY_WORKBOOK = {
     "Sensitivity_Analysis_Suite.xlsx": frozenset({"notes"}),
 }
 NUMERIC_ATOL = 1e-9
+PRODUCER_STAGES = ("cohort", "classifier", "analysis")
 
 
-def _resolve_git_commit(work_dir: Path) -> str:
+def _resolve_git_commit(work_dir: Path, revision: str = "HEAD") -> str:
     completed = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
+        ["git", "rev-parse", "--verify", "--end-of-options", f"{revision}^{{commit}}"],
         cwd=work_dir,
-        check=True,
+        check=False,
         capture_output=True,
         text=True,
     )
-    return completed.stdout.strip()
+    commit = completed.stdout.strip()
+    if completed.returncode or not _is_git_commit(commit):
+        raise ValueError(f"Source revision does not resolve to a Git commit: {revision}")
+    return commit
+
+
+def _is_git_commit(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 40
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def resolve_imv_capture_baseline_dir(work_dir: Path, baseline: str) -> Path:
+    """Resolve a new explicit baseline id/path without requiring it to exist."""
+    if not baseline.strip() or baseline == "latest":
+        raise ValueError("Capture requires a new explicit baseline ID or absolute path")
+    requested = Path(baseline).expanduser()
+    root = work_dir.resolve() / "artifacts" / "qa" / "baselines" / "jupyter"
+    candidate = requested if requested.is_absolute() else root / requested
+    return _validate_capture_destination(work_dir.resolve(), candidate)
+
+
+def _validate_capture_destination(work_dir: Path, baseline_dir: Path) -> Path:
+    expected_root = (work_dir / "artifacts" / "qa" / "baselines").resolve()
+    baseline_dir = baseline_dir.resolve()
+    if (
+        not baseline_dir.is_relative_to(expected_root)
+        or baseline_dir == expected_root
+        or baseline_dir == (expected_root / "jupyter")
+    ):
+        raise ValueError(f"Baseline must be a child of {expected_root}: {baseline_dir}")
+    ignored = subprocess.run(
+        ["git", "check-ignore", "--quiet", "--", "artifacts/qa/baselines/"],
+        cwd=work_dir,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if ignored.returncode != 0:
+        raise ValueError("The private artifacts/qa/baselines root must be Git-ignored")
+    return baseline_dir
 
 
 def _normalize_text(value: object) -> str:
@@ -277,6 +328,141 @@ def _compare_workbooks(baseline_path: Path, current_path: Path) -> dict[str, obj
     }
 
 
+def _captured_artifact_paths(results_date: str) -> tuple[str, ...]:
+    return (
+        f"MIMIC tabular data/{CANONICAL_COHORT_FILENAME}",
+        f"MIMIC tabular data/{CANONICAL_NLP_FILENAME}",
+        *(f"Results/{results_date}/{name}" for name in BASELINE_RESULT_WORKBOOKS),
+    )
+
+
+def _handoff_path_matches(value: object, filename: str) -> bool:
+    # Runtime manifests sanitize a symlinked private data directory to this
+    # external marker. Do not resolve arbitrary paths supplied by a manifest.
+    return value in (
+        f"MIMIC tabular data/{filename}",
+        f"<external>/{filename}",
+    )
+
+
+def _validate_producer_records(
+    records: dict[str, object],
+    *,
+    source_commit: str,
+    results_date: str,
+    artifact_hashes: dict[str, str],
+) -> None:
+    """Bind the captured bytes to clean producing stages, not capture checkout."""
+    generated_times: list[datetime] = []
+    for stage in PRODUCER_STAGES:
+        record = records.get(stage)
+        if not isinstance(record, dict) or record.get("stage") != stage:
+            raise ValueError(f"Missing or invalid {stage} producer manifest")
+        if record.get("results_date") != results_date:
+            raise ValueError(f"{stage} producer results date does not match capture")
+        git = record.get("git")
+        if (
+            not isinstance(git, dict)
+            or git.get("commit") != source_commit
+            or git.get("dirty") is not False
+            or git.get("require_clean_git") is not True
+        ):
+            raise ValueError(
+                f"{stage} producer must record the requested source commit and clean Git"
+            )
+        try:
+            generated = datetime.fromisoformat(str(record.get("generated_utc")))
+        except ValueError as exc:
+            raise ValueError(f"Invalid {stage} producer timestamp") from exc
+        if generated.tzinfo is None:
+            raise ValueError(f"Invalid {stage} producer timestamp")
+        generated_times.append(generated)
+    if generated_times != sorted(generated_times):
+        raise ValueError("Producer manifests are not in cohort/classifier/analysis order")
+
+    for stage, filename in (
+        ("cohort", CANONICAL_COHORT_FILENAME),
+        ("classifier", CANONICAL_NLP_FILENAME),
+    ):
+        outputs = records[stage].get("outputs")
+        if (
+            not isinstance(outputs, dict)
+            or not _handoff_path_matches(outputs.get("canonical_output_path"), filename)
+            or outputs.get("canonical_output_sha256")
+            != artifact_hashes[f"MIMIC tabular data/{filename}"]
+        ):
+            raise ValueError(f"{stage} producer output path/hash does not match handoff")
+
+    classifier_inputs = records["classifier"].get("inputs")
+    if (
+        not isinstance(classifier_inputs, dict)
+        or not _handoff_path_matches(
+            classifier_inputs.get("cohort_path"), CANONICAL_COHORT_FILENAME
+        )
+        or classifier_inputs.get("cohort_sha256")
+        != artifact_hashes[f"MIMIC tabular data/{CANONICAL_COHORT_FILENAME}"]
+    ):
+        raise ValueError("Classifier producer input path/hash does not match cohort")
+
+    analysis = records["analysis"]
+    if (
+        not _handoff_path_matches(
+            analysis.get("analysis_input_path"), CANONICAL_NLP_FILENAME
+        )
+        or analysis.get("analysis_input_sha256")
+        != artifact_hashes[f"MIMIC tabular data/{CANONICAL_NLP_FILENAME}"]
+    ):
+        raise ValueError("Analysis producer input path/hash does not match NLP handoff")
+    verification = analysis.get("output_verification")
+    if not isinstance(verification, list):
+        raise ValueError("Analysis producer output verification is missing")
+    for filename in BASELINE_RESULT_WORKBOOKS:
+        relative_path = f"Results/{results_date}/{filename}"
+        matches = [
+            entry
+            for entry in verification
+            if isinstance(entry, dict) and entry.get("path") == relative_path
+        ]
+        # Some paths are registered both as analysis and manuscript outputs.
+        # Repeated, identical attestations are valid; conflicting ones are not.
+        if not matches or any(
+            entry.get("exists") is not True
+            or entry.get("sha256") != artifact_hashes[relative_path]
+            for entry in matches
+        ):
+            raise ValueError(f"Analysis producer output path/hash mismatch: {filename}")
+
+
+def _load_capture_producers(
+    work_dir: Path,
+    *,
+    results_date: str,
+    source_commit: str,
+    artifact_hashes: dict[str, str],
+) -> dict[str, bytes]:
+    payloads: dict[str, bytes] = {}
+    records: dict[str, object] = {}
+    for stage in PRODUCER_STAGES:
+        path = (
+            work_dir
+            / "MIMIC tabular data"
+            / "prior runs"
+            / f"{results_date} {stage}_run_manifest.json"
+        )
+        try:
+            payloads[stage] = path.read_bytes()
+            records[stage] = json.loads(payloads[stage])
+        except (OSError, json.JSONDecodeError, UnicodeError) as exc:
+            raise ValueError(f"Missing or unreadable {stage} producer manifest") from exc
+    _validate_producer_records(
+        records,
+        source_commit=source_commit,
+        results_date=results_date,
+        artifact_hashes=artifact_hashes,
+    )
+    return payloads
+
+
 def capture_imv_ticket_baseline(
     work_dir: Path,
     *,
@@ -284,27 +470,33 @@ def capture_imv_ticket_baseline(
     results_date: str,
     source_commit: str | None = None,
 ) -> dict[str, object]:
-    """Capture private semantic inputs and signatures under an ignored baseline."""
+    """Capture bytes verified against clean, hash-linked producer manifests."""
     work_dir = work_dir.resolve()
-    baseline_dir = baseline_dir.resolve()
-    expected_root = (work_dir / "artifacts" / "qa" / "baselines").resolve()
-    if not baseline_dir.is_relative_to(expected_root):
-        raise ValueError(f"Baseline must be under {expected_root}: {baseline_dir}")
-    if not baseline_dir.exists():
-        raise FileNotFoundError(baseline_dir)
+    baseline_dir = _validate_capture_destination(work_dir, baseline_dir)
+    if not _valid_results_date(results_date):
+        raise ValueError("Results date must be YYYY-MM-DD")
+    producer_commit = _resolve_git_commit(work_dir, source_commit or "HEAD")
 
     semantic_dir = baseline_dir / "imv_ticket_semantic"
     manifest_path = semantic_dir / "semantic_manifest.json"
-    if manifest_path.exists():
-        raise FileExistsError(f"Semantic baseline already exists: {manifest_path}")
+    if semantic_dir.exists():
+        raise FileExistsError(f"Semantic baseline directory already exists: {semantic_dir}")
+
+    artifact_hashes = {
+        relative_path: _file_sha256(work_dir / relative_path)
+        for relative_path in _captured_artifact_paths(results_date)
+    }
+    producer_payloads = _load_capture_producers(
+        work_dir,
+        results_date=results_date,
+        source_commit=producer_commit,
+        artifact_hashes=artifact_hashes,
+    )
 
     data_dir = work_dir / "MIMIC tabular data"
     current_results_dir = work_dir / "Results" / results_date
     baseline_data_dir = semantic_dir / "MIMIC tabular data"
     baseline_results_dir = semantic_dir / "Results" / results_date
-    baseline_data_dir.mkdir(parents=True, exist_ok=True)
-    baseline_results_dir.mkdir(parents=True, exist_ok=True)
-
     cohort_path = data_dir / CANONICAL_COHORT_FILENAME
     nlp_path = data_dir / CANONICAL_NLP_FILENAME
     cohort = _read_first_sheet(cohort_path)
@@ -312,6 +504,11 @@ def capture_imv_ticket_baseline(
     _validate_unique_admissions(cohort, label="cohort handoff")
     _validate_unique_admissions(nlp, label="NLP handoff")
 
+    # Reserve a new directory only after provenance checks. Never overwrite even
+    # an incomplete earlier capture; such a directory needs explicit recovery.
+    semantic_dir.mkdir(mode=0o700, parents=True, exist_ok=False)
+    baseline_data_dir.mkdir()
+    baseline_results_dir.mkdir(parents=True)
     shutil.copy2(cohort_path, baseline_data_dir / cohort_path.name)
     shutil.copy2(nlp_path, baseline_data_dir / nlp_path.name)
 
@@ -324,10 +521,25 @@ def capture_imv_ticket_baseline(
         shutil.copy2(source, destination)
         result_signatures[filename] = _workbook_signature(destination)
 
+    for relative_path, expected_hash in artifact_hashes.items():
+        if _file_sha256(semantic_dir / relative_path) != expected_hash:
+            raise ValueError(f"Source artifact changed during capture: {relative_path}")
+
+    producer_dir = semantic_dir / "producer_manifests"
+    producer_dir.mkdir()
+    producer_signatures = {}
+    for stage, payload in producer_payloads.items():
+        filename = f"{stage}_run_manifest.json"
+        (producer_dir / filename).write_bytes(payload)
+        producer_signatures[stage] = {
+            "file": f"producer_manifests/{filename}",
+            "sha256": hashlib.sha256(payload).hexdigest(),
+        }
+
     manifest = {
-        "schema_version": 1,
+        "schema_version": 2,
         "captured_at_utc": datetime.now(timezone.utc).isoformat(),
-        "source_commit": source_commit or _resolve_git_commit(work_dir),
+        "source_commit": producer_commit,
         "results_date": results_date,
         "cohort": {
             "rows": int(len(cohort)),
@@ -348,8 +560,11 @@ def capture_imv_ticket_baseline(
             ),
         },
         "result_workbooks": result_signatures,
+        "artifact_sha256": artifact_hashes,
+        "producer_manifests": producer_signatures,
     }
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    with manifest_path.open("x") as stream:
+        stream.write(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
     return {"manifest_path": str(manifest_path), **manifest}
 
 
@@ -441,6 +656,93 @@ def _validate_baseline_handoff(
     return frame
 
 
+def _validate_v2_provenance_integrity(
+    semantic_dir: Path,
+    manifest: dict[str, object],
+    *,
+    errors: list[dict[str, str]],
+) -> None:
+    results_date = manifest.get("results_date")
+    artifact_hashes = manifest.get("artifact_sha256")
+    if not _valid_results_date(results_date) or not isinstance(artifact_hashes, dict):
+        _append_integrity_error(errors, "artifact_hash_manifest_invalid")
+        return
+    expected_artifacts = set(_captured_artifact_paths(str(results_date)))
+    hashes_valid = set(artifact_hashes) == expected_artifacts
+    if not hashes_valid:
+        _append_integrity_error(errors, "artifact_hash_inventory_mismatch")
+    for relative_path in sorted(expected_artifacts):
+        expected_hash = artifact_hashes.get(relative_path)
+        if not _is_sha256(expected_hash):
+            hashes_valid = False
+            _append_integrity_error(
+                errors, "artifact_hash_invalid", artifact=relative_path
+            )
+            continue
+        try:
+            actual_hash = _file_sha256(semantic_dir / relative_path)
+        except OSError:
+            _append_integrity_error(
+                errors, "artifact_copy_unreadable", artifact=relative_path
+            )
+            continue
+        if actual_hash != expected_hash:
+            _append_integrity_error(
+                errors, "artifact_file_hash_mismatch", artifact=relative_path
+            )
+
+    producer_signatures = manifest.get("producer_manifests")
+    if not isinstance(producer_signatures, dict):
+        _append_integrity_error(errors, "producer_manifest_inventory_invalid")
+        return
+    if set(producer_signatures) != set(PRODUCER_STAGES):
+        _append_integrity_error(errors, "producer_manifest_inventory_mismatch")
+    actual_producer_files = {
+        path.name for path in (semantic_dir / "producer_manifests").glob("*.json")
+        if path.is_file()
+    }
+    if actual_producer_files != {
+        f"{stage}_run_manifest.json" for stage in PRODUCER_STAGES
+    }:
+        _append_integrity_error(errors, "producer_manifest_copy_inventory_mismatch")
+    records: dict[str, object] = {}
+    for stage in PRODUCER_STAGES:
+        signature = producer_signatures.get(stage)
+        relative_path = f"producer_manifests/{stage}_run_manifest.json"
+        if (
+            not isinstance(signature, dict)
+            or set(signature) != {"file", "sha256"}
+            or signature.get("file") != relative_path
+            or not _is_sha256(signature.get("sha256"))
+        ):
+            _append_integrity_error(
+                errors, "producer_manifest_signature_invalid", artifact=stage
+            )
+            continue
+        try:
+            payload = (semantic_dir / relative_path).read_bytes()
+            records[stage] = json.loads(payload)
+        except (OSError, json.JSONDecodeError, UnicodeError):
+            _append_integrity_error(
+                errors, "producer_manifest_copy_unreadable", artifact=stage
+            )
+            continue
+        if hashlib.sha256(payload).hexdigest() != signature["sha256"]:
+            _append_integrity_error(
+                errors, "producer_manifest_hash_mismatch", artifact=stage
+            )
+    if hashes_valid:
+        try:
+            _validate_producer_records(
+                records,
+                source_commit=str(manifest.get("source_commit")),
+                results_date=str(results_date),
+                artifact_hashes=artifact_hashes,
+            )
+        except ValueError:
+            _append_integrity_error(errors, "producer_provenance_invalid")
+
+
 def _validate_baseline_integrity(
     semantic_dir: Path,
     manifest_path: Path,
@@ -494,13 +796,17 @@ def _validate_baseline_integrity(
         "classifier",
         "result_workbooks",
     }
+    schema_version = manifest.get("schema_version")
+    if schema_version == 2:
+        expected_manifest_fields.update({"artifact_sha256", "producer_manifests"})
     if set(manifest) != expected_manifest_fields:
         _append_integrity_error(errors, "manifest_fields_invalid")
-    schema_version = manifest.get("schema_version")
-    if not _is_nonnegative_integer(schema_version) or schema_version != 1:
+    if not _is_nonnegative_integer(schema_version) or schema_version not in {1, 2}:
         _append_integrity_error(errors, "unsupported_schema_version")
     source_commit = manifest.get("source_commit")
     if not isinstance(source_commit, str) or not source_commit.strip():
+        _append_integrity_error(errors, "source_commit_invalid")
+    elif schema_version == 2 and not _is_git_commit(source_commit):
         _append_integrity_error(errors, "source_commit_invalid")
     captured_at_utc = manifest.get("captured_at_utc")
     try:
@@ -515,6 +821,8 @@ def _validate_baseline_integrity(
     valid_results_date = _valid_results_date(baseline_results_date)
     if not valid_results_date:
         _append_integrity_error(errors, "results_date_invalid")
+    if schema_version == 2:
+        _validate_v2_provenance_integrity(semantic_dir, manifest, errors=errors)
 
     baseline_data_dir = semantic_dir / "MIMIC tabular data"
     expected_data_inventory = {
@@ -632,6 +940,10 @@ def _validate_baseline_integrity(
 
     integrity = {
         "status": "fail" if errors else "pass",
+        "producer_provenance": (
+            ("verified" if not errors else "invalid")
+            if schema_version == 2 else "legacy_unverified"
+        ),
         "failure_count": len(errors),
         "errors": errors,
         "checked": {

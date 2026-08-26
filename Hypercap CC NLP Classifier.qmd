@@ -98,6 +98,7 @@ if missing:
     raise ImportError(message)
 
 import hashlib
+import io
 import json
 import logging
 import math
@@ -3584,6 +3585,18 @@ def _sha256(path: Path) -> str:
     return hasher.hexdigest()
 
 
+def read_excel_with_sha256(
+    path: Path, *, sheet_name: int | str = 0
+) -> tuple[pd.DataFrame, str]:
+    """Hash the exact input bytes parsed, not a potentially replaced later file."""
+    workbook_bytes = path.read_bytes()
+    input_sha256 = hashlib.sha256(workbook_bytes).hexdigest()
+    frame = pd.read_excel(
+        io.BytesIO(workbook_bytes), sheet_name=sheet_name, engine="openpyxl"
+    )
+    return frame, input_sha256
+
+
 def verify_classifier_resources(
     work_dir: Path,
     *,
@@ -3899,7 +3912,7 @@ if resource_report["warnings"]:
     for warning_message in resource_report["warnings"]:
         print("-", warning_message)
 
-df = pd.read_excel(file_path, sheet_name=0, engine="openpyxl")
+df, cohort_input_sha256 = read_excel_with_sha256(file_path)
 df.columns = df.columns.str.strip()
 
 ensure_required_workflow_columns(
@@ -4638,6 +4651,11 @@ def _manifest_relpath(path_value: object) -> str | None:
 
 
 stage_manifest["stage"] = "classifier"
+stage_manifest["results_date"] = results_date
+stage_manifest["inputs"] = {
+    "cohort_path": _manifest_relpath(file_path),
+    "cohort_sha256": cohort_input_sha256,
+}
 stage_manifest["model_metadata"] = {
     "model_name": metadata.get("model_name"),
     "spacy_model": metadata.get("spacy_model"),
@@ -4676,7 +4694,7 @@ stage_manifest["outputs"] = {
 }
 stage_manifest["annotation_benchmark"] = annotation_benchmark_status
 stage_manifest = sanitize_manifest_payload(stage_manifest, work_dir=WORK_DIR)
-stage_manifest_path = archive_output_path.parent / f"{run_date} classifier_run_manifest.json"
+stage_manifest_path = archive_output_path.parent / f"{results_date} classifier_run_manifest.json"
 stage_manifest_path.write_text(json.dumps(stage_manifest, indent=2))
 
 contract_mode = os.getenv("PIPELINE_CONTRACT_MODE", "fail").strip().lower()

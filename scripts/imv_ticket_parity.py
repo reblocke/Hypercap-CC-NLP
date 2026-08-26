@@ -21,6 +21,7 @@ _bootstrap_src_path()
 from hypercap_cc_nlp.imv_ticket_parity import (  # noqa: E402
     capture_imv_ticket_baseline,
     compare_imv_ticket_baseline,
+    resolve_imv_capture_baseline_dir,
     write_imv_ticket_parity_report,
 )
 from hypercap_cc_nlp.pipeline_parity import resolve_baseline_dir  # noqa: E402
@@ -34,7 +35,11 @@ def _parse_args() -> argparse.Namespace:
         subparser.add_argument(
             "--baseline",
             required=True,
-            help="Existing captured baseline id or path.",
+            help=(
+                "New explicit baseline ID or absolute path under artifacts/qa/baselines."
+                if command == "capture"
+                else "Existing captured baseline ID or path."
+            ),
         )
         subparser.add_argument(
             "--results-date",
@@ -44,7 +49,10 @@ def _parse_args() -> argparse.Namespace:
     subparsers.choices["capture"].add_argument(
         "--source-commit",
         default=None,
-        help="Commit that produced the baseline outputs (defaults to HEAD).",
+        help=(
+            "Producer Git revision (defaults to HEAD); resolved and checked against "
+            "clean, hash-linked cohort/classifier/analysis stage manifests."
+        ),
     )
     subparsers.choices["compare"].add_argument(
         "--output",
@@ -57,8 +65,8 @@ def _parse_args() -> argparse.Namespace:
 def main() -> int:
     args = _parse_args()
     work_dir = Path.cwd().resolve()
-    baseline_dir = resolve_baseline_dir(work_dir, args.baseline)
     if args.command == "capture":
+        baseline_dir = resolve_imv_capture_baseline_dir(work_dir, args.baseline)
         result = capture_imv_ticket_baseline(
             work_dir,
             baseline_dir=baseline_dir,
@@ -68,6 +76,7 @@ def main() -> int:
         print(f"Semantic baseline: {result['manifest_path']}")
         return 0
 
+    baseline_dir = resolve_baseline_dir(work_dir, args.baseline)
     report = compare_imv_ticket_baseline(
         work_dir,
         baseline_dir=baseline_dir,

@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import ast
+import hashlib
+import json
 import re
+from copy import deepcopy
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -59,6 +63,9 @@ HELPER_FUNCTIONS = [
     "_nullable_boolean_mismatch",
     "_coerce_contract_datetime_for_analysis",
     "_coerce_contract_numeric_for_analysis",
+    "imv_source_projection_sha256",
+    "validate_imv_source_provenance",
+    "load_imv_source_provenance",
     "_select_first_observed_imv_for_analysis",
     "_legacy_imv_timing_discordant_for_analysis",
     "validate_imv_timing_analysis_contract",
@@ -122,6 +129,9 @@ HELPER_CONSTANTS = {
     "IMV_TIMING_SOURCE_VALUES",
     "IMV_TIMING_REQUIRED_INPUT_COLS",
     "IMV_TIMING_TIMESTAMP_COLS",
+    "IMV_SOURCE_PROVENANCE_FILENAME",
+    "IMV_SOURCE_PROVENANCE_SCHEMA_VERSION",
+    "IMV_SOURCE_PROJECTION_COLUMNS",
     "IMV_TIMING_FORBIDDEN_EXPORT_COLUMNS",
     "FIGURE4_USE_PAIRED_QUALIFYING_PH",
     "PREVALENCE_CI_BOOTSTRAP_REPLICATES",
@@ -159,13 +169,18 @@ def _load_analysis_helpers() -> dict[str, object]:
         if isinstance(node, ast.FunctionDef) and node.name in HELPER_FUNCTIONS:
             selected_nodes.append(node)
     helper_module = ast.Module(body=selected_nodes, type_ignores=[])
-    namespace = {"np": np, "pd": pd, "Path": Path, "re": re}
+    namespace = {
+        "np": np, "pd": pd, "Path": Path, "re": re,
+        "Any": Any, "hashlib": hashlib, "json": json,
+    }
     exec(compile(helper_module, str(ANALYSIS_NOTEBOOK), "exec"), namespace)
     return namespace
 
 
 def _run_analysis_timestamp_preparation(
     frame: pd.DataFrame,
+    *,
+    source_provenance_path: Path,
 ) -> tuple[pd.DataFrame, dict[str, int]]:
     """Execute the notebook's production preparation block, not a test copy."""
 
@@ -192,12 +207,42 @@ def _run_analysis_timestamp_preparation(
         if assigns_analytic_column(node, "qualifying_pco2_mmhg")
     )
     preparation = ast.Module(body=tree.body[start:stop], type_ignores=[])
-    namespace = {**HELPERS, "analytic_df": frame.copy(deep=True)}
+    namespace = {
+        **HELPERS,
+        "analytic_df": frame.copy(deep=True),
+        "input_df": frame.copy(deep=True),
+        "IMV_SOURCE_PROVENANCE_PATH": source_provenance_path,
+    }
     exec(compile(preparation, str(ANALYSIS_NOTEBOOK), "exec"), namespace)
     return namespace["analytic_df"], namespace["imv_timing_contract"]
 
 
 HELPERS = _load_analysis_helpers()
+
+
+def _load_cohort_provenance_helpers() -> dict[str, object]:
+    notebook = WORK_DIR / "MIMICIV_hypercap_EXT_cohort.qmd"
+    tree = ast.parse(_extract_python_chunks(notebook))
+    function_names = {"imv_source_projection_sha256", "build_imv_source_provenance"}
+    constant_names = {
+        "IMV_SOURCE_RECORD_NO_TIME_COLUMN",
+        "IMV_SOURCE_PROVENANCE_SCHEMA_VERSION",
+        "IMV_SOURCE_PROJECTION_COLUMNS",
+    }
+    selected = [
+        node for node in tree.body
+        if (isinstance(node, ast.FunctionDef) and node.name in function_names)
+        or (isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id in constant_names
+            for target in node.targets
+        ))
+    ]
+    namespace = {"np": np, "pd": pd, "Any": Any, "hashlib": hashlib, "json": json}
+    exec(compile(ast.Module(body=selected, type_ignores=[]), str(notebook), "exec"), namespace)
+    return namespace
+
+
+COHORT_PROVENANCE_HELPERS = _load_cohort_provenance_helpers()
 
 resolve_required_columns = HELPERS["ensure_required_columns"]
 classify_icd_category_vectorized = HELPERS["classify_icd_category_vectorized"]
@@ -1357,9 +1402,28 @@ def _synthetic_imv_timing_frame() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _synthetic_imv_source_provenance(
+    frame: pd.DataFrame | None = None, *, untimed_hadm_ids: tuple[int, ...] = (),
+) -> dict[str, Any]:
+    source = _synthetic_imv_timing_frame() if frame is None else frame.copy(deep=True)
+    source[COHORT_PROVENANCE_HELPERS["IMV_SOURCE_RECORD_NO_TIME_COLUMN"]] = (
+        source["hadm_id"].isin(untimed_hadm_ids).astype(int)
+    )
+    return COHORT_PROVENANCE_HELPERS["build_imv_source_provenance"](source)
+
+
+@pytest.fixture
+def imv_source_provenance_path(tmp_path: Path) -> Path:
+    path = tmp_path / HELPERS["IMV_SOURCE_PROVENANCE_FILENAME"]
+    path.write_text(json.dumps(_synthetic_imv_source_provenance()))
+    return path
+
+
 def test_imv_timing_analysis_partition_prevalence_and_paired_sensitivity() -> None:
     frame = _synthetic_imv_timing_frame()
-    contract = validate_imv_timing_analysis_contract(frame)
+    contract = validate_imv_timing_analysis_contract(
+        frame, source_provenance=_synthetic_imv_source_provenance()
+    )
     assert contract["analytic_admissions"] == 9
     assert contract["gas_positive_admissions"] == 8
     assert contract["non_gas_admissions"] == 1
@@ -1416,10 +1480,160 @@ def test_imv_timing_analysis_accepts_untimed_official_source_handoff() -> None:
     frame.loc[untimed_source_row, "imv_preceded_qualifying_gas"] = pd.NA
     frame.loc[untimed_source_row, "no_prior_observed_imv"] = pd.NA
 
-    contract = validate_imv_timing_analysis_contract(frame)
+    contract = validate_imv_timing_analysis_contract(
+        frame,
+        source_provenance=_synthetic_imv_source_provenance(untimed_hadm_ids=(101,)),
+    )
 
     assert contract["timing_indeterminate_admissions"] == 3
     assert contract["no_prior_observed_imv_admissions"] == 3
+
+
+@pytest.mark.parametrize("untimed_source_evidence", [False, True])
+@pytest.mark.parametrize("supplied_order", ["no_observed_imv", "timing_indeterminate"])
+def test_analysis_requires_source_proof_for_both_untimed_relabeling_directions(
+    untimed_source_evidence: bool,
+    supplied_order: str,
+    imv_source_provenance_path: Path,
+) -> None:
+    frame = _synthetic_imv_timing_frame()
+    source_provenance = _synthetic_imv_source_provenance(
+        untimed_hadm_ids=(101,) if untimed_source_evidence else (),
+    )
+    imv_source_provenance_path.write_text(json.dumps(source_provenance))
+    frame.loc[0, "imv_qualifying_gas_order"] = supplied_order
+    frame.loc[0, "imv_preceded_qualifying_gas"] = (
+        pd.NA if supplied_order == "timing_indeterminate" else False
+    )
+    frame.loc[0, "no_prior_observed_imv"] = (
+        pd.NA if supplied_order == "timing_indeterminate" else True
+    )
+    expected_order = "timing_indeterminate" if untimed_source_evidence else "no_observed_imv"
+    if supplied_order != expected_order:
+        with pytest.raises(ValueError, match="strict cohort fields"):
+            validate_imv_timing_analysis_contract(frame, source_provenance=source_provenance)
+        with pytest.raises(ValueError, match="strict cohort fields"):
+            _run_analysis_timestamp_preparation(
+                frame, source_provenance_path=imv_source_provenance_path
+            )
+    else:
+        contract = validate_imv_timing_analysis_contract(frame, source_provenance=source_provenance)
+        prepared, production_contract = _run_analysis_timestamp_preparation(
+            frame, source_provenance_path=imv_source_provenance_path
+        )
+        assert contract == production_contract
+        assert contract["timing_indeterminate_admissions"] == 2 + int(untimed_source_evidence)
+        assert COHORT_PROVENANCE_HELPERS["IMV_SOURCE_RECORD_NO_TIME_COLUMN"] not in prepared.columns
+
+
+def test_analysis_production_preparation_requires_private_source_sidecar(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError, match="Required private IMV source provenance sidecar"):
+        _run_analysis_timestamp_preparation(
+            _synthetic_imv_timing_frame(), source_provenance_path=tmp_path / "missing.json"
+        )
+
+
+@pytest.mark.parametrize("bad_content", ["not json", "[]", '{"schema_version":1,"schema_version":1}'])
+def test_analysis_production_preparation_rejects_malformed_source_sidecar(
+    bad_content: str, imv_source_provenance_path: Path,
+) -> None:
+    imv_source_provenance_path.write_text(bad_content)
+
+    with pytest.raises(ValueError, match="IMV source provenance"):
+        _run_analysis_timestamp_preparation(
+            _synthetic_imv_timing_frame(), source_provenance_path=imv_source_provenance_path
+        )
+
+
+def _resign_synthetic_provenance(payload: dict[str, Any]) -> dict[str, Any]:
+    payload = deepcopy(payload)
+    content = {key: value for key, value in payload.items() if key != "payload_sha256"}
+    encoded = json.dumps(content, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    payload["payload_sha256"] = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+    return payload
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("schema_version", 2, "schema version"),
+        ("schema_version", True, "schema version"),
+        ("admission_count", 8, "admission count"),
+        ("source_projection_columns", [], "source projection"),
+        ("source_projection_sha256", "0" * 64, "fingerprint"),
+        ("untimed_evidence_admissions", None, "membership must be a list"),
+        ("untimed_evidence_admissions", [{"hadm_id": 101}], "malformed untimed membership"),
+        ("untimed_evidence_admissions", [{"subject_id": 1, "hadm_id": "101"}], "integer membership"),
+        ("untimed_evidence_admissions", [{"subject_id": 1, "hadm_id": 999}], "handoff identifiers"),
+        ("untimed_evidence_admissions", [{"subject_id": 99, "hadm_id": 101}], "handoff identifiers"),
+        ("untimed_evidence_admissions", [{"subject_id": 3, "hadm_id": 103}], "reliable source timestamp"),
+        ("untimed_evidence_admissions", [{"subject_id": 1, "hadm_id": 101}] * 2, "duplicate untimed"),
+        (
+            "untimed_evidence_admissions",
+            [{"subject_id": 2, "hadm_id": 102}, {"subject_id": 1, "hadm_id": 101}],
+            "canonical order",
+        ),
+    ],
+)
+def test_analysis_rejects_invalid_source_provenance(
+    field: str, value: Any, message: str,
+) -> None:
+    payload = _synthetic_imv_source_provenance()
+    payload[field] = value
+    payload = _resign_synthetic_provenance(payload)
+
+    with pytest.raises(ValueError, match=message):
+        HELPERS["validate_imv_source_provenance"](_synthetic_imv_timing_frame(), payload)
+
+
+def test_analysis_rejects_source_membership_edited_after_capture() -> None:
+    payload = _synthetic_imv_source_provenance(untimed_hadm_ids=(101,))
+    payload["untimed_evidence_admissions"] = []
+
+    with pytest.raises(ValueError, match="payload digest"):
+        HELPERS["validate_imv_source_provenance"](_synthetic_imv_timing_frame(), payload)
+
+
+@pytest.mark.parametrize("source_column", HELPERS["IMV_SOURCE_PROJECTION_COLUMNS"])
+def test_analysis_provenance_binds_every_membership_and_source_field(source_column: str) -> None:
+    frame = _synthetic_imv_timing_frame()
+    proof = _synthetic_imv_source_provenance(frame)
+    if source_column in {"subject_id", "hadm_id"}:
+        frame.loc[0, source_column] += 1000
+    elif source_column in {"pco2_threshold_any", "imv_flag"}:
+        frame.loc[0, source_column] = 1 - frame.loc[0, source_column]
+    else:
+        frame.loc[0, source_column] = pd.Timestamp("2026-01-01 12:00:01")
+
+    with pytest.raises(ValueError, match="fingerprint"):
+        HELPERS["validate_imv_source_provenance"](frame, proof)
+
+
+def test_analysis_production_preparation_rejects_stale_source_fingerprint(
+    imv_source_provenance_path: Path,
+) -> None:
+    frame = _synthetic_imv_timing_frame()
+    frame.loc[0, "qualifying_pco2_time"] += pd.Timedelta(seconds=1)
+
+    with pytest.raises(ValueError, match="fingerprint"):
+        _run_analysis_timestamp_preparation(frame, source_provenance_path=imv_source_provenance_path)
+
+
+def test_analysis_source_proof_survives_both_handoff_excel_round_trips(tmp_path: Path) -> None:
+    frame = _synthetic_imv_timing_frame()
+    proof = _synthetic_imv_source_provenance(untimed_hadm_ids=(101,))
+    frame.loc[0, "imv_qualifying_gas_order"] = "timing_indeterminate"
+    frame.loc[0, "imv_preceded_qualifying_gas"] = pd.NA
+    frame.loc[0, "no_prior_observed_imv"] = pd.NA
+    for filename in ("synthetic-cohort.xlsx", "synthetic-classifier.xlsx"):
+        path = tmp_path / filename
+        frame.to_excel(path, index=False)
+        frame = pd.read_excel(path)
+        mask = HELPERS["validate_imv_source_provenance"](frame, proof)
+        assert frame.loc[mask, "hadm_id"].tolist() == [101]
+        validate_imv_timing_analysis_contract(frame, source_provenance=proof)
+        frame = frame.iloc[::-1].reset_index(drop=True)
+        frame["classifier_only_extra"] = "synthetic"
 
 
 def test_imv_timing_analysis_rejects_reconstructable_order_mismatch() -> None:
@@ -1430,7 +1644,9 @@ def test_imv_timing_analysis_rejects_reconstructable_order_mismatch() -> None:
     frame.loc[imv_before_row, "no_prior_observed_imv"] = True
 
     with pytest.raises(ValueError, match="strict cohort fields"):
-        validate_imv_timing_analysis_contract(frame)
+        validate_imv_timing_analysis_contract(
+            frame, source_provenance=_synthetic_imv_source_provenance()
+        )
 
 
 def test_imv_timing_analysis_rejects_robust_flag_not_derived_from_sources() -> None:
@@ -1439,7 +1655,9 @@ def test_imv_timing_analysis_rejects_robust_flag_not_derived_from_sources() -> N
     frame.loc[gas_before_row, "robust_imv_observed"] = 0
 
     with pytest.raises(ValueError, match="robust_imv_observed must equal presence"):
-        validate_imv_timing_analysis_contract(frame)
+        validate_imv_timing_analysis_contract(
+            frame, source_provenance=_synthetic_imv_source_provenance()
+        )
 
 
 def test_imv_timing_analysis_rejects_self_consistent_nonminimum_anchor() -> None:
@@ -1452,7 +1670,9 @@ def test_imv_timing_analysis_rejects_self_consistent_nonminimum_anchor() -> None
     frame.loc[gas_before_row, "hours_from_imv_to_qualifying_gas"] = -2.0
 
     with pytest.raises(ValueError, match="exact earliest reliable source"):
-        validate_imv_timing_analysis_contract(frame)
+        validate_imv_timing_analysis_contract(
+            frame, source_provenance=_synthetic_imv_source_provenance()
+        )
 
 
 def test_imv_timing_analysis_rejects_incorrect_tied_source_label() -> None:
@@ -1466,7 +1686,9 @@ def test_imv_timing_analysis_rejects_incorrect_tied_source_label() -> None:
         ValueError,
         match=r"source_violations=1",
     ):
-        validate_imv_timing_analysis_contract(frame)
+        validate_imv_timing_analysis_contract(
+            frame, source_provenance=_synthetic_imv_source_provenance()
+        )
 
 
 def test_imv_timing_analysis_rejects_same_sign_inexact_hours() -> None:
@@ -1475,7 +1697,9 @@ def test_imv_timing_analysis_rejects_same_sign_inexact_hours() -> None:
     frame.loc[gas_before_row, "hours_from_imv_to_qualifying_gas"] = -0.5
 
     with pytest.raises(ValueError, match="exact source-derived timestamp difference"):
-        validate_imv_timing_analysis_contract(frame)
+        validate_imv_timing_analysis_contract(
+            frame, source_provenance=_synthetic_imv_source_provenance()
+        )
 
 
 def test_imv_timing_analysis_rejects_incorrect_legacy_discordance() -> None:
@@ -1484,7 +1708,9 @@ def test_imv_timing_analysis_rejects_incorrect_legacy_discordance() -> None:
     frame.loc[gas_before_row, "imv_flag"] = 0
 
     with pytest.raises(ValueError, match="source-derived presence/order rule"):
-        validate_imv_timing_analysis_contract(frame)
+        validate_imv_timing_analysis_contract(
+            frame, source_provenance=_synthetic_imv_source_provenance(frame)
+        )
 
 
 @pytest.mark.parametrize(
@@ -1504,7 +1730,9 @@ def test_imv_timing_analysis_rejects_unparseable_nonmissing_timestamps(
     frame.loc[no_observed_row, field_name] = "not-a-time"
 
     with pytest.raises(ValueError, match="nonmissing unparseable timestamps"):
-        validate_imv_timing_analysis_contract(frame)
+        validate_imv_timing_analysis_contract(
+            frame, source_provenance=_synthetic_imv_source_provenance()
+        )
 
 
 @pytest.mark.parametrize(
@@ -1514,6 +1742,7 @@ def test_imv_timing_analysis_rejects_unparseable_nonmissing_timestamps(
 def test_analysis_timestamp_preparation_rejects_malformed_required_timestamps(
     field_name: str,
     gas_positive: bool,
+    imv_source_provenance_path: Path,
 ) -> None:
     frame = _synthetic_imv_timing_frame()
     row_index = frame.index[0] if gas_positive else frame.index[-1]
@@ -1530,12 +1759,16 @@ def test_analysis_timestamp_preparation_rejects_malformed_required_timestamps(
         ValueError,
         match=rf"{field_name} contains nonmissing unparseable timestamps",
     ):
-        _run_analysis_timestamp_preparation(frame)
+        _run_analysis_timestamp_preparation(
+            frame, source_provenance_path=imv_source_provenance_path
+        )
 
     pd.testing.assert_frame_equal(frame, original)
 
 
-def test_analysis_timestamp_preparation_preserves_valid_values_and_missingness() -> None:
+def test_analysis_timestamp_preparation_preserves_valid_values_and_missingness(
+    imv_source_provenance_path: Path,
+) -> None:
     frame = _synthetic_imv_timing_frame()
     timestamp_columns = [*HELPERS["IMV_TIMING_TIMESTAMP_COLS"], "first_imv_time"]
     for column in timestamp_columns:
@@ -1554,9 +1787,13 @@ def test_analysis_timestamp_preparation_preserves_valid_values_and_missingness()
     frame["first_niv_time"] = pd.NaT
     original = frame.copy(deep=True)
 
-    prepared, contract = _run_analysis_timestamp_preparation(frame)
+    prepared, contract = _run_analysis_timestamp_preparation(
+        frame, source_provenance_path=imv_source_provenance_path
+    )
 
-    assert contract == validate_imv_timing_analysis_contract(frame)
+    assert contract == validate_imv_timing_analysis_contract(
+        frame, source_provenance=_synthetic_imv_source_provenance()
+    )
     assert contract["analytic_admissions"] == 9
     assert contract["gas_positive_admissions"] == 8
     assert contract["no_prior_observed_imv_admissions"] == 4
@@ -1573,11 +1810,14 @@ def test_analysis_timestamp_preparation_preserves_valid_values_and_missingness()
 )
 def test_analysis_timestamp_preparation_requires_timestamp_columns(
     field_name: str,
+    imv_source_provenance_path: Path,
 ) -> None:
     frame = _synthetic_imv_timing_frame().drop(columns=field_name)
 
     with pytest.raises(KeyError, match=field_name):
-        _run_analysis_timestamp_preparation(frame)
+        _run_analysis_timestamp_preparation(
+            frame, source_provenance_path=imv_source_provenance_path
+        )
 
 
 @pytest.mark.parametrize("invalid_hours", ["bad", np.inf, -np.inf])
@@ -1592,7 +1832,9 @@ def test_imv_timing_analysis_rejects_malformed_or_nonfinite_hours(
     frame.loc[no_observed_row, "hours_from_imv_to_qualifying_gas"] = invalid_hours
 
     with pytest.raises(ValueError, match="unparseable or nonfinite values"):
-        validate_imv_timing_analysis_contract(frame)
+        validate_imv_timing_analysis_contract(
+            frame, source_provenance=_synthetic_imv_source_provenance()
+        )
 
 
 def test_imv_timing_aggregate_export_privacy_rejects_identifier_columns() -> None:

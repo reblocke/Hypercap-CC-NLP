@@ -86,10 +86,14 @@ Among gas-positive admissions, `no_observed_imv`,
 form the no-prior-observed-IMV sensitivity cohort. This ordering is descriptive
 and cannot establish ventilator-induced or otherwise causal hypercapnia.
 The untimed-official-source evidence flag is asserted inside the cohort stage
-but is not exported. The analysis therefore accepts a cohort-provided
-`timing_indeterminate` value in the otherwise indistinguishable exported state
-with no robust timestamp, no legacy IMV evidence, and `first_observed_imv_source`
-equal to `missing`; all reconstructable timing states are checked exactly.
+and is absent from every workbook export. Its source-derived admission
+membership is retained separately in the required private
+`MIMICIV IMV source provenance.json` sidecar, with a source-projection fingerprint
+and payload digest. Analysis verifies that evidence before reconstructing the
+temporal stratum; a supplied `timing_indeterminate` label is not itself evidence.
+Both incorrect no-observed-to-indeterminate and indeterminate-to-no-observed
+relabeling are rejected. The sidecar does not add a twelfth workbook field and
+must remain restricted and excluded from public/submission/release artifacts.
 
 ## Public Output Boundary
 

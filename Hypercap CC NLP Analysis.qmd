@@ -23,7 +23,7 @@ This notebook is the single deterministic workflow for the merged analysis plus 
 ## Stage contract (pipeline-facing)
 
 - **Purpose:** Generate the analysis-stage outputs and manuscript-facing tables/figures from the canonical NLP workbook.
-- **Inputs:** `MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx` + `artifacts/qa/cohort/qa_summary.json`.
+- **Inputs:** `MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx`, the matching restricted `MIMIC tabular data/MIMICIV IMV source provenance.json`, and `artifacts/qa/cohort/qa_summary.json`.
 - **Canonical outputs:** generated PDFs, figures, tables, and analysis `.xlsx` artifacts under `Results/YYYY-MM-DD/`, plus QA artifacts under `artifacts/qa/analysis/`.
 - **Run-archived outputs:** `MIMIC tabular data/prior runs/YYYY-MM-DD analysis_run_manifest.json`.
 - **Key env vars:** `WORK_DIR`, `ANALYSIS_INPUT_FILENAME`, `RESULTS_DATE`.
@@ -91,6 +91,7 @@ import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
+from io import BytesIO
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any, Iterable
@@ -155,6 +156,28 @@ def ensure_required_columns(df: pd.DataFrame, required: list[str]) -> None:
     missing = sorted(set(required).difference(df.columns))
     if missing:
         raise KeyError(f"Missing required columns: {missing}")
+
+
+def read_excel_with_sha256(
+    path: Path, *, sheet_name: int | str = 0,
+) -> tuple[pd.DataFrame, str]:
+    """Parse and hash the same input bytes, before any analysis outputs are written."""
+
+    content = path.read_bytes()
+    return (
+        pd.read_excel(BytesIO(content), sheet_name=sheet_name, engine="openpyxl"),
+        hashlib.sha256(content).hexdigest(),
+    )
+
+
+def sha256_file(path: Path) -> str:
+    """Hash an emitted artifact without loading the whole file into memory."""
+
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 ```
 
 ### 2.2 Flag normalization and cohort-classification helpers
@@ -1553,6 +1576,132 @@ def _coerce_contract_numeric_for_analysis(
     return parsed.astype("float64")
 
 
+def imv_source_projection_sha256(frame: pd.DataFrame) -> str:
+    """Fingerprint the exact source projection shared by both private handoffs."""
+
+    missing = sorted(set(IMV_SOURCE_PROJECTION_COLUMNS).difference(frame.columns))
+    if missing:
+        raise KeyError(f"IMV source provenance requires columns: {missing}")
+    projection = frame.loc[:, IMV_SOURCE_PROJECTION_COLUMNS].copy()
+    for column in IMV_SOURCE_PROJECTION_COLUMNS[:4]:
+        values = pd.to_numeric(projection[column], errors="coerce")
+        invalid = values.isna() | ~np.isfinite(values) | values.ne(values.round())
+        invalid |= values.le(0) if column in {"subject_id", "hadm_id"} else ~values.isin([0, 1])
+        if bool(invalid.any()):
+            raise ValueError(
+                f"IMV source provenance has invalid {column}; "
+                f"violations={int(invalid.sum())}."
+            )
+        projection[column] = values.astype("int64")
+    if projection["hadm_id"].duplicated().any():
+        raise ValueError("IMV source provenance requires unique hadm_id membership.")
+    for column in IMV_SOURCE_PROJECTION_COLUMNS[4:]:
+        raw = projection[column]
+        parsed = pd.to_datetime(raw, errors="coerce", format="mixed")
+        invalid = raw.notna() & parsed.isna()
+        if bool(invalid.any()):
+            raise ValueError(
+                f"{column} contains nonmissing unparseable timestamps; "
+                f"violations={int(invalid.sum())}."
+            )
+        if not pd.api.types.is_datetime64_any_dtype(parsed.dtype) or parsed.dt.tz is not None:
+            raise ValueError(f"IMV source provenance requires timezone-naive {column}.")
+        projection[column] = pd.Series(
+            [None if pd.isna(value) else int(pd.Timestamp(value).value) for value in parsed],
+            index=frame.index,
+            dtype="object",
+        )
+    projection = projection.sort_values(["hadm_id", "subject_id"])
+    payload = {
+        "columns": list(IMV_SOURCE_PROJECTION_COLUMNS),
+        "rows": [list(row) for row in projection.itertuples(index=False, name=None)],
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def validate_imv_source_provenance(
+    frame: pd.DataFrame, payload: dict[str, Any],
+) -> pd.Series:
+    """Verify restricted source proof and return its untimed-evidence membership."""
+
+    required_keys = {
+        "schema_version", "admission_count", "source_projection_columns",
+        "source_projection_sha256", "untimed_evidence_admissions", "payload_sha256",
+    }
+    if not isinstance(payload, dict) or set(payload) != required_keys:
+        raise ValueError("IMV source provenance has missing or unsupported fields.")
+    if type(payload["schema_version"]) is not int or payload["schema_version"] != IMV_SOURCE_PROVENANCE_SCHEMA_VERSION:
+        raise ValueError("IMV source provenance has an unsupported schema version.")
+    if type(payload["admission_count"]) is not int or payload["admission_count"] != len(frame):
+        raise ValueError("IMV source provenance admission count does not match the handoff.")
+    if payload["source_projection_columns"] != list(IMV_SOURCE_PROJECTION_COLUMNS):
+        raise ValueError("IMV source provenance has an unsupported source projection.")
+    for field in ("source_projection_sha256", "payload_sha256"):
+        if not isinstance(payload[field], str) or re.fullmatch(r"[0-9a-f]{64}", payload[field]) is None:
+            raise ValueError(f"IMV source provenance has an invalid {field}.")
+    content = {key: value for key, value in payload.items() if key != "payload_sha256"}
+    encoded = json.dumps(content, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    if hashlib.sha256(encoded.encode("utf-8")).hexdigest() != payload["payload_sha256"]:
+        raise ValueError("IMV source provenance payload digest does not match its captured content.")
+    if imv_source_projection_sha256(frame) != payload["source_projection_sha256"]:
+        raise ValueError("IMV source provenance fingerprint does not match the handoff source fields.")
+
+    members = payload["untimed_evidence_admissions"]
+    if not isinstance(members, list):
+        raise ValueError("IMV source provenance untimed membership must be a list.")
+    for member in members:
+        if not isinstance(member, dict) or set(member) != {"subject_id", "hadm_id"}:
+            raise ValueError("IMV source provenance has malformed untimed membership.")
+        if any(type(value) is not int or value <= 0 for value in member.values()):
+            raise ValueError("IMV source provenance requires positive integer membership identifiers.")
+    if members != sorted(members, key=lambda row: (row["hadm_id"], row["subject_id"])):
+        raise ValueError("IMV source provenance untimed membership is not in canonical order.")
+    if len({member["hadm_id"] for member in members}) != len(members):
+        raise ValueError("IMV source provenance contains duplicate untimed admission membership.")
+    expected_membership = dict(zip(
+        pd.to_numeric(frame["hadm_id"]).astype("int64"),
+        pd.to_numeric(frame["subject_id"]).astype("int64"),
+        strict=True,
+    ))
+    if any(expected_membership.get(member["hadm_id"]) != member["subject_id"] for member in members):
+        raise ValueError("IMV source provenance untimed membership does not match handoff identifiers.")
+    untimed_mask = pd.to_numeric(frame["hadm_id"]).isin(
+        {member["hadm_id"] for member in members}
+    )
+    if bool((untimed_mask & frame.loc[:, IMV_SOURCE_PROJECTION_COLUMNS[5:8]].notna().any(axis=1)).any()):
+        raise ValueError("Untimed IMV source provenance contradicts a reliable source timestamp.")
+    return untimed_mask
+
+
+def load_imv_source_provenance(
+    source_path: Path, *, source_frame: pd.DataFrame,
+) -> tuple[dict[str, Any], str]:
+    """Load required private proof and validate it against the unmodified input."""
+
+    if not source_path.is_file():
+        raise FileNotFoundError(
+            "Required private IMV source provenance sidecar is missing. Regenerate "
+            "the cohort and transfer its matching sidecar with the handoff workbook."
+        )
+
+    def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("IMV source provenance JSON contains duplicate fields.")
+            result[key] = value
+        return result
+
+    content = source_path.read_bytes()
+    try:
+        payload = json.loads(content, object_pairs_hook=unique_object)
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise ValueError("IMV source provenance sidecar is not valid JSON.") from exc
+    validate_imv_source_provenance(source_frame, payload)
+    return payload, hashlib.sha256(content).hexdigest()
+
+
 def _select_first_observed_imv_for_analysis(
     *,
     first_intubation_procedure_time: pd.Timestamp | None,
@@ -1619,7 +1768,9 @@ def _legacy_imv_timing_discordant_for_analysis(
     return int(_strict_relation(robust_time) != _strict_relation(legacy_time))
 
 
-def validate_imv_timing_analysis_contract(df: pd.DataFrame) -> dict[str, int]:
+def validate_imv_timing_analysis_contract(
+    df: pd.DataFrame, *, source_provenance: dict[str, Any],
+) -> dict[str, int]:
     """Reconstruct and fail closed on drift in cohort-provided IMV timing fields."""
 
     ensure_required_columns(
@@ -1724,6 +1875,7 @@ def validate_imv_timing_analysis_contract(df: pd.DataFrame) -> dict[str, int]:
         df["first_imv_time"],
         field_name="first_imv_time",
     )
+    untimed_source_evidence = validate_imv_source_provenance(df, source_provenance)
     legacy_imv = to_binary_flag(df["imv_flag"]).eq(1)
     expected_timing_order = pd.Series(
         "not_applicable_no_qualifying_gas",
@@ -1732,13 +1884,15 @@ def validate_imv_timing_analysis_contract(df: pd.DataFrame) -> dict[str, int]:
     )
     expected_timing_order.loc[gas_positive & qualifying_time.isna()] = "timing_indeterminate"
     expected_timing_order.loc[
-        gas_positive & qualifying_time.notna() & ~expected_robust_imv & legacy_imv
+        gas_positive & qualifying_time.notna() & ~expected_robust_imv
+        & (legacy_imv | untimed_source_evidence)
     ] = "timing_indeterminate"
     no_timestamp_or_legacy_evidence = (
         gas_positive
         & qualifying_time.notna()
         & ~expected_robust_imv
         & ~legacy_imv
+        & ~untimed_source_evidence
     )
     expected_timing_order.loc[no_timestamp_or_legacy_evidence] = "no_observed_imv"
     expected_timing_order.loc[
@@ -1759,20 +1913,9 @@ def validate_imv_timing_analysis_contract(df: pd.DataFrame) -> dict[str, int]:
         & expected_robust_imv
         & expected_first_time.eq(qualifying_time)
     ] = "timing_indeterminate"
-    # The cohort retains an internal, non-exported flag for an official source
-    # record whose timestamp is unusable. Such rows are intentionally
-    # indeterminate, but their eleven-field handoff representation is otherwise
-    # indistinguishable from a row with no observed IMV. Validate every
-    # reconstructable state exactly and accept either fail-closed classification
-    # only for this irreducibly ambiguous exported state.
-    permitted_untimed_source_indeterminate = (
-        no_timestamp_or_legacy_evidence
-        & timing_order.eq("timing_indeterminate")
-    )
-    timing_mismatch = (
-        timing_order.ne(expected_timing_order).fillna(True)
-        & ~permitted_untimed_source_indeterminate
-    )
+    # The required cohort sidecar supplies otherwise-unexported source evidence;
+    # a supplied timing label is never evidence for its own correctness.
+    timing_mismatch = timing_order.ne(expected_timing_order).fillna(True)
     if bool(timing_mismatch.any()):
         mismatch_counts = (
             pd.DataFrame(
@@ -1789,21 +1932,14 @@ def validate_imv_timing_analysis_contract(df: pd.DataFrame) -> dict[str, int]:
             f"{mismatch_counts}"
         )
 
-    # The hidden untimed-source flag determines which of the two accepted
-    # classifications applies. Once the exported order is accepted, its
-    # dependent nullable flags must still agree with that classification.
-    effective_expected_order = expected_timing_order.copy()
-    effective_expected_order.loc[permitted_untimed_source_indeterminate] = (
-        "timing_indeterminate"
-    )
     expected_preceded = pd.Series(pd.NA, index=df.index, dtype="boolean")
     expected_preceded.loc[
-        effective_expected_order.isin(
+        expected_timing_order.isin(
             {"no_observed_imv", "qualifying_gas_before_imv"}
         )
     ] = False
     expected_preceded.loc[
-        effective_expected_order.eq("imv_before_qualifying_gas")
+        expected_timing_order.eq("imv_before_qualifying_gas")
     ] = True
     observed_preceded = coerce_nullable_boolean(
         df["imv_preceded_qualifying_gas"],
@@ -1816,12 +1952,12 @@ def validate_imv_timing_analysis_contract(df: pd.DataFrame) -> dict[str, int]:
 
     expected_no_prior = pd.Series(pd.NA, index=df.index, dtype="boolean")
     expected_no_prior.loc[
-        effective_expected_order.isin(
+        expected_timing_order.isin(
             {"no_observed_imv", "qualifying_gas_before_imv"}
         )
     ] = True
     expected_no_prior.loc[
-        effective_expected_order.eq("imv_before_qualifying_gas")
+        expected_timing_order.eq("imv_before_qualifying_gas")
     ] = False
     observed_no_prior = coerce_nullable_boolean(
         df["no_prior_observed_imv"], field_name="no_prior_observed_imv"
@@ -3112,6 +3248,22 @@ IMV_TIMING_TIMESTAMP_COLS = (
     "first_intubation_procedure_time",
     "first_invasive_ventilation_procedure_time",
     "first_observed_imv_time",
+)
+IMV_SOURCE_PROVENANCE_FILENAME = "MIMICIV IMV source provenance.json"
+IMV_SOURCE_PROVENANCE_SCHEMA_VERSION = 1
+IMV_SOURCE_PROJECTION_COLUMNS = (
+    "subject_id",
+    "hadm_id",
+    "pco2_threshold_any",
+    "imv_flag",
+    "qualifying_pco2_time",
+    "first_derived_imv_starttime",
+    "first_intubation_procedure_time",
+    "first_invasive_ventilation_procedure_time",
+    "first_imv_time",
+)
+IMV_SOURCE_PROVENANCE_PATH = (
+    WORK_DIR / "MIMIC tabular data" / IMV_SOURCE_PROVENANCE_FILENAME
 )
 IMV_TIMING_FORBIDDEN_EXPORT_COLUMNS = frozenset(
     {
@@ -7100,7 +7252,7 @@ HYPERCAP_CRITERIA = [
 RFV_PRIMARY_COL_SENSITIVITY = "RFV1_name"
 FIRST_ADMISSION_SIMILARITY_THRESHOLD_PP = 2.0
 
-input_df = pd.read_excel(ANALYSIS_INPUT_PATH, engine="openpyxl")
+input_df, analysis_input_sha256 = read_excel_with_sha256(ANALYSIS_INPUT_PATH)
 analytic_df = input_df.copy()
 rfv_name_cols = get_rfv_name_cols(analytic_df)
 required_analysis_cols = sorted(
@@ -7192,6 +7344,9 @@ else:
 
 analytic_df["ed_anchor_time"] = maybe_datetime(analytic_df, ["ed_intime", "ed_intime_first", "admittime"])
 analytic_df["first_niv_time"] = maybe_datetime(analytic_df, ["first_niv_time"])
+imv_source_provenance, imv_source_provenance_sha256 = load_imv_source_provenance(
+    IMV_SOURCE_PROVENANCE_PATH, source_frame=input_df
+)
 # Validate required timestamp cells before any conversion can disguise malformed
 # nonmissing values as genuine missingness, including the gas and legacy anchors.
 for column in (*IMV_TIMING_TIMESTAMP_COLS, "first_imv_time"):
@@ -7200,7 +7355,9 @@ for column in (*IMV_TIMING_TIMESTAMP_COLS, "first_imv_time"):
     )
 for column in ("first_observed_imv_source", "imv_qualifying_gas_order"):
     analytic_df[column] = analytic_df[column].astype("string").str.strip()
-imv_timing_contract = validate_imv_timing_analysis_contract(analytic_df)
+imv_timing_contract = validate_imv_timing_analysis_contract(
+    analytic_df, source_provenance=imv_source_provenance
+)
 analytic_df["qualifying_pco2_mmhg"] = maybe_numeric(
     analytic_df,
     ["qualifying_pco2_mmhg", "first_pco2", "max_pco2_0_24h"],
@@ -12009,6 +12166,7 @@ for output_path in expected_outputs:
             "path": display_path(output_path),
             "exists": output_path.exists(),
             "size_bytes": output_path.stat().st_size if output_path.exists() else 0,
+            "sha256": sha256_file(output_path) if output_path.is_file() else None,
         }
     )
 
@@ -12395,7 +12553,11 @@ def _manifest_relpath(path_value: object) -> str | None:
 
 
 analysis_manifest["stage"] = "analysis"
+analysis_manifest["results_date"] = RESULTS_DATE
 analysis_manifest["analysis_input_path"] = _manifest_relpath(ANALYSIS_INPUT_PATH)
+analysis_manifest["analysis_input_sha256"] = analysis_input_sha256
+analysis_manifest["imv_source_provenance_path"] = _manifest_relpath(IMV_SOURCE_PROVENANCE_PATH)
+analysis_manifest["imv_source_provenance_sha256"] = imv_source_provenance_sha256
 analysis_manifest["outputs"] = {
     "registered_excel_exports": analysis_export_registry,
     "upset_output_path": _manifest_relpath(upset_output_path),
@@ -12410,7 +12572,7 @@ analysis_manifest["outputs"] = {
 analysis_manifest["output_verification"] = verification_rows
 analysis_manifest["analysis_qc_checks"] = analysis_qc_rows
 analysis_manifest = sanitize_manifest_payload(analysis_manifest, work_dir=WORK_DIR)
-analysis_manifest_path = prior_runs_dir / f"{run_date} analysis_run_manifest.json"
+analysis_manifest_path = prior_runs_dir / f"{RESULTS_DATE} analysis_run_manifest.json"
 analysis_manifest_path.write_text(json.dumps(analysis_manifest, indent=2))
 note_export(analysis_manifest_path)
 ```

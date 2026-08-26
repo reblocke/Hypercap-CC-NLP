@@ -25,10 +25,10 @@ Stage ownership is fixed to those notebooks. `make quarto-reyan-figures` remains
 
 | Stage | Private inputs | Local outputs |
 |---|---|---|
-| `MIMICIV_hypercap_EXT_cohort.qmd` | BigQuery-backed MIMIC-IV HOSP/ICU/ED data, the official derived `ventilation` concept, and local `.env` settings | `MIMIC tabular data/MIMICIV all with CC.xlsx`; dated manifests/audits under `MIMIC tabular data/prior runs/`; QA payloads under `artifacts/qa/cohort/` |
+| `MIMICIV_hypercap_EXT_cohort.qmd` | BigQuery-backed MIMIC-IV HOSP/ICU/ED data, the official derived `ventilation` concept, and local `.env` settings | `MIMIC tabular data/MIMICIV all with CC.xlsx` and required private `MIMICIV IMV source provenance.json`; dated manifests/audits under `MIMIC tabular data/prior runs/`; QA payloads under `artifacts/qa/cohort/` |
 | `Hypercap CC NLP Classifier.qmd` | `MIMIC tabular data/MIMICIV all with CC.xlsx` unless overridden by `CLASSIFIER_INPUT_FILENAME`; optional private annotation workbook when `CLASSIFIER_ANNOTATION_BENCHMARK_MODE` is `auto` or `required` | `MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx`; optional direct annotation benchmark workbooks/sidecars under `MIMIC tabular data/`; dated manifests/audits under `MIMIC tabular data/prior runs/` |
 | `Rater Agreement Analysis.qmd` | Canonical NLP workbook plus private annotation workbook (`RATER_ANNOTATION_PATH` when overridden); optional direct annotation NLP benchmark workbook and candidate sidecars | Agreement audits, direct-vs-cohort benchmark diagnostics, and summaries under `artifacts/qa/rater_agreement/` |
-| `Hypercap CC NLP Analysis.qmd` | `MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx` unless overridden by `ANALYSIS_INPUT_FILENAME` | Figures, tables, PDFs, submission bundle, and analysis exports under `Results/YYYY-MM-DD/`; QA checks under `artifacts/qa/analysis/` |
+| `Hypercap CC NLP Analysis.qmd` | `MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx` unless overridden by `ANALYSIS_INPUT_FILENAME`, plus its matching required private `MIMICIV IMV source provenance.json` | Figures, tables, PDFs, submission bundle, and analysis exports under `Results/YYYY-MM-DD/`; QA checks under `artifacts/qa/analysis/` |
 | `Chart Review Sample Calc.qmd` | Local R package environment plus notebook inputs | `Results/YYYY-MM-DD/Chart Review Sample Calc.html` and `Results/YYYY-MM-DD/Chart Review Sample Calc_files/` |
 
 Pipeline order is `cohort -> classifier -> rater -> analysis`. The analysis stage's statistical estimates come from the canonical NLP workbook. The committed `analysis_manifest.yml` freezes definition-only manuscript rules including the admission-level unit of analysis, RFV taxonomy, gas thresholds, timing windows, pH/HCO3 bands, and sensitivity definitions. The clean submission bundle copies selected publication-facing assets into `Results/YYYY-MM-DD/submission_assets/` and writes `submission_assets_manifest.csv`. Direct analysis-stage renders must not fail solely because optional upstream supplement workbooks are absent; missing optional upstream assets are recorded under `artifacts/qa/analysis/submission_asset_optional_missing.csv`.
@@ -49,6 +49,7 @@ Generated outputs are local/private by default:
 - cohort-stage IMV timing QA: `artifacts/qa/cohort/imv_qualifying_gas_timing_audit.csv`
 - QA/debug/manifests: `artifacts/qa/cohort/`, `artifacts/qa/rater_agreement/`, `artifacts/qa/analysis/`, `artifacts/qa/baselines/`, and `debug/...`
 - private handoff workbooks: `MIMIC tabular data/MIMICIV all with CC.xlsx` and `MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx`
+- required private IMV source-evidence sidecar: `MIMIC tabular data/MIMICIV IMV source provenance.json` and a dated copy under `prior runs/`; never a submission asset
 - optional private direct annotation benchmark outputs: `MIMIC tabular data/annotation_benchmark_with_NLP.xlsx`, `annotation_visit_candidate_scores.csv`, and `annotation_segment_candidate_scores.csv`
 - rater supplement validation outputs include direct-benchmark denominator notes, per-category support/precision/recall/F1, bootstrap confidence intervals, canonical/grouped confusion matrices, and redacted disagreement examples; encounter identifiers remain excluded from supplement-facing disagreement sheets
 
@@ -82,7 +83,7 @@ These environment variables change the contract-relevant execution surface:
 
 | Variable | Contract effect |
 |---|---|
-| `RESULTS_DATE` | Selects the dated output folder under `Results/YYYY-MM-DD/` |
+| `RESULTS_DATE` | Selects the dated output folder under `Results/YYYY-MM-DD/` and the cohort/classifier/analysis producer-manifest filenames; `generated_utc` retains actual execution time |
 | `RESULTS_DIR` | Overrides the concrete results path; defaults to `Results/<date>` |
 | `CLASSIFIER_INPUT_FILENAME` | Overrides the classifier's cohort-workbook handoff input |
 | `CLASSIFIER_ANNOTATION_BENCHMARK_MODE` | Controls direct annotation scoring: `auto` skips when absent, `required` fails when absent, and `off` disables it |
@@ -197,17 +198,34 @@ The cohort keeps its untimed-official-source evidence flag only in memory and
 asserts it before export. Every optional row-level archive export must pass
 through the same nonmutating sanitizer that drops this internal field and
 asserts its absence; no archive path may write the in-memory frame directly.
-Because that flag is deliberately absent from the eleven-field private handoff,
-the analysis-stage validator accepts either
-`no_observed_imv` or the cohort's fail-closed `timing_indeterminate` value only
-when the exported row has no robust timestamp, no legacy IMV evidence, a
-`missing` source, and a nonmissing qualifying-gas time. Every timing state that
-is reconstructable from the handoff is revalidated exactly. The analysis stage
-must first recompute robust presence, the exact minimum timestamp and its
-source/tie label, signed hours, strict temporal order, nullable indicators, and
-legacy discordance from the three component timestamps plus the qualifying-gas
-and legacy fields. Supplied derived values must never be used as their own
-validation reference.
+The eleven workbook fields remain unchanged. To preserve independently
+checkable untimed-source evidence, the cohort also writes the required private
+`MIMIC tabular data/MIMICIV IMV source provenance.json` sidecar and a dated copy
+under `prior runs/`. The sidecar is restricted admission-level data, not an
+aggregate QA or submission artifact. It must never enter `Results/`,
+`submission_assets/`, release assets, or git.
+
+The sidecar records source-derived untimed-evidence membership before the
+internal flag is dropped, never membership inferred from the supplied temporal
+stratum. Its schema, admission count, member uniqueness, payload digest, and
+deterministic source-projection fingerprint are validated at the analysis
+boundary. The common projection comprises `subject_id`, `hadm_id`,
+`pco2_threshold_any`, `imv_flag`, `qualifying_pco2_time`, the three robust source
+timestamps, and `first_imv_time`; it is unchanged by classification. A missing,
+malformed, stale, or mismatched sidecar fails closed, as does untimed membership
+contradicting reliable source timestamps. The cohort and analysis manifests
+record the sidecar path and SHA-256. Digests establish transfer integrity, not
+independent source authenticity; approved private-transfer provenance remains
+required.
+
+The analysis stage must recompute robust presence, the exact minimum timestamp
+and its source/tie label, signed hours, strict temporal order, nullable
+indicators, and legacy discordance from the component timestamps, qualifying-gas
+and legacy fields, and verified untimed membership. With otherwise absent IMV
+evidence, `timing_indeterminate` is required exactly for admissions with verified
+untimed-source evidence; it is not a discretionary alternative to
+`no_observed_imv`. Both directions of incorrect relabeling must be rejected.
+Supplied derived values must never be used as their own validation reference.
 
 The production load/preparation path must parse the six required gas/IMV
 timestamp columns directly with the strict parser before permissive coercion or
@@ -244,12 +262,37 @@ standalone validator.
 ### Existing-output parity control
 
 `scripts/imv_ticket_parity.py` provides a private semantic safeguard for the
-ticket. `capture` requires an explicit baseline ID/path and results date and
-stores the pre-ticket private handoffs plus the 14 enumerated existing result
-workbooks under that ignored baseline. Before comparing current outputs,
+ticket. `capture` requires an explicit baseline ID/path, results date, and
+resolvable source commit. It creates a fresh requested target and stores the
+private handoffs plus the 14 enumerated existing result workbooks under that
+ignored baseline, without overwriting an existing capture.
+
+New schema-v2 captures require clean, date-matched cohort, classifier, and
+analysis producer manifests naming that exact resolved source commit. The
+three producer manifests record `results_date` and use that configured date in
+their filenames, including for backdated or frozen-date runs; their
+`generated_utc` values still record actual execution times. The
+classifier records the SHA-256 of the exact cohort bytes parsed; analysis
+records the SHA-256 of the exact classified bytes parsed and of every registered
+result workbook. Capture checks the full producer/input/output hash chain,
+stage order, and all 14 workbook hashes before accepting the baseline. It saves
+copies of the producer manifests and byte hashes for all 16 captured artifacts.
+The current checkout may differ from the producing commit; an unchecked
+`--source-commit` label or checkout identity alone is not provenance. A render
+predating these sealed producer manifests cannot create a new schema-v2
+capture: preserve an existing capture instead of relabeling old outputs or
+manufacturing provenance retrospectively.
+
+Existing schema-v1 captures remain read-only and are explicitly reported as
+`legacy_unverified` for producer provenance. Their recorded integrity and
+semantic comparisons remain mandatory; this compatibility does not upgrade
+their historical provenance. Never recapture a baseline after a parity failure.
+
+Before comparing current outputs,
 `compare` must validate the captured copies against the schema-versioned
 manifest: exact handoff row counts and semantic hashes, the exact workbook
-inventory, and every stored per-sheet signature. A missing, altered,
+inventory, every stored per-sheet signature, and schema-v2 byte hashes and
+producer manifests. A missing, altered,
 incomplete, or unsupported baseline fails closed and current-output comparison
 is skipped. Once baseline integrity passes, `compare` checks admission
 membership, RFV1-RFV5 codes and labels, and all substantive workbook cells
@@ -283,10 +326,12 @@ estimand, replace the denominator/privacy checks, or establish causal validity.
 
 The cohort-extraction machine must have credentialed access to HOSP, ICU, ED,
 and the official derived dataset. If later stages run elsewhere, the current
-private handoff must move through an approved restricted-data channel; git sync
-does not transfer ignored workbooks. The receiving machine can run downstream
-stages from that handoff, but the run is not an end-to-end render on one machine
-and must retain the handoff checksum in its provenance.
+private handoff, required IMV source-provenance sidecar, and producing manifests
+must move together through an approved restricted-data channel; git sync does
+not transfer these ignored files. Verify source/destination SHA-256 equality.
+The receiving machine can run downstream stages from these inputs, but the run
+is not an end-to-end render on one machine and must retain both input checksums
+and their producing-stage provenance.
 
 ## Stage-Owned Invariants
 
@@ -339,6 +384,9 @@ A valid private pipeline run satisfies all of the following:
 - private handoff workbooks exist at `MIMIC tabular data/MIMICIV all with CC.xlsx` and `MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx`
 - both private handoffs contain all eleven IMV timing fields, and every
   gas-positive admission has exactly one of the four temporal strata
+- the required private IMV source-provenance sidecar passes schema, membership,
+  fingerprint, and digest validation; synthetic nonzero untimed-source cases
+  reject incorrect relabeling in both directions
 - the IMV timing QA audit, sensitivity workbook, Figure S10 source/display
   files, and prespecified summary exist and contain aggregate data only
 - the explicit IMV-ticket parity comparison passes for cohort membership,

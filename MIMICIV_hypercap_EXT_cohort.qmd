@@ -372,6 +372,118 @@ IMV_QUALIFYING_GAS_ORDER_VALUES = frozenset(
 IMV_SOURCE_RECORD_NO_TIME_COLUMN = (
     "_imv_source_record_evidence_without_reliable_timestamp"
 )
+IMV_SOURCE_PROVENANCE_FILENAME = "MIMICIV IMV source provenance.json"
+IMV_SOURCE_PROVENANCE_SCHEMA_VERSION = 1
+IMV_SOURCE_PROJECTION_COLUMNS = (
+    "subject_id",
+    "hadm_id",
+    "pco2_threshold_any",
+    "imv_flag",
+    "qualifying_pco2_time",
+    "first_derived_imv_starttime",
+    "first_intubation_procedure_time",
+    "first_invasive_ventilation_procedure_time",
+    "first_imv_time",
+)
+
+
+def imv_source_projection_sha256(frame: pd.DataFrame) -> str:
+    """Fingerprint the exact source projection shared by both private handoffs."""
+
+    missing = sorted(set(IMV_SOURCE_PROJECTION_COLUMNS).difference(frame.columns))
+    if missing:
+        raise KeyError(f"IMV source provenance requires columns: {missing}")
+    projection = frame.loc[:, IMV_SOURCE_PROJECTION_COLUMNS].copy()
+    for column in IMV_SOURCE_PROJECTION_COLUMNS[:4]:
+        values = pd.to_numeric(projection[column], errors="coerce")
+        invalid = values.isna() | ~np.isfinite(values) | values.ne(values.round())
+        invalid |= values.le(0) if column in {"subject_id", "hadm_id"} else ~values.isin([0, 1])
+        if bool(invalid.any()):
+            raise ValueError(
+                f"IMV source provenance has invalid {column}; "
+                f"violations={int(invalid.sum())}."
+            )
+        projection[column] = values.astype("int64")
+    if projection["hadm_id"].duplicated().any():
+        raise ValueError("IMV source provenance requires unique hadm_id membership.")
+    for column in IMV_SOURCE_PROJECTION_COLUMNS[4:]:
+        raw = projection[column]
+        parsed = pd.to_datetime(raw, errors="coerce", format="mixed")
+        invalid = raw.notna() & parsed.isna()
+        if bool(invalid.any()):
+            raise ValueError(
+                f"{column} contains nonmissing unparseable timestamps; "
+                f"violations={int(invalid.sum())}."
+            )
+        if not pd.api.types.is_datetime64_any_dtype(parsed.dtype) or parsed.dt.tz is not None:
+            raise ValueError(f"IMV source provenance requires timezone-naive {column}.")
+        projection[column] = pd.Series(
+            [None if pd.isna(value) else int(pd.Timestamp(value).value) for value in parsed],
+            index=frame.index,
+            dtype="object",
+        )
+    projection = projection.sort_values(["hadm_id", "subject_id"])
+    payload = {
+        "columns": list(IMV_SOURCE_PROJECTION_COLUMNS),
+        "rows": [list(row) for row in projection.itertuples(index=False, name=None)],
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def build_imv_source_provenance(frame: pd.DataFrame) -> dict[str, Any]:
+    """Capture restricted untimed evidence from the internal source flag, never the stratum."""
+
+    projection_sha256 = imv_source_projection_sha256(frame)
+    if IMV_SOURCE_RECORD_NO_TIME_COLUMN not in frame.columns:
+        raise KeyError("IMV source provenance requires the in-memory source-evidence flag.")
+    evidence = pd.to_numeric(frame[IMV_SOURCE_RECORD_NO_TIME_COLUMN], errors="coerce")
+    if not bool(evidence.isin([0, 1]).all()):
+        raise ValueError("IMV source provenance requires a nonmissing binary source-evidence flag.")
+    robust_columns = IMV_SOURCE_PROJECTION_COLUMNS[5:8]
+    if bool((evidence.eq(1) & frame.loc[:, robust_columns].notna().any(axis=1)).any()):
+        raise ValueError("Untimed IMV source evidence contradicts a reliable source timestamp.")
+    members = sorted(
+        [
+            {"subject_id": int(subject_id), "hadm_id": int(hadm_id)}
+            for subject_id, hadm_id in frame.loc[
+                evidence.eq(1), ["subject_id", "hadm_id"]
+            ].itertuples(index=False, name=None)
+        ],
+        key=lambda row: (row["hadm_id"], row["subject_id"]),
+    )
+    payload = {
+        "schema_version": IMV_SOURCE_PROVENANCE_SCHEMA_VERSION,
+        "admission_count": int(len(frame)),
+        "source_projection_columns": list(IMV_SOURCE_PROJECTION_COLUMNS),
+        "source_projection_sha256": projection_sha256,
+        "untimed_evidence_admissions": members,
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    payload["payload_sha256"] = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+    return payload
+
+
+def write_imv_source_provenance(payload: dict[str, Any], target_path: Path) -> None:
+    """Atomically write a private owner-only sidecar; it is not a result export."""
+
+    import tempfile
+
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=target_path.parent,
+            prefix=f".{target_path.name}.", suffix=".tmp", delete=False,
+        ) as handle:
+            temporary_path = Path(handle.name)
+            json.dump(payload, handle, indent=2, allow_nan=False)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, target_path)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
 
 
 def prepare_archive_export_frame(
@@ -14196,6 +14308,9 @@ vitals_and_gas_qc_only_columns = [
     "first_lactate_model",
     "first_lactate_outlier_flag",
 ]
+# Capture source evidence before the internal field is removed. This sidecar is
+# restricted input provenance, not an additional workbook field or result asset.
+imv_source_provenance = build_imv_source_provenance(final_cc)
 cohort_export_drop_columns = [
     IMV_SOURCE_RECORD_NO_TIME_COLUMN,
     "enrolled_any",
@@ -14260,9 +14375,15 @@ if cohort_export_drop_existing:
         "Dropped export-only QA/redundant columns:",
         ", ".join(cohort_export_drop_existing),
     )
+if IMV_SOURCE_RECORD_NO_TIME_COLUMN in final_cc.columns:
+    raise AssertionError("Canonical cohort export retains internal IMV source evidence.")
 
 dated_out_path = PRIOR_RUNS_DIR / f"{out_date} MIMICIV all with CC.xlsx"
 canonical_out_path = DATA_DIR / "MIMICIV all with CC.xlsx"
+imv_source_provenance_path = DATA_DIR / IMV_SOURCE_PROVENANCE_FILENAME
+dated_imv_source_provenance_path = (
+    PRIOR_RUNS_DIR / f"{out_date} {IMV_SOURCE_PROVENANCE_FILENAME}"
+)
 
 # Write via temporary files then atomically replace targets to avoid zero-byte outputs on interruption.
 def _atomic_write_excel(df_obj, target_path: Path) -> None:
@@ -14294,6 +14415,16 @@ _atomic_write_excel(final_cc, dated_out_path)
 _atomic_write_excel(final_cc, canonical_out_path)
 canonical_sha256 = _sha256_file(canonical_out_path)
 dated_sha256 = _sha256_file(dated_out_path)
+# Verify the persisted representation too: no Excel timestamp precision loss or
+# export transformation may silently invalidate the cohort-produced source proof.
+exported_imv_source_projection = pd.read_excel(
+    canonical_out_path, usecols=list(IMV_SOURCE_PROJECTION_COLUMNS), engine="openpyxl"
+)
+if imv_source_projection_sha256(exported_imv_source_projection) != imv_source_provenance["source_projection_sha256"]:
+    raise AssertionError("Canonical cohort export changed the IMV source projection.")
+write_imv_source_provenance(imv_source_provenance, dated_imv_source_provenance_path)
+write_imv_source_provenance(imv_source_provenance, imv_source_provenance_path)
+imv_source_provenance_sha256 = _sha256_file(imv_source_provenance_path)
 print(
     "EXPORT_SHAPE cohort",
     f"rows={len(final_cc):,}",
@@ -14306,11 +14437,17 @@ cohort_manifest = collect_run_manifest(
     run_id=f"cohort_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
 )
 cohort_manifest["stage"] = "cohort"
+manifest_results_date = os.getenv("RESULTS_DATE", out_date).strip() or out_date
+cohort_manifest["results_date"] = manifest_results_date
 cohort_manifest["outputs"] = {
     "canonical_output_path": _manifest_relpath(canonical_out_path),
     "canonical_output_sha256": canonical_sha256,
     "dated_output_path": _manifest_relpath(dated_out_path),
     "dated_output_sha256": dated_sha256,
+    "imv_source_provenance_path": _manifest_relpath(imv_source_provenance_path),
+    "imv_source_provenance_sha256": imv_source_provenance_sha256,
+    "dated_imv_source_provenance_path": _manifest_relpath(dated_imv_source_provenance_path),
+    "dated_imv_source_provenance_sha256": _sha256_file(dated_imv_source_provenance_path),
     "gas_source_audit_path": _manifest_relpath(gas_source_audit_path) if "gas_source_audit_path" in globals() else None,
     "gas_source_overlap_summary_path": _manifest_relpath(gas_overlap_summary_path) if "gas_overlap_summary_path" in globals() else None,
     "pco2_source_distribution_audit_path": _manifest_relpath(pco2_source_distribution_audit_path)
@@ -14379,11 +14516,12 @@ cohort_manifest["ed_only_exclusion_audit"] = {
     else [],
 }
 cohort_manifest = sanitize_manifest_payload(cohort_manifest, work_dir=WORK_DIR)
-cohort_manifest_path = PRIOR_RUNS_DIR / f"{out_date} cohort_run_manifest.json"
+cohort_manifest_path = PRIOR_RUNS_DIR / f"{manifest_results_date} cohort_run_manifest.json"
 cohort_manifest_path.write_text(json.dumps(cohort_manifest, indent=2))
 
 print("Saved:", dated_out_path)
 print("Saved:", canonical_out_path)
+print("Saved restricted IMV source provenance:", imv_source_provenance_path)
 print("Wrote:", cohort_manifest_path)
 print("Base rows:", len(df_cc), "| Added from ED-stay:", len(add_ed_cols))
 print("Total columns:", len(final_cc.columns))
