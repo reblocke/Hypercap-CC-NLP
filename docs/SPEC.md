@@ -209,6 +209,14 @@ legacy discordance from the three component timestamps plus the qualifying-gas
 and legacy fields. Supplied derived values must never be used as their own
 validation reference.
 
+The production load/preparation path must parse the six required gas/IMV
+timestamp columns directly with the strict parser before permissive coercion or
+fallback can turn a malformed nonmissing cell into `NaT`. This includes
+`qualifying_pco2_time` and legacy `first_imv_time`, not only the four robust
+source/anchor fields. Genuine missing values remain missing. Regression tests
+must exercise the actual notebook preparation statements as well as the
+standalone validator.
+
 ### Aggregate QA and manuscript outputs
 
 - `artifacts/qa/cohort/imv_qualifying_gas_timing_audit.csv` contains aggregate

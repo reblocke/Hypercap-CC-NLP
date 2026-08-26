@@ -1,5 +1,31 @@
 # Decisions
 
+## 2026-08-25 - Raw IMV timestamps are validated before preparation
+
+Status: accepted
+
+Context:
+- The strict IMV validator rejected malformed timestamps in isolation, but the
+  production load path first used permissive datetime coercion. Invalid cells
+  could become `NaT` and pass as genuine missingness.
+
+Decision:
+- Parse the six required gas/IMV timestamp columns with the notebook-local
+  strict parser before validating their source-derived relationships.
+- Require the legacy `first_imv_time` column at the initial schema boundary;
+  do not manufacture or replace missing required fields through optional
+  fallback helpers.
+- Execute the production timestamp-preparation statements in regression tests,
+  covering every required field in gas-positive and ICD-only rows, plus valid
+  mixed-format timestamps and genuine missingness.
+- Preserve existing optional ED/NIV timestamp behavior and all analysis rules.
+
+Consequences:
+- The fix changes failure behavior for malformed handoffs, not the scientific
+  estimand or expected results for valid handoffs.
+- The clean successor still requires the full restricted acceptance rerun and
+  comparison with the unchanged original baseline before the PR hold is cleared.
+
 ## 2026-08-25 - IMV acceptance safeguards are source-derived and immutable
 
 Status: accepted

@@ -164,6 +164,39 @@ def _load_analysis_helpers() -> dict[str, object]:
     return namespace
 
 
+def _run_analysis_timestamp_preparation(
+    frame: pd.DataFrame,
+) -> tuple[pd.DataFrame, dict[str, int]]:
+    """Execute the notebook's production preparation block, not a test copy."""
+
+    tree = ast.parse(_extract_python_chunks(ANALYSIS_NOTEBOOK))
+
+    def assigns_analytic_column(node: ast.stmt, column: str) -> bool:
+        return isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Subscript)
+            and isinstance(target.value, ast.Name)
+            and target.value.id == "analytic_df"
+            and isinstance(target.slice, ast.Constant)
+            and target.slice.value == column
+            for target in node.targets
+        )
+
+    start = next(
+        index
+        for index, node in enumerate(tree.body)
+        if assigns_analytic_column(node, "ed_anchor_time")
+    )
+    stop = next(
+        index
+        for index, node in enumerate(tree.body[start + 1 :], start=start + 1)
+        if assigns_analytic_column(node, "qualifying_pco2_mmhg")
+    )
+    preparation = ast.Module(body=tree.body[start:stop], type_ignores=[])
+    namespace = {**HELPERS, "analytic_df": frame.copy(deep=True)}
+    exec(compile(preparation, str(ANALYSIS_NOTEBOOK), "exec"), namespace)
+    return namespace["analytic_df"], namespace["imv_timing_contract"]
+
+
 HELPERS = _load_analysis_helpers()
 
 resolve_required_columns = HELPERS["ensure_required_columns"]
@@ -1472,6 +1505,79 @@ def test_imv_timing_analysis_rejects_unparseable_nonmissing_timestamps(
 
     with pytest.raises(ValueError, match="nonmissing unparseable timestamps"):
         validate_imv_timing_analysis_contract(frame)
+
+
+@pytest.mark.parametrize(
+    "field_name", [*HELPERS["IMV_TIMING_TIMESTAMP_COLS"], "first_imv_time"]
+)
+@pytest.mark.parametrize("gas_positive", [True, False])
+def test_analysis_timestamp_preparation_rejects_malformed_required_timestamps(
+    field_name: str,
+    gas_positive: bool,
+) -> None:
+    frame = _synthetic_imv_timing_frame()
+    row_index = frame.index[0] if gas_positive else frame.index[-1]
+    frame[field_name] = frame[field_name].astype("object")
+    frame.loc[row_index, field_name] = "not-a-time"
+    if gas_positive and field_name == "qualifying_pco2_time":
+        # A self-consistent missing-gas state must not disguise a corrupt cell.
+        frame.loc[row_index, "imv_qualifying_gas_order"] = "timing_indeterminate"
+        frame.loc[row_index, "imv_preceded_qualifying_gas"] = pd.NA
+        frame.loc[row_index, "no_prior_observed_imv"] = pd.NA
+    original = frame.copy(deep=True)
+
+    with pytest.raises(
+        ValueError,
+        match=rf"{field_name} contains nonmissing unparseable timestamps",
+    ):
+        _run_analysis_timestamp_preparation(frame)
+
+    pd.testing.assert_frame_equal(frame, original)
+
+
+def test_analysis_timestamp_preparation_preserves_valid_values_and_missingness() -> None:
+    frame = _synthetic_imv_timing_frame()
+    timestamp_columns = [*HELPERS["IMV_TIMING_TIMESTAMP_COLS"], "first_imv_time"]
+    for column in timestamp_columns:
+        frame[column] = frame[column].astype("object")
+        for position, row_index in enumerate(frame.index):
+            value = frame.loc[row_index, column]
+            if pd.isna(value):
+                frame.loc[row_index, column] = (None, np.nan, pd.NA)[position % 3]
+            elif position % 2:
+                frame.loc[row_index, column] = value.strftime("%Y/%m/%d %H:%M:%S")
+            else:
+                frame.loc[row_index, column] = value.isoformat()
+    # The required canonical gas column must retain missingness, not be filled
+    # from an unrelated legacy fallback.
+    frame["first_gas_time"] = pd.Timestamp("1999-01-01")
+    frame["first_niv_time"] = pd.NaT
+    original = frame.copy(deep=True)
+
+    prepared, contract = _run_analysis_timestamp_preparation(frame)
+
+    assert contract == validate_imv_timing_analysis_contract(frame)
+    assert contract["analytic_admissions"] == 9
+    assert contract["gas_positive_admissions"] == 8
+    assert contract["no_prior_observed_imv_admissions"] == 4
+    for column in timestamp_columns:
+        expected = pd.to_datetime(frame[column], format="mixed", errors="raise")
+        pd.testing.assert_series_equal(prepared[column], expected)
+    assert prepared.loc[frame.index[-1], "qualifying_pco2_time"] is pd.NaT
+    assert prepared["first_niv_time"].isna().all()
+    pd.testing.assert_frame_equal(frame, original)
+
+
+@pytest.mark.parametrize(
+    "field_name", [*HELPERS["IMV_TIMING_TIMESTAMP_COLS"], "first_imv_time"]
+)
+def test_analysis_timestamp_preparation_requires_timestamp_columns(
+    field_name: str,
+) -> None:
+    frame = _synthetic_imv_timing_frame().drop(columns=field_name)
+
+    with pytest.raises(KeyError, match=field_name):
+        _run_analysis_timestamp_preparation(frame)
 
 
 @pytest.mark.parametrize("invalid_hours", ["bad", np.inf, -np.inf])

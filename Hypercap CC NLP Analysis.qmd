@@ -3092,6 +3092,7 @@ IMV_TIMING_REQUIRED_INPUT_COLS = (
     "age",
     "death_in_hosp",
     "imv_flag",
+    "first_imv_time",
     "qualifying_pco2_time",
     "first_derived_imv_starttime",
     "first_intubation_procedure_time",
@@ -7190,11 +7191,13 @@ else:
     analytic_df["inclusion_route"] = fallback_inclusion_route
 
 analytic_df["ed_anchor_time"] = maybe_datetime(analytic_df, ["ed_intime", "ed_intime_first", "admittime"])
-analytic_df["qualifying_pco2_time"] = maybe_datetime(analytic_df, ["qualifying_pco2_time", "first_gas_time"])
-analytic_df["first_imv_time"] = maybe_datetime(analytic_df, ["first_imv_time"])
 analytic_df["first_niv_time"] = maybe_datetime(analytic_df, ["first_niv_time"])
-for column in IMV_TIMING_TIMESTAMP_COLS:
-    analytic_df[column] = pd.to_datetime(analytic_df[column], errors="coerce")
+# Validate required timestamp cells before any conversion can disguise malformed
+# nonmissing values as genuine missingness, including the gas and legacy anchors.
+for column in (*IMV_TIMING_TIMESTAMP_COLS, "first_imv_time"):
+    analytic_df[column] = _coerce_contract_datetime_for_analysis(
+        analytic_df[column], field_name=column
+    )
 for column in ("first_observed_imv_source", "imv_qualifying_gas_order"):
     analytic_df[column] = analytic_df[column].astype("string").str.strip()
 imv_timing_contract = validate_imv_timing_analysis_contract(analytic_df)
