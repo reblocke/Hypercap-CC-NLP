@@ -335,6 +335,9 @@ def test_imv_timing_analysis_outputs_bootstrap_and_privacy_contract() -> None:
 
 def test_imv_timing_documentation_and_data_dictionary_contract() -> None:
     readme_text = (WORK_DIR / "README.md").read_text()
+    index_text = (WORK_DIR / "llms.txt").read_text()
+    env_text = (WORK_DIR / ".env.example").read_text()
+    access_text = (WORK_DIR / "docs" / "DATA_ACCESS.md").read_text()
     spec_text = (WORK_DIR / "docs" / "SPEC.md").read_text()
     mapping_text = (WORK_DIR / "docs" / "MANUSCRIPT_MAPPING.md").read_text()
     dictionary_md = (WORK_DIR / "data_dictionary.md").read_text()
@@ -342,8 +345,17 @@ def test_imv_timing_documentation_and_data_dictionary_contract() -> None:
         dictionary_rows = {row["variable_name"]: row for row in csv.DictReader(dictionary_file)}
 
     assert "BQ_DATASET_DERIVED=mimiciv_derived" in readme_text
+    assert "BQ_DATASET_DERIVED=mimiciv_derived" in env_text.splitlines()
+    for documentation_text in (readme_text, index_text, env_text, access_text):
+        assert "BQ_DATASET_DERIVED=mimiciv_3_1_derived" in documentation_text
     assert "attribute/value" in readme_text
     assert "mimic_version = 3.1" in readme_text
+    for source_requirement in ("_metadata", "ventilation", "mimic_version = 3.1"):
+        assert source_requirement in index_text
+    normalized_index = " ".join(index_text.split())
+    assert "secondary, descriptive IMV timing sensitivity" in normalized_index
+    assert "eleven admission-level timing fields" in normalized_index
+    assert "does not establish that IMV caused hypercapnia" in normalized_index
     assert "Figure S1-S10" in mapping_text
     assert "IMV_Qualifying_Gas_Timing_Sensitivity.xlsx" in mapping_text
     assert "imv_timing_manuscript_summary.md" in mapping_text
@@ -382,6 +394,7 @@ def test_imv_timing_documentation_and_data_dictionary_contract() -> None:
     ):
         assert output_name in spec_text
         assert output_name in dictionary_md
+        assert output_name in index_text
     normalized_spec = " ".join(spec_text.split())
     assert "No null-hypothesis tests or causal language are permitted." in normalized_spec
     assert "temporal ordering is not evidence that IMV caused hypercapnia" in normalized_spec
@@ -389,6 +402,16 @@ def test_imv_timing_documentation_and_data_dictionary_contract() -> None:
     assert "hadm_id" in spec_text
     assert "ed_stay_id" in spec_text
     assert "raw chief complaint text" in spec_text
+
+
+def test_docs_cite_unreleased_code_by_exact_commit() -> None:
+    citation = yaml.safe_load((WORK_DIR / "CITATION.cff").read_text())
+    for document_name in ("README.md", "llms.txt", "docs/DATA_ACCESS.md"):
+        document_text = " ".join((WORK_DIR / document_name).read_text().split())
+        assert "exact commit SHA" in document_text
+        if document_name != "docs/DATA_ACCESS.md":
+            assert citation["version"] in document_text
+            assert "unreleased" in document_text
 
 
 def test_cohort_notebook_contains_ed_vitals_cleaning_helpers() -> None:

@@ -19,6 +19,15 @@ the official `ventilation` table is accessible. `BQ_DATASET_DERIVED` identifies
 the derived dataset, not a blood-gas table: the pipeline does not query
 `mimiciv_derived.bg` for this analysis and does not substitute the legacy broad
 ventilation regex when the official source is unavailable.
+
+The restricted MIMIC-IV 3.1 run verified on 2026-08-25 selected
+`BQ_DATASET_DERIVED=mimiciv_3_1_derived` explicitly. Set this in the local
+environment or `.env` when using that release-specific dataset; the runtime
+default remains `mimiciv_derived`. Dataset naming does not replace permission
+checks or the required metadata validation. A 403 from the default dataset
+calls for checking the configured dataset and access, not a `bg` query or a
+legacy timing fallback.
+
 The ICU dataset used for the derived `stay_id` join must also resolve explicitly
 to a versioned 3.1 alias; unversioned ICU fallback is rejected. Official derived
 or procedure source records without any usable start time are retained only as
@@ -60,7 +69,7 @@ Users without restricted data access can inspect code, run static/unit tests, an
 
 ## Citation
 
-Users should cite the relevant MIMIC-IV resources according to PhysioNet requirements, cite this repository release when referencing the analysis code, and cite the current medRxiv preprint and/or ATS 2026 abstract as appropriate when referencing the study findings:
+Users should cite the relevant MIMIC-IV resources according to PhysioNet requirements, cite the matching repository release (or the repository and exact commit SHA for unreleased code) when referencing the analysis code, and cite the current medRxiv preprint and/or ATS 2026 abstract as appropriate when referencing the study findings:
 
 - Merdad RH, Ramirez M, Christenson M, Pettine WW, Locke BW. Emergency Department Presenting Concerns Among Admissions With Hypercapnia: A Retrospective NLP Study of MIMIC-IV. medRxiv. 2026. DOI `10.64898/2026.07.03.26357242`.
 - Merdad RH, Crawford M, Christenson M, Pettine W, Locke B. C75-09 Chief Complaint Profiles in Hypercapnic Respiratory Failure: A Natural Language Processing Study of MIMIC-IV. American Journal of Respiratory and Critical Care Medicine. 2026;212(Supplement_1). DOI `10.1093/ajrccm/aamag162.4737`.

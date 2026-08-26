@@ -10,8 +10,19 @@
 - Machine-readable index: [`llms.txt`](./llms.txt)
 - Statistical environment: Python 3.11, Quarto, BigQuery-backed MIMIC-IV access
 
+The IMV timing sensitivity and acceptance safeguards described below are
+unreleased changes; the published `v0.1.1` release does not include them.
+
 ## Cite This Work
-Please cite the GitHub release matching the code you used, the relevant MIMIC-IV resources, and the current medRxiv preprint and/or ATS abstract as appropriate when referring to the presented findings. Repository citation metadata is provided in [`CITATION.cff`](./CITATION.cff). The manuscript is currently a medRxiv preprint; no final journal article has been accepted or published.
+
+Please cite the GitHub release matching the code you used, or the repository and
+exact commit SHA for unreleased code, together with the relevant MIMIC-IV
+resources and the current medRxiv preprint and/or ATS abstract as appropriate
+when referring to the presented findings. Repository citation metadata is
+provided in [`CITATION.cff`](./CITATION.cff); its version and release date describe
+the published software release, not subsequent unreleased commits. The manuscript
+is currently a medRxiv preprint; no final journal article has been accepted or
+published.
 
 Current related scholarly outputs:
 
@@ -28,7 +39,7 @@ This repository does not distribute row-level data, MIMIC-derived workbooks, ann
 
 - MIMIC-IV HOSP and ICU on BigQuery
 - the official MIMIC-IV derived concepts dataset on BigQuery for
-  `mimiciv_derived.ventilation`
+  the configured dataset's `_metadata` and `ventilation` tables
 - MIMIC-IV-ED on BigQuery
 - MIMIC-IV-Note only if note-based extensions are added
 
@@ -98,6 +109,20 @@ BQ_DATASET_DERIVED=mimiciv_derived
 stage reads its `_metadata` attribute/value table and requires exactly one
 `mimic_version = 3.1` record before querying `ventilation`; it does not query a
 derived `bg` table or silently fall back to legacy regex timing.
+
+The restricted MIMIC-IV 3.1 run verified on 2026-08-25 used the explicit
+release-specific override below, rather than the unchanged runtime default
+shown above:
+
+```bash
+export BQ_DATASET_DERIVED=mimiciv_3_1_derived
+```
+
+Alternatively, replace the `BQ_DATASET_DERIVED` assignment in your local `.env`
+with this value. Credentials must be able to read both `_metadata` and
+`ventilation` in the selected dataset, and the same version check still applies.
+If the default dataset returns 403, check the configured dataset and its access;
+do not bypass validation or substitute a different timing source.
 
 Authenticate BigQuery access:
 
