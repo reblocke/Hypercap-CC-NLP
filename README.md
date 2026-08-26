@@ -10,8 +10,19 @@
 - Machine-readable index: [`llms.txt`](./llms.txt)
 - Statistical environment: Python 3.11, Quarto, BigQuery-backed MIMIC-IV access
 
+The IMV timing sensitivity and acceptance safeguards described below are
+unreleased changes; the published `v0.1.1` release does not include them.
+
 ## Cite This Work
-Please cite the GitHub release matching the code you used, the relevant MIMIC-IV resources, and the current medRxiv preprint and/or ATS abstract as appropriate when referring to the presented findings. Repository citation metadata is provided in [`CITATION.cff`](./CITATION.cff). The manuscript is currently a medRxiv preprint; no final journal article has been accepted or published.
+
+Please cite the GitHub release matching the code you used, or the repository and
+exact commit SHA for unreleased code, together with the relevant MIMIC-IV
+resources and the current medRxiv preprint and/or ATS abstract as appropriate
+when referring to the presented findings. Repository citation metadata is
+provided in [`CITATION.cff`](./CITATION.cff); its version and release date describe
+the published software release, not subsequent unreleased commits. The manuscript
+is currently a medRxiv preprint; no final journal article has been accepted or
+published.
 
 Current related scholarly outputs:
 
@@ -27,6 +38,8 @@ Key source-data citations:
 This repository does not distribute row-level data, MIMIC-derived workbooks, annotation workbooks, or generated debug logs. The pipeline requires credentialed access to:
 
 - MIMIC-IV HOSP and ICU on BigQuery
+- the official MIMIC-IV derived concepts dataset on BigQuery for
+  the configured dataset's `_metadata` and `ventilation` tables
 - MIMIC-IV-ED on BigQuery
 - MIMIC-IV-Note only if note-based extensions are added
 
@@ -89,7 +102,27 @@ BQ_PHYSIONET_PROJECT=physionet-data
 BQ_DATASET_HOSP=mimiciv_3_1_hosp
 BQ_DATASET_ICU=mimiciv_3_1_icu
 BQ_DATASET_ED=mimiciv_ed
+BQ_DATASET_DERIVED=mimiciv_derived
 ```
+
+`BQ_DATASET_DERIVED` names the release-managed derived dataset. The cohort
+stage reads its `_metadata` attribute/value table and requires exactly one
+`mimic_version = 3.1` record before querying `ventilation`; it does not query a
+derived `bg` table or silently fall back to legacy regex timing.
+
+The restricted MIMIC-IV 3.1 run verified on 2026-08-25 used the explicit
+release-specific override below, rather than the unchanged runtime default
+shown above:
+
+```bash
+export BQ_DATASET_DERIVED=mimiciv_3_1_derived
+```
+
+Alternatively, replace the `BQ_DATASET_DERIVED` assignment in your local `.env`
+with this value. Credentials must be able to read both `_metadata` and
+`ventilation` in the selected dataset, and the same version check still applies.
+If the default dataset returns 403, check the configured dataset and its access;
+do not bypass validation or substitute a different timing source.
 
 Authenticate BigQuery access:
 
@@ -108,6 +141,14 @@ make check-resources
 ```
 
 Do not commit `.env`, MIMIC exports, annotation workbooks, or generated outputs.
+
+For split-machine runs, the cohort stage must execute on a machine whose
+credentials can read HOSP, ICU, ED, and the official derived dataset. A separate
+downstream machine can run the classifier and analysis only after receiving the
+new private handoff workbook, required `MIMICIV IMV source provenance.json`
+sidecar, and producing manifests through an approved restricted-data channel.
+Verify source/destination SHA-256 equality for these files. Git sync alone does
+not transfer ignored restricted inputs and must not be used to do so.
 
 ## Pipeline
 
@@ -148,11 +189,20 @@ QA/debug outputs are written locally under `artifacts/qa/...` and `debug/...` an
 A successful private run produces:
 
 - Four stage PDFs in `Results/YYYY-MM-DD/`
-- Canonical private handoff workbooks under `MIMIC tabular data/`
+- Canonical private handoff workbooks and the required private
+  `MIMICIV IMV source provenance.json` sidecar under `MIMIC tabular data/`
 - Manuscript tables and figures under `Results/YYYY-MM-DD/`
-- A curated `Results/YYYY-MM-DD/submission_assets/` bundle with main figures `Figure 1`-`Figure 4`, supplement figures `Figure S1`-`Figure S9`, tables, source-data workbooks, and `submission_assets_manifest.csv`
+- A curated `Results/YYYY-MM-DD/submission_assets/` bundle with main figures `Figure 1`-`Figure 4`, supplement figures `Figure S1`-`Figure S10`, tables, source-data workbooks, and `submission_assets_manifest.csv`
 - Run-level reviewer manifests `submission_manifest.xlsx`, `submission_manifest.csv`, and `OUTPUTS_README.md`
 - Aggregate supplement-ready acid-base missingness, candidate-definition, and sensitivity-suite workbooks
+- The aggregate IMV timing outputs `IMV_Qualifying_Gas_Timing_Sensitivity.xlsx`,
+  `Figure S10.pdf`, `Figure S10.xlsx`, and
+  `imv_timing_manuscript_summary.md`, plus the aggregate-only cohort QA file
+  `artifacts/qa/cohort/imv_qualifying_gas_timing_audit.csv`
+
+The IMV sensitivity compares observed timestamp order only. It does not alter
+the primary cohort or existing primary results and does not establish that IMV
+caused hypercapnia.
 
 For public release, generated manuscript outputs should be attached as GitHub/Zenodo release assets, not tracked in git.
 
@@ -168,6 +218,7 @@ The `v0.1.1` release refreshes metadata for the verified ATS abstract while pres
 | Presenting-concern prevalence by acidemia severity | `Hypercap CC NLP Analysis.qmd` | `Figure 4.pdf`, `Figure 4.xlsx` |
 | Main baseline characteristics | `Hypercap CC NLP Analysis.qmd` | `Table 1.xlsx` |
 | Common presenting-concern categories | `Hypercap CC NLP Analysis.qmd` | `Table 2.xlsx` |
+| IMV timing relative to the qualifying gas | `Hypercap CC NLP Analysis.qmd` | `Figure S10.pdf`, `Figure S10.xlsx`, `IMV_Qualifying_Gas_Timing_Sensitivity.xlsx` |
 | Classifier supplement tables | `Hypercap CC NLP Classifier.qmd` | `NLP_Classifier_Supplement_Tables.xlsx` |
 | Rater benchmark supplement tables | `Rater Agreement Analysis.qmd` | `Rater_Benchmark_Supplement_Tables.xlsx` |
 
@@ -179,7 +230,7 @@ Run code checks locally:
 
 ```bash
 uv run pytest -q
-uv run --with ruff ruff check src tests
+uv run ruff check src tests
 ```
 
 Equivalent Make targets:
@@ -200,6 +251,43 @@ Full private reproducibility audit, after restricted inputs are available:
 ```bash
 RUN_MANIFEST_REQUIRE_CLEAN_GIT=1 RESULTS_DATE=2026-04-29 make quarto-pipeline-audit
 ```
+
+For the IMV ticket, capture a named pre-change private baseline and compare the
+post-run outputs against that same explicit baseline:
+
+```bash
+uv run python scripts/imv_ticket_parity.py capture \
+  --baseline <baseline-id-or-absolute-path> \
+  --results-date <pre-ticket-results-date> \
+  --source-commit <pre-ticket-commit>
+uv run python scripts/imv_ticket_parity.py compare \
+  --baseline <same-baseline-id-or-absolute-path> \
+  --results-date <post-run-results-date>
+```
+
+Capture creates a fresh requested baseline target; do not overwrite or recapture
+an existing baseline. New captures require clean producer manifests at the
+resolved `--source-commit`, with linked input/output hashes for both handoffs
+and all 14 workbooks. The checkout may differ from that producing commit, but
+the declared SHA alone is insufficient. Outputs from revisions without those
+sealed manifests cannot be newly captured; retain the original capture instead
+of retrospectively labeling outputs. Existing schema-v1 captures remain usable
+with `legacy_unverified` producer provenance reported explicitly.
+
+This private QA control checks unchanged cohort membership, RFV1-RFV5 code and
+label assignments, and 14 existing manuscript workbooks. Before current outputs
+are compared, every captured baseline copy is checked against its recorded
+manifest row counts, semantic hashes, workbook inventory, and sheet signatures;
+altered or incomplete baselines fail closed. Only exact allowlisted
+documentation sheets are warning-eligible. Captured baselines and results remain
+under ignored locations; the comparison emits an aggregate-only JSON status
+report and does not export row-level differences.
+
+Analysis also requires the cohort-produced private IMV provenance sidecar, even
+when its untimed-source membership is empty. It verifies the source fingerprint
+and evidence membership before accepting timing strata; an absent or mismatched
+sidecar is an input failure, not permission to infer evidence from a supplied
+stratum. See [`docs/SPEC.md`](docs/SPEC.md) for the normative contracts.
 
 ## Repository Layout
 

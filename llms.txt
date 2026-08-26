@@ -3,6 +3,9 @@
 Repository: https://github.com/reblocke/Hypercap-CC-NLP
 Repository status: public journal-submission code release; restricted inputs remain excluded.
 Current software release: v0.1.1 metadata refresh of the v0.1.0 sanitized code snapshot.
+The IMV timing sensitivity and acceptance safeguards are unreleased changes, not
+part of v0.1.1. Cite the repository and exact commit SHA for unreleased code;
+the version/date in CITATION.cff continue to describe the published release.
 
 ## Purpose
 
@@ -32,6 +35,11 @@ performance, and generates manuscript-facing aggregate tables and figures.
 ## Data Sources And Restrictions
 
 - MIMIC-IV HOSP/ICU v3.1 via PhysioNet/BigQuery; cite DOI 10.13026/kpb9-mt58.
+- The official derived concepts dataset must provide accessible `_metadata` and
+  `ventilation` tables, with exactly one `mimic_version = 3.1` attribute/value
+  record. `BQ_DATASET_DERIVED` defaults to `mimiciv_derived`; the restricted run
+  verified on 2026-08-25 used `BQ_DATASET_DERIVED=mimiciv_3_1_derived` explicitly.
+  Neither a derived `bg` table nor legacy regex timing is a fallback.
 - MIMIC-IV-ED v2.2 via PhysioNet/BigQuery; cite DOI 10.13026/5ntk-km72.
 - MIMIC-IV-Note is not required for the current pipeline unless future note-based
   extensions are added.
@@ -43,7 +51,7 @@ performance, and generates manuscript-facing aggregate tables and figures.
 ## Pipeline Order
 
 1. `MIMICIV_hypercap_EXT_cohort.qmd`: cohort assembly from BigQuery-backed
-   MIMIC-IV HOSP/ICU/ED tables.
+   MIMIC-IV HOSP/ICU/ED tables and official derived ventilation concepts.
 2. `Hypercap CC NLP Classifier.qmd`: chief complaint normalization and RFV
    classification.
 3. `Rater Agreement Analysis.qmd`: human rater agreement and NLP benchmark
@@ -51,12 +59,40 @@ performance, and generates manuscript-facing aggregate tables and figures.
 4. `Hypercap CC NLP Analysis.qmd`: manuscript tables, figures, and submission
    asset bundle.
 
+## IMV Timing Sensitivity
+
+The secondary, descriptive IMV timing sensitivity compares the earliest
+qualifying gas with the first reliable observed IMV timestamp. It preserves the
+primary cohort and RFV taxonomy and does not establish that IMV caused
+hypercapnia. The normative definitions and validation gates are in `docs/SPEC.md`.
+
+- The eleven admission-level timing fields belong only in the ignored private
+  handoffs; never commit or publish their rows. Split-machine execution requires
+  an approved restricted-data transfer, not repository synchronization alone.
+- Analysis requires the cohort-produced private
+  `MIMICIV IMV source provenance.json` sidecar, including when untimed membership
+  is empty. Transfer it with the workbook and producing manifests, verify both
+  checksums, and keep it out of public/submission/release assets. Its source
+  fingerprint and membership support exact revalidation of untimed evidence;
+  a supplied indeterminate stratum is not itself proof of source evidence.
+- Aggregate outputs are `IMV_Qualifying_Gas_Timing_Sensitivity.xlsx` (seven sheets),
+  `Figure S10.pdf`, `Figure S10.xlsx`, and `imv_timing_manuscript_summary.md` under
+  `Results/YYYY-MM-DD/`; cohort QA is
+  `artifacts/qa/cohort/imv_qualifying_gas_timing_audit.csv`.
+- `scripts/imv_ticket_parity.py` verifies the captured baseline's integrity and
+  compares membership, RFV assignments, and 14 existing workbooks. Baselines and
+  reports stay ignored; never recapture a baseline to remove a parity failure.
+  New captures create fresh targets and require clean producer manifests at the
+  resolved source SHA plus linked input/output hashes; existing schema-v1
+  baselines retain mandatory integrity checks and report producer provenance as
+  `legacy_unverified`.
+
 ## Commands
 
 ```bash
 uv sync --frozen
 uv run pytest -q
-uv run --with ruff ruff check src tests
+uv run ruff check src tests
 quarto check
 make -n quarto-pipeline RESULTS_DATE=2026-05-30
 ```

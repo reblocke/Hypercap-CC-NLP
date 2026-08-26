@@ -23,7 +23,7 @@ This notebook is the single deterministic workflow for the merged analysis plus 
 ## Stage contract (pipeline-facing)
 
 - **Purpose:** Generate the analysis-stage outputs and manuscript-facing tables/figures from the canonical NLP workbook.
-- **Inputs:** `MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx` + `artifacts/qa/cohort/qa_summary.json`.
+- **Inputs:** `MIMIC tabular data/MIMICIV all with CC_with_NLP.xlsx`, the matching restricted `MIMIC tabular data/MIMICIV IMV source provenance.json`, and `artifacts/qa/cohort/qa_summary.json`.
 - **Canonical outputs:** generated PDFs, figures, tables, and analysis `.xlsx` artifacts under `Results/YYYY-MM-DD/`, plus QA artifacts under `artifacts/qa/analysis/`.
 - **Run-archived outputs:** `MIMIC tabular data/prior runs/YYYY-MM-DD analysis_run_manifest.json`.
 - **Key env vars:** `WORK_DIR`, `ANALYSIS_INPUT_FILENAME`, `RESULTS_DATE`.
@@ -39,7 +39,7 @@ Use this reading order:
 2. **Load data + helper functions**: standardizes key binary flags and category logic.
 3. **Primary overlap analyses**: compares ICD-based and gas-based ascertainment groups.
 4. **Symptom composition analyses**: shows which complaint categories are common in each overlap stratum.
-5. **Manuscript output section**: writes main-manuscript `Figure 1`-`Figure 4`, `Table 1`-`Table 2`, and manuscript supplement aliases (`Figure S1`-`Figure S9`) into `Results/YYYY-MM-DD/`.
+5. **Manuscript output section**: writes main-manuscript `Figure 1`-`Figure 4`, `Table 1`-`Table 2`, and manuscript supplement aliases (`Figure S1`-`Figure S10`) into `Results/YYYY-MM-DD/`.
 6. **Retained secondary-output section**: keeps the non-manuscript figures/tables on descriptive filenames in the same flat `Results/YYYY-MM-DD/` directory.
 7. **QC transparency + export section**: surfaces data-quality metrics from `artifacts/qa/cohort/qa_summary.json` and writes reproducible manifests/verification outputs, with QA-only sidecars under `artifacts/qa/analysis/`.
 
@@ -91,6 +91,7 @@ import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
+from io import BytesIO
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any, Iterable
@@ -155,6 +156,28 @@ def ensure_required_columns(df: pd.DataFrame, required: list[str]) -> None:
     missing = sorted(set(required).difference(df.columns))
     if missing:
         raise KeyError(f"Missing required columns: {missing}")
+
+
+def read_excel_with_sha256(
+    path: Path, *, sheet_name: int | str = 0,
+) -> tuple[pd.DataFrame, str]:
+    """Parse and hash the same input bytes, before any analysis outputs are written."""
+
+    content = path.read_bytes()
+    return (
+        pd.read_excel(BytesIO(content), sheet_name=sheet_name, engine="openpyxl"),
+        hashlib.sha256(content).hexdigest(),
+    )
+
+
+def sha256_file(path: Path) -> str:
+    """Hash an emitted artifact without loading the whole file into memory."""
+
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 ```
 
 ### 2.2 Flag normalization and cohort-classification helpers
@@ -870,6 +893,7 @@ def summarize_multilabel_prevalence_with_clustered_ci(
     n_bootstrap: int = PREVALENCE_CI_BOOTSTRAP_REPLICATES,
     seed: int = PREVALENCE_CI_BOOTSTRAP_SEED,
     ci_level: float = PREVALENCE_CI_LEVEL,
+    categories: list[str] | tuple[str, ...] | None = None,
 ) -> pd.DataFrame:
     """Summarize RFV prevalence with patient-cluster bootstrap confidence intervals."""
     if n_bootstrap <= 0:
@@ -887,6 +911,33 @@ def summarize_multilabel_prevalence_with_clustered_ci(
         grouped=grouped,
         max_rfv=max_rfv,
     )
+    if categories is not None:
+        category_values = list(categories)
+        if not category_values or len(category_values) != len(set(category_values)):
+            raise ValueError("categories must be a nonempty sequence of unique labels.")
+        encounter_groups = df.loc[:, strata_cols].copy()
+        encounter_groups["encounter_id"] = resolve_encounter_id(df)
+        encounter_groups = encounter_groups.drop_duplicates(subset=["encounter_id"])
+        stratum_sizes = (
+            encounter_groups.groupby(strata_cols, dropna=False)
+            .size()
+            .reset_index(name="N_group")
+        )
+        category_frame = pd.DataFrame({"category": category_values})
+        complete_grid = stratum_sizes.merge(category_frame, how="cross")
+        observed_counts = observed.loc[
+            :, [*strata_cols, "category", "n_with_category"]
+        ]
+        observed = complete_grid.merge(
+            observed_counts,
+            on=[*strata_cols, "category"],
+            how="left",
+            validate="one_to_one",
+        )
+        observed["n_with_category"] = observed["n_with_category"].fillna(0).astype(int)
+        observed["pct_of_encounters"] = (
+            observed["n_with_category"] / observed["N_group"] * 100
+        )
     metadata_cols = {
         "ci_lower": np.nan,
         "ci_upper": np.nan,
@@ -1455,6 +1506,1133 @@ def _timing_safeguard_definition_note(cohort_key: str) -> str:
     return notes.get(cohort_key, "")
 
 
+def coerce_nullable_boolean(series: pd.Series, *, field_name: str) -> pd.Series:
+    """Coerce mixed Excel boolean values to pandas nullable boolean semantics."""
+
+    text = series.astype("string").str.strip().str.lower()
+    numeric = pd.to_numeric(series, errors="coerce")
+    true_text = text.isin({"true", "t", "yes", "y"})
+    false_text = text.isin({"false", "f", "no", "n"})
+    blank = text.isna() | text.eq("")
+    numeric_valid = numeric.isin([0, 1])
+    invalid = ~(blank | true_text | false_text | numeric_valid)
+    if bool(invalid.any()):
+        invalid_values = sorted(text.loc[invalid].dropna().unique().tolist())
+        raise ValueError(f"{field_name} contains unsupported boolean values: {invalid_values}")
+
+    out = pd.Series(pd.NA, index=series.index, dtype="boolean")
+    out.loc[true_text | numeric.eq(1)] = True
+    out.loc[false_text | numeric.eq(0)] = False
+    return out
+
+
+def _nullable_boolean_mismatch(observed: pd.Series, expected: pd.Series) -> pd.Series:
+    """Return rows where nullable boolean values differ, including NA placement."""
+
+    observed_bool = observed.astype("boolean")
+    expected_bool = expected.astype("boolean")
+    presence_mismatch = observed_bool.notna().ne(expected_bool.notna())
+    value_mismatch = (
+        observed_bool.notna()
+        & expected_bool.notna()
+        & observed_bool.ne(expected_bool).fillna(False)
+    )
+    return presence_mismatch | value_mismatch
+
+
+def _coerce_contract_datetime_for_analysis(
+    values: pd.Series,
+    *,
+    field_name: str,
+) -> pd.Series:
+    """Parse a handoff timestamp while rejecting nonmissing unparseable values."""
+
+    parsed = pd.to_datetime(values, errors="coerce", format="mixed")
+    invalid = values.notna() & parsed.isna()
+    if bool(invalid.any()):
+        raise ValueError(
+            f"{field_name} contains nonmissing unparseable timestamps; "
+            f"violations={int(invalid.sum())}."
+        )
+    return parsed
+
+
+def _coerce_contract_numeric_for_analysis(
+    values: pd.Series,
+    *,
+    field_name: str,
+) -> pd.Series:
+    """Parse a numeric handoff field while rejecting malformed/nonfinite values."""
+
+    parsed = pd.to_numeric(values, errors="coerce")
+    unparseable = values.notna() & parsed.isna()
+    nonfinite = parsed.notna() & ~np.isfinite(parsed)
+    if bool(unparseable.any() or nonfinite.any()):
+        raise ValueError(
+            f"{field_name} contains nonmissing unparseable or nonfinite values; "
+            f"unparseable={int(unparseable.sum())}, "
+            f"nonfinite={int(nonfinite.sum())}."
+        )
+    return parsed.astype("float64")
+
+
+def imv_source_projection_sha256(frame: pd.DataFrame) -> str:
+    """Fingerprint the exact source projection shared by both private handoffs."""
+
+    missing = sorted(set(IMV_SOURCE_PROJECTION_COLUMNS).difference(frame.columns))
+    if missing:
+        raise KeyError(f"IMV source provenance requires columns: {missing}")
+    projection = frame.loc[:, IMV_SOURCE_PROJECTION_COLUMNS].copy()
+    for column in IMV_SOURCE_PROJECTION_COLUMNS[:4]:
+        values = pd.to_numeric(projection[column], errors="coerce")
+        invalid = values.isna() | ~np.isfinite(values) | values.ne(values.round())
+        invalid |= values.le(0) if column in {"subject_id", "hadm_id"} else ~values.isin([0, 1])
+        if bool(invalid.any()):
+            raise ValueError(
+                f"IMV source provenance has invalid {column}; "
+                f"violations={int(invalid.sum())}."
+            )
+        projection[column] = values.astype("int64")
+    if projection["hadm_id"].duplicated().any():
+        raise ValueError("IMV source provenance requires unique hadm_id membership.")
+    for column in IMV_SOURCE_PROJECTION_COLUMNS[4:]:
+        raw = projection[column]
+        parsed = pd.to_datetime(raw, errors="coerce", format="mixed")
+        invalid = raw.notna() & parsed.isna()
+        if bool(invalid.any()):
+            raise ValueError(
+                f"{column} contains nonmissing unparseable timestamps; "
+                f"violations={int(invalid.sum())}."
+            )
+        if not pd.api.types.is_datetime64_any_dtype(parsed.dtype) or parsed.dt.tz is not None:
+            raise ValueError(f"IMV source provenance requires timezone-naive {column}.")
+        projection[column] = pd.Series(
+            [None if pd.isna(value) else int(pd.Timestamp(value).value) for value in parsed],
+            index=frame.index,
+            dtype="object",
+        )
+    projection = projection.sort_values(["hadm_id", "subject_id"])
+    payload = {
+        "columns": list(IMV_SOURCE_PROJECTION_COLUMNS),
+        "rows": [list(row) for row in projection.itertuples(index=False, name=None)],
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def validate_imv_source_provenance(
+    frame: pd.DataFrame, payload: dict[str, Any],
+) -> pd.Series:
+    """Verify restricted source proof and return its untimed-evidence membership."""
+
+    required_keys = {
+        "schema_version", "admission_count", "source_projection_columns",
+        "source_projection_sha256", "untimed_evidence_admissions", "payload_sha256",
+    }
+    if not isinstance(payload, dict) or set(payload) != required_keys:
+        raise ValueError("IMV source provenance has missing or unsupported fields.")
+    if type(payload["schema_version"]) is not int or payload["schema_version"] != IMV_SOURCE_PROVENANCE_SCHEMA_VERSION:
+        raise ValueError("IMV source provenance has an unsupported schema version.")
+    if type(payload["admission_count"]) is not int or payload["admission_count"] != len(frame):
+        raise ValueError("IMV source provenance admission count does not match the handoff.")
+    if payload["source_projection_columns"] != list(IMV_SOURCE_PROJECTION_COLUMNS):
+        raise ValueError("IMV source provenance has an unsupported source projection.")
+    for field in ("source_projection_sha256", "payload_sha256"):
+        if not isinstance(payload[field], str) or re.fullmatch(r"[0-9a-f]{64}", payload[field]) is None:
+            raise ValueError(f"IMV source provenance has an invalid {field}.")
+    content = {key: value for key, value in payload.items() if key != "payload_sha256"}
+    encoded = json.dumps(content, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    if hashlib.sha256(encoded.encode("utf-8")).hexdigest() != payload["payload_sha256"]:
+        raise ValueError("IMV source provenance payload digest does not match its captured content.")
+    if imv_source_projection_sha256(frame) != payload["source_projection_sha256"]:
+        raise ValueError("IMV source provenance fingerprint does not match the handoff source fields.")
+
+    members = payload["untimed_evidence_admissions"]
+    if not isinstance(members, list):
+        raise ValueError("IMV source provenance untimed membership must be a list.")
+    for member in members:
+        if not isinstance(member, dict) or set(member) != {"subject_id", "hadm_id"}:
+            raise ValueError("IMV source provenance has malformed untimed membership.")
+        if any(type(value) is not int or value <= 0 for value in member.values()):
+            raise ValueError("IMV source provenance requires positive integer membership identifiers.")
+    if members != sorted(members, key=lambda row: (row["hadm_id"], row["subject_id"])):
+        raise ValueError("IMV source provenance untimed membership is not in canonical order.")
+    if len({member["hadm_id"] for member in members}) != len(members):
+        raise ValueError("IMV source provenance contains duplicate untimed admission membership.")
+    expected_membership = dict(zip(
+        pd.to_numeric(frame["hadm_id"]).astype("int64"),
+        pd.to_numeric(frame["subject_id"]).astype("int64"),
+        strict=True,
+    ))
+    if any(expected_membership.get(member["hadm_id"]) != member["subject_id"] for member in members):
+        raise ValueError("IMV source provenance untimed membership does not match handoff identifiers.")
+    untimed_mask = pd.to_numeric(frame["hadm_id"]).isin(
+        {member["hadm_id"] for member in members}
+    )
+    if bool((untimed_mask & frame.loc[:, IMV_SOURCE_PROJECTION_COLUMNS[5:8]].notna().any(axis=1)).any()):
+        raise ValueError("Untimed IMV source provenance contradicts a reliable source timestamp.")
+    return untimed_mask
+
+
+def load_imv_source_provenance(
+    source_path: Path, *, source_frame: pd.DataFrame,
+) -> tuple[dict[str, Any], str]:
+    """Load required private proof and validate it against the unmodified input."""
+
+    if not source_path.is_file():
+        raise FileNotFoundError(
+            "Required private IMV source provenance sidecar is missing. Regenerate "
+            "the cohort and transfer its matching sidecar with the handoff workbook."
+        )
+
+    def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("IMV source provenance JSON contains duplicate fields.")
+            result[key] = value
+        return result
+
+    content = source_path.read_bytes()
+    try:
+        payload = json.loads(content, object_pairs_hook=unique_object)
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise ValueError("IMV source provenance sidecar is not valid JSON.") from exc
+    validate_imv_source_provenance(source_frame, payload)
+    return payload, hashlib.sha256(content).hexdigest()
+
+
+def _select_first_observed_imv_for_analysis(
+    *,
+    first_intubation_procedure_time: pd.Timestamp | None,
+    first_invasive_ventilation_procedure_time: pd.Timestamp | None,
+    first_derived_imv_starttime: pd.Timestamp | None,
+) -> tuple[pd.Timestamp, str]:
+    """Reconstruct the exact earliest robust IMV timestamp and source."""
+
+    raw_values = {
+        "intubation_procedure": first_intubation_procedure_time,
+        "invasive_ventilation_procedure": first_invasive_ventilation_procedure_time,
+        "derived_ventilation_episode": first_derived_imv_starttime,
+    }
+    observed = {
+        source_name: timestamp
+        for source_name, raw_value in raw_values.items()
+        if not pd.isna(timestamp := pd.to_datetime(raw_value, errors="coerce"))
+    }
+    if not observed:
+        return pd.NaT, "missing"
+
+    earliest_time = min(observed.values())
+    earliest_sources = [
+        source_name
+        for source_name, timestamp in observed.items()
+        if timestamp == earliest_time
+    ]
+    if len(earliest_sources) > 1:
+        return earliest_time, "multiple_sources_same_time"
+    return earliest_time, earliest_sources[0]
+
+
+def _legacy_imv_timing_discordant_for_analysis(
+    *,
+    gas_positive: bool,
+    qualifying_pco2_time: pd.Timestamp | None,
+    robust_imv_observed: bool,
+    first_observed_imv_time: pd.Timestamp | None,
+    legacy_imv_flag: bool,
+    legacy_first_imv_time: pd.Timestamp | None,
+) -> int:
+    """Reconstruct legacy-versus-robust presence and strict-order discordance."""
+
+    robust_present = bool(robust_imv_observed)
+    legacy_present = bool(legacy_imv_flag)
+    if robust_present != legacy_present:
+        return 1
+    if not gas_positive or not robust_present or not legacy_present:
+        return 0
+
+    gas_time = pd.to_datetime(qualifying_pco2_time, errors="coerce")
+    robust_time = pd.to_datetime(first_observed_imv_time, errors="coerce")
+    legacy_time = pd.to_datetime(legacy_first_imv_time, errors="coerce")
+    if pd.isna(gas_time) or pd.isna(robust_time) or pd.isna(legacy_time):
+        return 0
+
+    def _strict_relation(imv_time: pd.Timestamp) -> str:
+        if imv_time < gas_time:
+            return "imv_before_qualifying_gas"
+        if gas_time < imv_time:
+            return "qualifying_gas_before_imv"
+        return "exact_tie"
+
+    return int(_strict_relation(robust_time) != _strict_relation(legacy_time))
+
+
+def validate_imv_timing_analysis_contract(
+    df: pd.DataFrame, *, source_provenance: dict[str, Any],
+) -> dict[str, int]:
+    """Reconstruct and fail closed on drift in cohort-provided IMV timing fields."""
+
+    ensure_required_columns(
+        df,
+        [*IMV_TIMING_REQUIRED_INPUT_COLS, "pco2_threshold_any", "first_imv_time"],
+    )
+    if df["hadm_id"].isna().any() or df["hadm_id"].duplicated().any():
+        raise ValueError("IMV timing analysis requires one nonmissing row per hadm_id.")
+    if df["subject_id"].isna().any():
+        raise ValueError("IMV timing patient-cluster bootstrap requires nonmissing subject_id.")
+
+    gas_positive = to_binary_flag(df["pco2_threshold_any"]).eq(1)
+    timing_order = df["imv_qualifying_gas_order"].astype("string").str.strip()
+    invalid_gas_order = gas_positive & ~timing_order.isin(IMV_TIMING_STRATUM_KEYS)
+    if bool(invalid_gas_order.any()):
+        raise ValueError(
+            "Every gas-positive admission must have exactly one supported imv_qualifying_gas_order value."
+        )
+    invalid_non_gas_order = (~gas_positive) & timing_order.ne(
+        "not_applicable_no_qualifying_gas"
+    ).fillna(True)
+    if bool(invalid_non_gas_order.any()):
+        raise ValueError(
+            "Every admission without a qualifying gas must be not_applicable_no_qualifying_gas."
+        )
+
+    source_time_columns = [
+        "first_intubation_procedure_time",
+        "first_invasive_ventilation_procedure_time",
+        "first_derived_imv_starttime",
+    ]
+    source_times = pd.DataFrame(
+        {
+            column: _coerce_contract_datetime_for_analysis(
+                df[column],
+                field_name=column,
+            )
+            for column in source_time_columns
+        },
+        index=df.index,
+    )
+    expected_selected = [
+        _select_first_observed_imv_for_analysis(
+            first_intubation_procedure_time=row.first_intubation_procedure_time,
+            first_invasive_ventilation_procedure_time=row.first_invasive_ventilation_procedure_time,
+            first_derived_imv_starttime=row.first_derived_imv_starttime,
+        )
+        for row in source_times.itertuples(index=False)
+    ]
+    expected_first_time = pd.to_datetime(
+        pd.Series([selected[0] for selected in expected_selected], index=df.index),
+        errors="coerce",
+    )
+    expected_source = pd.Series(
+        [selected[1] for selected in expected_selected],
+        index=df.index,
+        dtype="string",
+    )
+    expected_robust_imv = source_times.notna().any(axis=1)
+
+    observed_robust_imv = coerce_nullable_boolean(
+        df["robust_imv_observed"], field_name="robust_imv_observed"
+    )
+    if observed_robust_imv.isna().any():
+        raise ValueError("robust_imv_observed must be nonmissing for every analytic admission.")
+    robust_mismatch = observed_robust_imv.ne(expected_robust_imv).fillna(True)
+    if bool(robust_mismatch.any()):
+        raise ValueError(
+            "robust_imv_observed must equal presence of a reliable source timestamp; "
+            f"violations={int(robust_mismatch.sum())}."
+        )
+
+    observed_first_time = _coerce_contract_datetime_for_analysis(
+        df["first_observed_imv_time"],
+        field_name="first_observed_imv_time",
+    )
+    first_time_matches = (
+        (observed_first_time.isna() & expected_first_time.isna())
+        | observed_first_time.eq(expected_first_time).fillna(False)
+    )
+    observed_source = df["first_observed_imv_source"].astype("string").str.strip()
+    invalid_source = ~observed_source.isin(IMV_TIMING_SOURCE_VALUES)
+    if bool(invalid_source.any()):
+        invalid_values = sorted(
+            observed_source.loc[invalid_source].dropna().unique().tolist()
+        )
+        raise ValueError(f"Unsupported first_observed_imv_source values: {invalid_values}")
+    source_mismatch = observed_source.ne(expected_source).fillna(True)
+    first_time_mismatch = ~first_time_matches
+    if bool(first_time_mismatch.any() or source_mismatch.any()):
+        raise ValueError(
+            "first_observed_imv_time/source must equal the exact earliest reliable source; "
+            f"time_violations={int(first_time_mismatch.sum())}, "
+            f"source_violations={int(source_mismatch.sum())}."
+        )
+
+    qualifying_time = _coerce_contract_datetime_for_analysis(
+        df["qualifying_pco2_time"],
+        field_name="qualifying_pco2_time",
+    )
+    legacy_first_imv_time = _coerce_contract_datetime_for_analysis(
+        df["first_imv_time"],
+        field_name="first_imv_time",
+    )
+    untimed_source_evidence = validate_imv_source_provenance(df, source_provenance)
+    legacy_imv = to_binary_flag(df["imv_flag"]).eq(1)
+    expected_timing_order = pd.Series(
+        "not_applicable_no_qualifying_gas",
+        index=df.index,
+        dtype="string",
+    )
+    expected_timing_order.loc[gas_positive & qualifying_time.isna()] = "timing_indeterminate"
+    expected_timing_order.loc[
+        gas_positive & qualifying_time.notna() & ~expected_robust_imv
+        & (legacy_imv | untimed_source_evidence)
+    ] = "timing_indeterminate"
+    no_timestamp_or_legacy_evidence = (
+        gas_positive
+        & qualifying_time.notna()
+        & ~expected_robust_imv
+        & ~legacy_imv
+        & ~untimed_source_evidence
+    )
+    expected_timing_order.loc[no_timestamp_or_legacy_evidence] = "no_observed_imv"
+    expected_timing_order.loc[
+        gas_positive
+        & qualifying_time.notna()
+        & expected_robust_imv
+        & qualifying_time.lt(expected_first_time)
+    ] = "qualifying_gas_before_imv"
+    expected_timing_order.loc[
+        gas_positive
+        & qualifying_time.notna()
+        & expected_robust_imv
+        & expected_first_time.lt(qualifying_time)
+    ] = "imv_before_qualifying_gas"
+    expected_timing_order.loc[
+        gas_positive
+        & qualifying_time.notna()
+        & expected_robust_imv
+        & expected_first_time.eq(qualifying_time)
+    ] = "timing_indeterminate"
+    # The required cohort sidecar supplies otherwise-unexported source evidence;
+    # a supplied timing label is never evidence for its own correctness.
+    timing_mismatch = timing_order.ne(expected_timing_order).fillna(True)
+    if bool(timing_mismatch.any()):
+        mismatch_counts = (
+            pd.DataFrame(
+                {
+                    "observed": timing_order.loc[timing_mismatch],
+                    "expected": expected_timing_order.loc[timing_mismatch],
+                }
+            )
+            .value_counts(dropna=False)
+            .to_dict()
+        )
+        raise ValueError(
+            "imv_qualifying_gas_order is inconsistent with the strict cohort fields: "
+            f"{mismatch_counts}"
+        )
+
+    expected_preceded = pd.Series(pd.NA, index=df.index, dtype="boolean")
+    expected_preceded.loc[
+        expected_timing_order.isin(
+            {"no_observed_imv", "qualifying_gas_before_imv"}
+        )
+    ] = False
+    expected_preceded.loc[
+        expected_timing_order.eq("imv_before_qualifying_gas")
+    ] = True
+    observed_preceded = coerce_nullable_boolean(
+        df["imv_preceded_qualifying_gas"],
+        field_name="imv_preceded_qualifying_gas",
+    )
+    if bool(_nullable_boolean_mismatch(observed_preceded, expected_preceded).any()):
+        raise ValueError(
+            "imv_preceded_qualifying_gas is inconsistent with source-derived timing order."
+        )
+
+    expected_no_prior = pd.Series(pd.NA, index=df.index, dtype="boolean")
+    expected_no_prior.loc[
+        expected_timing_order.isin(
+            {"no_observed_imv", "qualifying_gas_before_imv"}
+        )
+    ] = True
+    expected_no_prior.loc[
+        expected_timing_order.eq("imv_before_qualifying_gas")
+    ] = False
+    observed_no_prior = coerce_nullable_boolean(
+        df["no_prior_observed_imv"], field_name="no_prior_observed_imv"
+    )
+    if bool(_nullable_boolean_mismatch(observed_no_prior, expected_no_prior).any()):
+        raise ValueError(
+            "no_prior_observed_imv is inconsistent with source-derived timing order."
+        )
+
+    expected_hours = (
+        qualifying_time - expected_first_time
+    ).dt.total_seconds() / 3600.0
+    observed_hours = _coerce_contract_numeric_for_analysis(
+        df["hours_from_imv_to_qualifying_gas"],
+        field_name="hours_from_imv_to_qualifying_gas",
+    )
+    comparable_hours = expected_hours.notna() & observed_hours.notna()
+    hours_mismatch = expected_hours.notna().ne(observed_hours.notna())
+    hours_mismatch |= comparable_hours & ~np.isclose(
+        expected_hours.fillna(0.0),
+        observed_hours.fillna(0.0),
+        rtol=0.0,
+        atol=1e-12,
+    )
+    if bool(hours_mismatch.any()):
+        raise ValueError(
+            "hours_from_imv_to_qualifying_gas must equal the exact source-derived timestamp difference; "
+            f"violations={int(hours_mismatch.sum())}."
+        )
+
+    observed_legacy_discordant = coerce_nullable_boolean(
+        df["legacy_imv_timing_discordant"],
+        field_name="legacy_imv_timing_discordant",
+    )
+    if observed_legacy_discordant.isna().any():
+        raise ValueError("legacy_imv_timing_discordant must be nonmissing.")
+    expected_legacy_discordant = pd.Series(
+        [
+            bool(
+                _legacy_imv_timing_discordant_for_analysis(
+                    gas_positive=bool(gas_flag),
+                    qualifying_pco2_time=gas_time,
+                    robust_imv_observed=bool(robust_flag),
+                    first_observed_imv_time=robust_time,
+                    legacy_imv_flag=bool(legacy_flag),
+                    legacy_first_imv_time=legacy_time,
+                )
+            )
+            for gas_flag, gas_time, robust_flag, robust_time, legacy_flag, legacy_time in zip(
+                gas_positive,
+                qualifying_time,
+                expected_robust_imv,
+                expected_first_time,
+                legacy_imv,
+                legacy_first_imv_time,
+                strict=False,
+            )
+        ],
+        index=df.index,
+        dtype="boolean",
+    )
+    legacy_discordance_mismatch = _nullable_boolean_mismatch(
+        observed_legacy_discordant,
+        expected_legacy_discordant,
+    )
+    if bool(legacy_discordance_mismatch.any()):
+        raise ValueError(
+            "legacy_imv_timing_discordant differs from the source-derived presence/order rule; "
+            f"violations={int(legacy_discordance_mismatch.sum())}."
+        )
+
+    gas_stratum_counts = timing_order.loc[gas_positive].value_counts()
+    reconciled_n = int(
+        sum(int(gas_stratum_counts.get(key, 0)) for key in IMV_TIMING_STRATUM_KEYS)
+    )
+    gas_positive_n = int(gas_positive.sum())
+    if reconciled_n != gas_positive_n:
+        raise AssertionError(
+            f"IMV timing strata sum to {reconciled_n}, not gas-positive N={gas_positive_n}."
+        )
+    no_prior_n = int((gas_positive & observed_no_prior.eq(True)).sum())
+    if no_prior_n <= 0:
+        raise ValueError(
+            "The no-prior-observed-IMV sensitivity must be nonempty."
+        )
+    return {
+        "analytic_admissions": int(len(df)),
+        "gas_positive_admissions": gas_positive_n,
+        "non_gas_admissions": int((~gas_positive).sum()),
+        "gas_strata_reconciled_admissions": reconciled_n,
+        "no_prior_observed_imv_admissions": no_prior_n,
+        "timing_indeterminate_admissions": int(
+            (gas_positive & timing_order.eq("timing_indeterminate")).sum()
+        ),
+    }
+
+
+def prepare_imv_timing_gas_positive_frame(df: pd.DataFrame) -> pd.DataFrame:
+    """Return gas-positive admissions with ordered neutral timing labels."""
+
+    gas_positive = to_binary_flag(df["pco2_threshold_any"]).eq(1)
+    out = df.loc[gas_positive].copy()
+    out["IMV_Timing_Stratum_Key"] = (
+        out["imv_qualifying_gas_order"].astype("string").str.strip()
+    )
+    out["IMV_Timing_Stratum"] = out["IMV_Timing_Stratum_Key"].map(
+        IMV_TIMING_STRATUM_LABEL_MAP
+    )
+    if out["IMV_Timing_Stratum"].isna().any():
+        raise ValueError("Gas-positive IMV timing labels could not be mapped for display.")
+    return out
+
+
+def _binary_count_denominator_pct(series: pd.Series) -> tuple[int, int, float]:
+    """Return positive count, observed denominator, and percent for one binary field."""
+
+    numeric = pd.to_numeric(series, errors="coerce")
+    observed = numeric.notna()
+    denominator = int(observed.sum())
+    count = int(numeric.loc[observed].gt(0).sum())
+    percent = count / denominator * 100 if denominator else np.nan
+    return count, denominator, percent
+
+
+def build_imv_timing_group_yield(gas_df: pd.DataFrame) -> pd.DataFrame:
+    """Summarize mutually exclusive gas-positive IMV timing stratum yields."""
+
+    gas_positive_n = int(len(gas_df))
+    rows: list[dict[str, object]] = []
+    for order, spec in enumerate(IMV_TIMING_STRATA, start=1):
+        subset = gas_df.loc[
+            gas_df["IMV_Timing_Stratum_Key"].eq(spec["stratum_key"])
+        ]
+        rows.append(
+            {
+                "stratum_order": order,
+                "stratum_key": spec["stratum_key"],
+                "temporal_stratum": spec["stratum_label"],
+                "admissions": int(len(subset)),
+                "unique_patients": int(subset["subject_id"].nunique()),
+                "gas_positive_denominator": gas_positive_n,
+                "percent_of_gas_positive_admissions": (
+                    len(subset) / gas_positive_n * 100 if gas_positive_n else np.nan
+                ),
+            }
+        )
+    out = pd.DataFrame(rows)
+    if int(out["admissions"].sum()) != gas_positive_n:
+        raise AssertionError("Group_Yield admissions do not reconcile to gas-positive N.")
+    return out
+
+
+def build_imv_timing_group_characteristics(gas_df: pd.DataFrame) -> pd.DataFrame:
+    """Build aggregate characteristics for each mutually exclusive timing stratum."""
+
+    rows: list[dict[str, object]] = []
+    for order, spec in enumerate(IMV_TIMING_STRATA, start=1):
+        subset = gas_df.loc[
+            gas_df["IMV_Timing_Stratum_Key"].eq(spec["stratum_key"])
+        ].copy()
+        n_admissions = int(len(subset))
+        age = pd.to_numeric(subset["age"], errors="coerce").dropna()
+        mortality_n, mortality_denominator, mortality_pct = _binary_count_denominator_pct(
+            subset["death_in_hosp"]
+        )
+        legacy_imv_n, legacy_imv_denominator, legacy_imv_pct = _binary_count_denominator_pct(
+            subset["imv_flag"]
+        )
+        abg_n = int(to_binary_flag(subset["abg_hypercap_threshold"]).sum())
+        vbg_n = int(to_binary_flag(subset["vbg_hypercap_threshold"]).sum())
+        icd_n = int(to_binary_flag(subset["any_hypercap_icd"]).sum())
+        rows.append(
+            {
+                "stratum_order": order,
+                "stratum_key": spec["stratum_key"],
+                "temporal_stratum": spec["stratum_label"],
+                "admissions": n_admissions,
+                "abg_positive_n": abg_n,
+                "abg_positive_percent": abg_n / n_admissions * 100 if n_admissions else np.nan,
+                "vbg_positive_n": vbg_n,
+                "vbg_positive_percent": vbg_n / n_admissions * 100 if n_admissions else np.nan,
+                "icd_positive_n": icd_n,
+                "icd_positive_percent": icd_n / n_admissions * 100 if n_admissions else np.nan,
+                "age_nonmissing_n": int(len(age)),
+                "age_median_years": float(age.median()) if not age.empty else np.nan,
+                "age_q1_years": float(age.quantile(0.25)) if not age.empty else np.nan,
+                "age_q3_years": float(age.quantile(0.75)) if not age.empty else np.nan,
+                "age_median_iqr_years": format_median_iqr(age, decimals=1),
+                "in_hospital_mortality_n": mortality_n,
+                "in_hospital_mortality_denominator": mortality_denominator,
+                "in_hospital_mortality_percent": mortality_pct,
+                "legacy_manuscript_imv_n": legacy_imv_n,
+                "legacy_manuscript_imv_denominator": legacy_imv_denominator,
+                "legacy_manuscript_imv_percent": legacy_imv_pct,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def summarize_imv_timing_rfv_prevalence(
+    gas_df: pd.DataFrame,
+    *,
+    grouped: bool,
+) -> pd.DataFrame:
+    """Estimate complete stratum-by-RFV prevalence with patient-cluster bootstrap CIs."""
+
+    categories = list(RFV_GROUP_ORDER if grouped else RFV_CANONICAL_LABELS)
+    observed = summarize_multilabel_prevalence_with_clustered_ci(
+        gas_df,
+        strata="IMV_Timing_Stratum",
+        grouped=grouped,
+        categories=categories,
+    )
+    grid = pd.MultiIndex.from_product(
+        [IMV_TIMING_STRATUM_LABELS, categories],
+        names=["IMV_Timing_Stratum", "category"],
+    ).to_frame(index=False)
+    out = grid.merge(
+        observed,
+        on=["IMV_Timing_Stratum", "category"],
+        how="left",
+        validate="one_to_one",
+    )
+    group_sizes = gas_df["IMV_Timing_Stratum"].value_counts().to_dict()
+    cluster_sizes = (
+        gas_df.groupby("IMV_Timing_Stratum", dropna=False)["subject_id"].nunique().to_dict()
+    )
+    expected_rows = len(IMV_TIMING_STRATUM_LABELS) * len(categories)
+    if len(out) != expected_rows:
+        raise AssertionError(
+            f"IMV timing prevalence returned {len(out)} rows; expected {expected_rows}."
+        )
+    out["N_group"] = out["IMV_Timing_Stratum"].map(group_sizes).fillna(0).astype(int)
+    out["n_with_category"] = out["n_with_category"].fillna(0).astype(int)
+    out.loc[out["N_group"].eq(0), "pct_of_encounters"] = np.nan
+    for column in ("ci_lower", "ci_upper"):
+        out[column] = pd.to_numeric(out[column], errors="coerce")
+        missing_nonempty = out["N_group"].gt(0) & out[column].isna()
+        if missing_nonempty.any():
+            missing_cells = out.loc[
+                missing_nonempty, ["IMV_Timing_Stratum", "category"]
+            ].to_dict("records")
+            raise RuntimeError(
+                f"Patient-cluster bootstrap returned missing {column} values: {missing_cells}."
+            )
+    out["bootstrap_replicates"] = PREVALENCE_CI_BOOTSTRAP_REPLICATES
+    out["bootstrap_seed"] = PREVALENCE_CI_BOOTSTRAP_SEED
+    out["cluster_unit"] = "patient"
+    out["n_clusters"] = out["IMV_Timing_Stratum"].map(cluster_sizes).fillna(0).astype(int)
+    label_to_key = {spec["stratum_label"]: spec["stratum_key"] for spec in IMV_TIMING_STRATA}
+    label_to_order = {spec["stratum_label"]: order for order, spec in enumerate(IMV_TIMING_STRATA, start=1)}
+    category_to_order = {category: order for order, category in enumerate(categories, start=1)}
+    out.insert(0, "stratum_order", out["IMV_Timing_Stratum"].map(label_to_order).astype(int))
+    out.insert(1, "stratum_key", out["IMV_Timing_Stratum"].map(label_to_key))
+    out.insert(2, "representation", "Grouped RFV" if grouped else "Canonical RFV")
+    out.insert(4, "category_order", out["category"].map(category_to_order).astype(int))
+    out = out.rename(columns={"IMV_Timing_Stratum": "temporal_stratum"})
+    out["non_mutually_exclusive_rfv"] = True
+    return out.sort_values(["stratum_order", "category_order"], kind="mergesort").reset_index(drop=True)
+
+
+def paired_cluster_bootstrap_imv_no_prior_sensitivity(
+    gas_df: pd.DataFrame,
+    *,
+    grouped: bool,
+    n_bootstrap: int = PREVALENCE_CI_BOOTSTRAP_REPLICATES,
+    seed: int = PREVALENCE_CI_BOOTSTRAP_SEED,
+    ci_level: float = PREVALENCE_CI_LEVEL,
+) -> pd.DataFrame:
+    """Compare nested gas-positive cohorts using one paired patient bootstrap."""
+
+    if n_bootstrap <= 0 or not 0 < ci_level < 1:
+        raise ValueError("Paired IMV sensitivity bootstrap settings are invalid.")
+    base = gas_df.copy().reset_index(drop=True)
+    encounter_id = resolve_encounter_id(base)
+    if encounter_id.duplicated().any():
+        raise ValueError("Paired IMV sensitivity requires one row per encounter.")
+    comparison_mask = coerce_nullable_boolean(
+        base["no_prior_observed_imv"], field_name="no_prior_observed_imv"
+    ).eq(True).to_numpy(dtype=bool, na_value=False)
+    if not comparison_mask.any():
+        raise ValueError("No-prior-observed-IMV cohort must be a nonempty nested cohort.")
+
+    cluster_values = _require_nonmissing_cluster_unit(base, PREVALENCE_CI_CLUSTER_UNIT)
+    cluster_codes, cluster_labels = pd.factorize(cluster_values, sort=True)
+    n_clusters = int(len(cluster_labels))
+    categories = list(RFV_GROUP_ORDER if grouped else RFV_CANONICAL_LABELS)
+    indicators = make_category_indicators(base, grouped=grouped)
+    for category in categories:
+        if category not in indicators.columns:
+            indicators[category] = 0
+    indicator_matrix = indicators.loc[:, categories].to_numpy(dtype=float)
+
+    all_denominator_by_cluster = np.bincount(cluster_codes, minlength=n_clusters).astype(float)
+    comparison_denominator_by_cluster = np.bincount(
+        cluster_codes,
+        weights=comparison_mask.astype(float),
+        minlength=n_clusters,
+    )
+    all_numerator_by_cluster = np.zeros((n_clusters, len(categories)), dtype=float)
+    comparison_numerator_by_cluster = np.zeros((n_clusters, len(categories)), dtype=float)
+    np.add.at(all_numerator_by_cluster, cluster_codes, indicator_matrix)
+    np.add.at(
+        comparison_numerator_by_cluster,
+        cluster_codes,
+        indicator_matrix * comparison_mask[:, None],
+    )
+
+    n_all = int(len(base))
+    n_comparison = int(comparison_mask.sum())
+    observed_all_n = indicator_matrix.sum(axis=0)
+    observed_comparison_n = indicator_matrix[comparison_mask].sum(axis=0)
+    observed_all_pct = observed_all_n / n_all * 100
+    observed_comparison_pct = observed_comparison_n / n_comparison * 100
+    observed_difference = observed_comparison_pct - observed_all_pct
+
+    all_replicates = np.full((int(n_bootstrap), len(categories)), np.nan, dtype=float)
+    comparison_replicates = np.full_like(all_replicates, np.nan)
+    difference_replicates = np.full_like(all_replicates, np.nan)
+    rng = np.random.default_rng(seed)
+    for bootstrap_idx in range(int(n_bootstrap)):
+        sampled_clusters = rng.integers(0, n_clusters, size=n_clusters)
+        cluster_weights = np.bincount(sampled_clusters, minlength=n_clusters).astype(float)
+        all_denominator = float(cluster_weights @ all_denominator_by_cluster)
+        comparison_denominator = float(cluster_weights @ comparison_denominator_by_cluster)
+        if all_denominator <= 0 or comparison_denominator <= 0:
+            continue
+        all_estimate = cluster_weights @ all_numerator_by_cluster / all_denominator * 100
+        comparison_estimate = (
+            cluster_weights @ comparison_numerator_by_cluster / comparison_denominator * 100
+        )
+        all_replicates[bootstrap_idx, :] = all_estimate
+        comparison_replicates[bootstrap_idx, :] = comparison_estimate
+        difference_replicates[bootstrap_idx, :] = comparison_estimate - all_estimate
+
+    alpha = (1.0 - ci_level) / 2.0
+    quantiles = [alpha, 1.0 - alpha]
+    valid_difference_replicates = np.isfinite(difference_replicates).all(axis=1)
+    if int(valid_difference_replicates.sum()) < max(100, int(n_bootstrap * 0.9)):
+        raise RuntimeError("Too few valid paired bootstrap replicates for IMV timing sensitivity.")
+    all_ci = np.nanquantile(all_replicates, quantiles, axis=0)
+    comparison_ci = np.nanquantile(comparison_replicates, quantiles, axis=0)
+    difference_ci = np.nanquantile(difference_replicates, quantiles, axis=0)
+    out = pd.DataFrame(
+        {
+            "representation": "Grouped RFV" if grouped else "Canonical RFV",
+            "category_order": np.arange(1, len(categories) + 1, dtype=int),
+            "category": categories,
+            "all_gas_positive_admissions": n_all,
+            "all_gas_positive_n_with_category": observed_all_n.astype(int),
+            "all_gas_positive_prevalence_percent": observed_all_pct,
+            "all_gas_positive_ci_lower": all_ci[0],
+            "all_gas_positive_ci_upper": all_ci[1],
+            "no_prior_observed_imv_admissions": n_comparison,
+            "no_prior_observed_imv_n_with_category": observed_comparison_n.astype(int),
+            "no_prior_observed_imv_prevalence_percent": observed_comparison_pct,
+            "no_prior_observed_imv_ci_lower": comparison_ci[0],
+            "no_prior_observed_imv_ci_upper": comparison_ci[1],
+            "difference_pp_no_prior_minus_all": observed_difference,
+            "absolute_difference_pp": np.abs(observed_difference),
+            "difference_ci_lower": difference_ci[0],
+            "difference_ci_upper": difference_ci[1],
+            "bootstrap_replicates": int(n_bootstrap),
+            "bootstrap_valid_replicates": int(valid_difference_replicates.sum()),
+            "bootstrap_seed": int(seed),
+            "ci_level": float(ci_level),
+            "cluster_unit": "patient",
+            "all_gas_positive_clusters": n_clusters,
+            "no_prior_observed_imv_clusters": int(
+                base.loc[comparison_mask, PREVALENCE_CI_CLUSTER_UNIT].nunique()
+            ),
+            "nested_paired_comparison": True,
+            "null_hypothesis_test_performed": False,
+        }
+    )
+    return out
+
+
+def build_imv_timing_source_audit(gas_df: pd.DataFrame) -> pd.DataFrame:
+    """Build aggregate source, reconciliation, and timing diagnostics for the workbook."""
+
+    gas_denominator = int(len(gas_df))
+    robust = coerce_nullable_boolean(
+        gas_df["robust_imv_observed"], field_name="robust_imv_observed"
+    ).eq(True)
+    legacy = pd.to_numeric(gas_df["imv_flag"], errors="coerce").fillna(0).gt(0)
+    discordant = coerce_nullable_boolean(
+        gas_df["legacy_imv_timing_discordant"],
+        field_name="legacy_imv_timing_discordant",
+    ).eq(True)
+    hours = pd.to_numeric(gas_df["hours_from_imv_to_qualifying_gas"], errors="coerce")
+    rows: list[dict[str, object]] = []
+
+    def add_count(
+        section: str,
+        metric: str,
+        mask: pd.Series,
+        *,
+        definition: str,
+        denominator: int = gas_denominator,
+    ) -> None:
+        count = int(mask.fillna(False).sum())
+        rows.append(
+            {
+                "audit_section": section,
+                "metric": metric,
+                "value": float(count),
+                "n_admissions": count,
+                "denominator": denominator,
+                "percent": count / denominator * 100 if denominator else np.nan,
+                "definition": definition,
+            }
+        )
+
+    source = gas_df["first_observed_imv_source"].astype("string").str.strip()
+    for source_value in IMV_TIMING_SOURCE_VALUES:
+        add_count(
+            "first_observed_imv_source",
+            source_value,
+            source.eq(source_value),
+            definition="Cohort-provided source of the earliest robust observed IMV timestamp.",
+        )
+    component_fields = {
+        "derived_ventilation_episode_timestamp_available": "first_derived_imv_starttime",
+        "intubation_procedure_timestamp_available": "first_intubation_procedure_time",
+        "invasive_ventilation_procedure_timestamp_available": "first_invasive_ventilation_procedure_time",
+    }
+    for metric, column in component_fields.items():
+        add_count(
+            "component_timestamp_availability",
+            metric,
+            pd.to_datetime(gas_df[column], errors="coerce").notna(),
+            definition=f"Nonmissing {column} among gas-positive admissions.",
+        )
+    add_count(
+        "evidence_reconciliation",
+        "robust_imv_observed",
+        robust,
+        definition="At least one robust derived-episode or explicit procedure timestamp was observed.",
+    )
+    add_count(
+        "evidence_reconciliation",
+        "legacy_imv_without_robust_imv",
+        legacy & ~robust,
+        definition="Legacy broad IMV flag present without robust timestamp evidence; timing remains indeterminate.",
+    )
+    add_count(
+        "evidence_reconciliation",
+        "robust_imv_without_legacy_imv",
+        robust & ~legacy,
+        definition="Robust timestamp evidence present without the legacy broad IMV flag.",
+    )
+    add_count(
+        "evidence_reconciliation",
+        "legacy_imv_timing_discordant",
+        discordant,
+        definition="Cohort-provided material discordance between robust and legacy IMV evidence or ordering.",
+    )
+    for spec in IMV_TIMING_STRATA:
+        add_count(
+            "temporal_stratum",
+            spec["stratum_key"],
+            gas_df["IMV_Timing_Stratum_Key"].eq(spec["stratum_key"]),
+            definition=spec["stratum_label"],
+        )
+    add_count(
+        "timing_quality",
+        "exact_timestamp_ties",
+        hours.eq(0),
+        definition="Exact zero-hour difference; categorical timing is indeterminate.",
+    )
+    add_count(
+        "timing_quality",
+        "robust_imv_with_missing_first_observed_time",
+        robust & pd.to_datetime(gas_df["first_observed_imv_time"], errors="coerce").isna(),
+        definition="Robust IMV evidence with no reliable earliest timestamp; timing is indeterminate.",
+    )
+    add_count(
+        "timing_quality",
+        "missing_qualifying_pco2_time",
+        pd.to_datetime(gas_df["qualifying_pco2_time"], errors="coerce").isna(),
+        definition="Gas-positive admission with missing qualifying-gas timestamp; timing is indeterminate.",
+    )
+    valid_hours = hours.dropna()
+    hour_statistics = {
+        "minimum_hours": valid_hours.min(),
+        "p05_hours": valid_hours.quantile(0.05),
+        "p25_hours": valid_hours.quantile(0.25),
+        "median_hours": valid_hours.median(),
+        "p75_hours": valid_hours.quantile(0.75),
+        "p95_hours": valid_hours.quantile(0.95),
+        "maximum_hours": valid_hours.max(),
+    }
+    for metric, value in hour_statistics.items():
+        rows.append(
+            {
+                "audit_section": "hours_from_imv_to_qualifying_gas_distribution",
+                "metric": metric,
+                "value": float(value) if pd.notna(value) else np.nan,
+                "n_admissions": int(len(valid_hours)),
+                "denominator": gas_denominator,
+                "percent": len(valid_hours) / gas_denominator * 100 if gas_denominator else np.nan,
+                "definition": "Positive values indicate observed IMV before qualifying gas; negative values indicate qualifying gas before observed IMV.",
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def build_imv_timing_definitions() -> pd.DataFrame:
+    """Return deterministic reader-facing definitions for the IMV timing outputs."""
+
+    rows = [
+        ("Analysis population", "Gas-positive admissions with pco2_threshold_any = 1; ICD-only admissions are not included in the timing subgroup analysis."),
+        ("Gas anchor", "qualifying_pco2_time, the earliest blood gas that qualified the admission for the hypercapnia cohort."),
+        ("First observed IMV time", "Minimum of first_intubation_procedure_time, first_invasive_ventilation_procedure_time, and first_derived_imv_starttime."),
+        ("No observed IMV", "No robust IMV timestamp was observed and no legacy-only IMV signal forced timing to remain indeterminate."),
+        ("Qualifying gas before IMV", "qualifying_pco2_time is strictly earlier than first_observed_imv_time."),
+        ("IMV before qualifying gas", "first_observed_imv_time is strictly earlier than qualifying_pco2_time; also described neutrally as post-IMV-ascertained hypercapnia."),
+        ("Timing indeterminate", "Exact timestamp tie, missing qualifying-gas time, robust IMV evidence without a reliable timestamp, or legacy-only IMV evidence."),
+        ("No-prior-observed-IMV sensitivity", "Gas-positive admissions classified as no observed IMV or qualifying gas before IMV; timing-indeterminate admissions are excluded."),
+        ("Ordering rule", "Strict timestamp ordering without rounding, tolerance, or temporal buffer; exact ties are indeterminate."),
+        ("hours_from_imv_to_qualifying_gas", "qualifying_pco2_time minus first_observed_imv_time in hours; positive means observed IMV preceded the qualifying gas and negative means the qualifying gas preceded observed IMV."),
+        ("RFV prevalence", "Admission-level multi-label prevalence across RFV1_name through RFV5_name; grouped categories are not mutually exclusive."),
+        ("Confidence intervals", f"Patient-cluster nonparametric bootstrap 95% confidence intervals using {PREVALENCE_CI_BOOTSTRAP_REPLICATES} replicates and seed {PREVALENCE_CI_BOOTSTRAP_SEED}."),
+        ("Nested comparison", "All gas-positive admissions and the no-prior-observed-IMV subset are compared in the same patient-cluster bootstrap replicate; no null-hypothesis tests are performed."),
+        ("Deterministic summary rule", "Select the grouped RFV category with the maximum absolute no-prior-minus-all contrast, break exact ties by RFV_GROUP_ORDER, and report both prevalences plus the signed difference without qualitative cutoffs."),
+        ("Legacy timing screen", "The earlier broad regex-derived timing screen is retained only as a labeled legacy exploratory analysis and does not define the new temporal subgroup."),
+        ("Interpretation boundary", "Observed temporal ordering identifies potential treatment exposure before blood-gas ascertainment but does not establish that ventilation caused hypercapnia."),
+        ("Privacy", "All workbook and figure-source sheets are aggregate-only and exclude identifiers and raw chief-complaint text."),
+    ]
+    return pd.DataFrame(rows, columns=["term", "definition"])
+
+
+def assert_imv_timing_export_privacy(sheets: dict[str, pd.DataFrame]) -> None:
+    """Fail if any IMV timing output sheet exposes row-level identifiers or complaint text."""
+
+    hits: dict[str, list[str]] = {}
+    for sheet_name, frame in sheets.items():
+        normalized = {
+            re.sub(r"[^a-z0-9]+", "_", str(column).strip().lower()).strip("_"): str(column)
+            for column in frame.columns
+        }
+        restricted = sorted(
+            original
+            for normalized_name, original in normalized.items()
+            if normalized_name in IMV_TIMING_FORBIDDEN_EXPORT_COLUMNS
+        )
+        if restricted:
+            hits[sheet_name] = restricted
+    if hits:
+        raise AssertionError(f"IMV timing aggregate outputs include restricted columns: {hits}")
+
+
+def format_imv_timing_prevalence_for_export(frame: pd.DataFrame) -> pd.DataFrame:
+    """Use explicit admission terminology in IMV timing prevalence workbooks."""
+
+    renamed = frame.rename(
+        columns={
+            "N_group": "admission_denominator",
+            "n_with_category": "admissions_with_category",
+            "pct_of_encounters": "prevalence_percent",
+            "ci_lower": "prevalence_ci_lower_percent",
+            "ci_upper": "prevalence_ci_upper_percent",
+        }
+    ).copy()
+    required = {
+        "admission_denominator",
+        "admissions_with_category",
+        "prevalence_percent",
+        "prevalence_ci_lower_percent",
+        "prevalence_ci_upper_percent",
+        "category_order",
+    }
+    missing = sorted(required - set(renamed.columns))
+    if missing:
+        raise KeyError(f"IMV timing prevalence export is missing columns: {missing}")
+    return renamed
+
+
+def select_max_imv_timing_grouped_contrast(
+    sensitivity_comparison: pd.DataFrame,
+) -> pd.Series:
+    """Select the largest grouped contrast with ties resolved by RFV_GROUP_ORDER."""
+
+    grouped = sensitivity_comparison.loc[
+        sensitivity_comparison["representation"].eq("Grouped RFV")
+    ].copy()
+    if grouped.empty:
+        raise ValueError("Grouped RFV rows are required for the IMV timing interpretation.")
+    category_order = {category: order for order, category in enumerate(RFV_GROUP_ORDER)}
+    grouped["_category_order"] = grouped["category"].map(category_order)
+    if grouped["_category_order"].isna().any():
+        raise ValueError("Grouped IMV timing comparison contains an unsupported RFV category.")
+    return grouped.sort_values(
+        ["absolute_difference_pp", "_category_order"],
+        ascending=[False, True],
+        kind="mergesort",
+    ).iloc[0]
+
+
+def imv_timing_interpretation_sentence(max_row: pd.Series) -> str:
+    """Generate the locked neutral sentence from the maximum grouped contrast row."""
+
+    return (
+        f"The largest absolute grouped-RFV contrast was for {max_row['category']}: "
+        f"{float(max_row['all_gas_positive_prevalence_percent']):.1f}% among all gas-positive "
+        f"admissions versus {float(max_row['no_prior_observed_imv_prevalence_percent']):.1f}% "
+        "among admissions with no prior observed IMV "
+        f"({float(max_row['difference_pp_no_prior_minus_all']):+.1f} percentage points, "
+        "no-prior minus all gas-positive)."
+    )
+
+
+def build_imv_timing_manuscript_summary(
+    group_yield: pd.DataFrame,
+    grouped_prevalence: pd.DataFrame,
+    sensitivity_comparison: pd.DataFrame,
+) -> str:
+    """Build deterministic aggregate manuscript-drafting text for the new sensitivity."""
+
+    lines = [
+        "# IMV timing relative to the qualifying gas",
+        "",
+        "## Temporal strata among gas-positive admissions",
+        "",
+    ]
+    for spec in IMV_TIMING_STRATA:
+        yield_row = group_yield.loc[group_yield["stratum_key"].eq(spec["stratum_key"])].iloc[0]
+        stratum_n = int(yield_row["admissions"])
+        if stratum_n == 0:
+            lines.append(
+                f"- **{spec['stratum_label']}**: N=0 (0.0% of gas-positive admissions); "
+                "respiratory and injuries/adverse-effects prevalences were not estimable because the stratum had no observations."
+            )
+            continue
+        prevalence_rows = grouped_prevalence.loc[
+            grouped_prevalence["stratum_key"].eq(spec["stratum_key"])
+        ]
+        respiratory = prevalence_rows.loc[prevalence_rows["category"].eq("Respiratory")].iloc[0]
+        injuries = prevalence_rows.loc[
+            prevalence_rows["category"].eq("Injuries & adverse effects")
+        ].iloc[0]
+        lines.append(
+            f"- **{spec['stratum_label']}**: N={stratum_n:,} "
+            f"({float(yield_row['percent_of_gas_positive_admissions']):.1f}% of gas-positive admissions); "
+            f"respiratory RFV prevalence {float(respiratory['pct_of_encounters']):.1f}% "
+            f"(95% CI {float(respiratory['ci_lower']):.1f}-{float(respiratory['ci_upper']):.1f}); "
+            f"injuries/adverse-effects prevalence {float(injuries['pct_of_encounters']):.1f}% "
+            f"(95% CI {float(injuries['ci_lower']):.1f}-{float(injuries['ci_upper']):.1f})."
+        )
+
+    max_row = select_max_imv_timing_grouped_contrast(sensitivity_comparison)
+    max_difference = float(max_row["absolute_difference_pp"])
+    interpretation = imv_timing_interpretation_sentence(max_row)
+    lines.extend(
+        [
+            "",
+            "## No-prior-observed-IMV sensitivity",
+            "",
+            (
+                f"- Maximum absolute grouped-RFV difference: {max_difference:.1f} percentage points "
+                f"for {max_row['category']} (no-prior minus all gas-positive: "
+                f"{float(max_row['difference_pp_no_prior_minus_all']):+.1f} percentage points; "
+                f"paired-bootstrap 95% CI {float(max_row['difference_ci_lower']):+.1f} to "
+                f"{float(max_row['difference_ci_upper']):+.1f})."
+            ),
+            f"- Prespecified neutral interpretation: {interpretation}",
+            "",
+            "Observed temporal ordering does not establish that ventilation caused hypercapnia.",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def summarize_labels_per_encounter(
     df: pd.DataFrame,
     *,
@@ -2014,6 +3192,102 @@ TIMING_SAFEGUARD_COHORTS = [
         "purpose": "Highest clinical specificity using ICD plus gas within 24h",
     },
 ]
+IMV_TIMING_STRATA = (
+    {
+        "stratum_key": "no_observed_imv",
+        "stratum_label": "No observed IMV",
+    },
+    {
+        "stratum_key": "qualifying_gas_before_imv",
+        "stratum_label": "Qualifying gas before IMV",
+    },
+    {
+        "stratum_key": "imv_before_qualifying_gas",
+        "stratum_label": "IMV before qualifying gas",
+    },
+    {
+        "stratum_key": "timing_indeterminate",
+        "stratum_label": "Timing indeterminate",
+    },
+)
+IMV_TIMING_STRATUM_KEYS = tuple(spec["stratum_key"] for spec in IMV_TIMING_STRATA)
+IMV_TIMING_STRATUM_LABELS = tuple(spec["stratum_label"] for spec in IMV_TIMING_STRATA)
+IMV_TIMING_STRATUM_LABEL_MAP = {
+    spec["stratum_key"]: spec["stratum_label"] for spec in IMV_TIMING_STRATA
+}
+IMV_TIMING_SOURCE_VALUES = (
+    "intubation_procedure",
+    "invasive_ventilation_procedure",
+    "derived_ventilation_episode",
+    "multiple_sources_same_time",
+    "missing",
+)
+IMV_TIMING_REQUIRED_INPUT_COLS = (
+    "subject_id",
+    "hadm_id",
+    "age",
+    "death_in_hosp",
+    "imv_flag",
+    "first_imv_time",
+    "qualifying_pco2_time",
+    "first_derived_imv_starttime",
+    "first_intubation_procedure_time",
+    "first_invasive_ventilation_procedure_time",
+    "first_observed_imv_time",
+    "first_observed_imv_source",
+    "robust_imv_observed",
+    "imv_qualifying_gas_order",
+    "imv_preceded_qualifying_gas",
+    "no_prior_observed_imv",
+    "hours_from_imv_to_qualifying_gas",
+    "legacy_imv_timing_discordant",
+)
+IMV_TIMING_TIMESTAMP_COLS = (
+    "qualifying_pco2_time",
+    "first_derived_imv_starttime",
+    "first_intubation_procedure_time",
+    "first_invasive_ventilation_procedure_time",
+    "first_observed_imv_time",
+)
+IMV_SOURCE_PROVENANCE_FILENAME = "MIMICIV IMV source provenance.json"
+IMV_SOURCE_PROVENANCE_SCHEMA_VERSION = 1
+IMV_SOURCE_PROJECTION_COLUMNS = (
+    "subject_id",
+    "hadm_id",
+    "pco2_threshold_any",
+    "imv_flag",
+    "qualifying_pco2_time",
+    "first_derived_imv_starttime",
+    "first_intubation_procedure_time",
+    "first_invasive_ventilation_procedure_time",
+    "first_imv_time",
+)
+IMV_SOURCE_PROVENANCE_PATH = (
+    WORK_DIR / "MIMIC tabular data" / IMV_SOURCE_PROVENANCE_FILENAME
+)
+IMV_TIMING_FORBIDDEN_EXPORT_COLUMNS = frozenset(
+    {
+        "subject_id",
+        "hadm_id",
+        "ed_stay_id",
+        "encounter_id",
+        "ed_triage_cc",
+        "cc_text_for_nlp",
+        "chief_complaint",
+        "chiefcomplaint",
+        "raw_chief_complaint",
+    }
+)
+IMV_TIMING_SENSITIVITY_SHEET_ORDER = (
+    "Group_Yield",
+    "Group_Characteristics",
+    "Grouped_RFV_Prevalence",
+    "Canonical_RFV_Prevalence",
+    "No_Prior_IMV_Sensitivity",
+    "IMV_Source_Audit",
+    "Definitions",
+)
+IMV_TIMING_FIGURE_WIDTH_MM = 170.0
 
 SERIES_MARKERS = {
     "Respiratory": "o",
@@ -2086,6 +3360,8 @@ MANUSCRIPT_ASSET_FILENAMES = {
     "figure_s8_png": "Figure S8.png",
     "figure_s9_xlsx": "Figure S9.xlsx",
     "figure_s9_png": "Figure S9.png",
+    "figure_s10_xlsx": "Figure S10.xlsx",
+    "figure_s10_png": "Figure S10.png",
 }
 
 SECONDARY_OUTPUT_FILENAMES = {
@@ -2098,6 +3374,8 @@ SECONDARY_OUTPUT_FILENAMES = {
     "sensitivity_suite": "Sensitivity_Analysis_Suite.xlsx",
     "first_admission_sensitivity": "First_Admission_Sensitivity.xlsx",
     "timing_safeguard_rfv_comparison": "Timing_Safeguard_RFV_Comparison.xlsx",
+    "imv_qualifying_gas_timing_sensitivity": "IMV_Qualifying_Gas_Timing_Sensitivity.xlsx",
+    "imv_timing_manuscript_summary": "imv_timing_manuscript_summary.md",
     "prevalence_uncertainty": "Prevalence_Uncertainty.xlsx",
     "ascertainment_flow_diagram": "Ascertainment_Flow_Diagram.png",
     "ascertainment_flow_workbook": "Ascertainment_Flow_Diagram_Summary.xlsx",
@@ -2239,6 +3517,13 @@ FIGURE_SPECS = {
         "caption_stub": "Grouped admission-level presenting-concern category prevalence across bicarbonate strata among blood-gas-ascertained admissions with available bicarbonate; percentages are multi-label and not mutually exclusive. Bicarbonate strata are presented as descriptive evidence of acid-base compensation and should not be interpreted as definitive chronicity classification.",
         "comparison_statement": "Describes whether presenting-concern profiles differ across low/normal, mildly elevated, and markedly elevated bicarbonate strata.",
         "order_rule": "clinically ascending bicarbonate strata",
+        "export_type": "double-column",
+    },
+    "figure_s10_png": {
+        "title": "Grouped presenting-concern prevalence by IMV timing relative to the qualifying gas",
+        "caption_stub": "Grouped admission-level multi-label reason-for-visit (RFV) prevalence among blood-gas-positive admissions, shown in a 2 x 2 A-D panel sequence as no observed invasive mechanical ventilation (IMV), qualifying gas before IMV, IMV before the qualifying gas, and indeterminate timing. Whiskers show patient-cluster bootstrap 95% confidence intervals on a shared prevalence scale, and panel titles report admission denominators; an empty stratum is labeled no observations. Temporal ordering does not establish that ventilation caused hypercapnia.",
+        "comparison_statement": "Describes presenting-concern profiles across mutually exclusive observed IMV and qualifying-gas timing strata without causal attribution.",
+        "order_rule": "prespecified temporal order: no observed IMV, qualifying gas before IMV, IMV before qualifying gas, timing indeterminate",
         "export_type": "double-column",
     },
     "ascertainment_flow_diagram": {
@@ -2491,7 +3776,7 @@ def save_and_render_figure(
     *,
     alias_keys: list[str] | None = None,
     dpi: int = 300,
-    bbox_inches: str = "tight",
+    bbox_inches: str | None = "tight",
     facecolor: str = "white",
 ) -> Path:
     """Save a registered figure artifact and emit it into the rendered notebook."""
@@ -3332,6 +4617,170 @@ def render_manuscript_prevalence_panels(
     return save_and_render_figure(fig, key, alias_keys=alias_keys)
 
 
+def render_imv_timing_prevalence_panels(
+    plot_df: pd.DataFrame,
+    *,
+    ci_lower_df: pd.DataFrame,
+    ci_upper_df: pd.DataFrame,
+    group_sizes: dict[str, int],
+    key: str = "figure_s10_png",
+) -> Path:
+    """Render Figure S10 as a fixed 170-mm-wide 2x2 A-D small multiple."""
+
+    facet_order = list(IMV_TIMING_STRATUM_LABELS)
+    if list(plot_df.index) != facet_order:
+        raise ValueError("Figure S10 strata must be in the locked A-D reading order.")
+    category_order = ordered_rfv_display_categories(list(RFV_GROUP_ORDER))
+    plot_matrix = plot_df.reindex(index=facet_order, columns=category_order)
+    lower_matrix = ci_lower_df.reindex(index=facet_order, columns=category_order)
+    upper_matrix = ci_upper_df.reindex(index=facet_order, columns=category_order)
+    for facet in facet_order:
+        facet_n = int(group_sizes.get(facet, 0))
+        facet_has_missing = bool(
+            plot_matrix.loc[facet].isna().any()
+            or lower_matrix.loc[facet].isna().any()
+            or upper_matrix.loc[facet].isna().any()
+        )
+        if facet_n > 0 and facet_has_missing:
+            raise ValueError(f"Figure S10 has missing estimates for nonempty stratum: {facet}")
+        if facet_n == 0 and not bool(
+            plot_matrix.loc[facet].isna().all()
+            and lower_matrix.loc[facet].isna().all()
+            and upper_matrix.loc[facet].isna().all()
+        ):
+            raise ValueError(f"Figure S10 empty stratum must contain blank estimates: {facet}")
+
+    label_padding = 1.6
+    upper_bound = float(np.nanmax(upper_matrix.to_numpy(dtype=float)))
+    x_max = prevalence_lollipop_xmax(plot_matrix, minimum=45.0, padding=10.0, cap=100.0)
+    x_max = max(x_max, float(np.ceil((upper_bound + label_padding + 10.0) / 5.0) * 5.0))
+    x_max = min(100.0, x_max)
+    panel_letters = ("A", "B", "C", "D")
+    figure_width_inches = IMV_TIMING_FIGURE_WIDTH_MM / 25.4
+    fig, axes = plt.subplots(
+        2,
+        2,
+        figsize=(figure_width_inches, 7.4),
+        sharex=True,
+        sharey=True,
+    )
+    axes = np.asarray(axes).ravel()
+    reversed_categories = category_order[::-1]
+    y_positions = np.arange(len(reversed_categories))
+    panel_title_lines = {
+        "No observed IMV": ("No observed IMV", "N={n}"),
+        "Qualifying gas before IMV": ("Qualifying gas", "before IMV; N={n}"),
+        "IMV before qualifying gas": ("IMV before", "qualifying gas; N={n}"),
+        "Timing indeterminate": ("Timing indeterminate", "N={n}"),
+    }
+    for panel_index, (axis, facet) in enumerate(zip(axes, facet_order, strict=True)):
+        facet_n = int(group_sizes.get(facet, 0))
+        values = plot_matrix.loc[facet, reversed_categories].to_numpy(dtype=float)
+        lower = lower_matrix.loc[facet, reversed_categories].to_numpy(dtype=float)
+        upper = upper_matrix.loc[facet, reversed_categories].to_numpy(dtype=float)
+        if facet_n == 0:
+            axis.text(
+                0.5,
+                0.5,
+                "No observations",
+                transform=axis.transAxes,
+                ha="center",
+                va="center",
+                fontsize=ANALYSIS_FIGURE_STYLE["annotation_size"],
+                color=ANALYSIS_COLORS["mid"],
+            )
+        else:
+            axis.hlines(
+                y_positions,
+                0,
+                values,
+                color=ANALYSIS_COLORS["neutral_light"],
+                linewidth=1.1,
+                zorder=1,
+            )
+            axis.errorbar(
+                values,
+                y_positions,
+                xerr=np.vstack([np.maximum(values - lower, 0.0), np.maximum(upper - values, 0.0)]),
+                fmt="none",
+                ecolor=ANALYSIS_COLORS["mid"],
+                elinewidth=1.15,
+                capsize=2.6,
+                capthick=1.0,
+                zorder=2,
+            )
+            for category, y_pos, value, upper_value in zip(
+                reversed_categories,
+                y_positions,
+                values,
+                upper,
+                strict=True,
+            ):
+                point_color = rfv_display_color(category)
+                axis.plot(
+                    value,
+                    y_pos,
+                    linestyle="none",
+                    marker=SERIES_MARKERS.get(category, "o"),
+                    markersize=5.7,
+                    color=point_color,
+                    zorder=3,
+                )
+                axis.text(
+                    min(max(value, upper_value) + label_padding, x_max - 0.5),
+                    y_pos,
+                    format_figure_pct(value),
+                    ha="left" if max(value, upper_value) + label_padding < x_max - 0.5 else "right",
+                    va="center",
+                    fontsize=ANALYSIS_FIGURE_STYLE["annotation_size"] - 1,
+                    color=ANALYSIS_COLORS["dark"],
+                    bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.9, "pad": 0.3},
+                    zorder=4,
+                )
+        title_line_1, title_line_2_template = panel_title_lines[facet]
+        title_line_2 = title_line_2_template.format(
+            n=format_figure_n(group_sizes[facet])
+        )
+        axis.set_title(
+            f"{panel_letters[panel_index]}. {title_line_1}\n{title_line_2}",
+            loc="left",
+            fontweight="normal",
+            fontsize=ANALYSIS_FIGURE_STYLE["title_size"] - 2,
+            pad=7,
+        )
+        axis.set_xlim(0, x_max)
+        axis.set_yticks(y_positions)
+        finish_axis(axis, x_grid=True, y_grid=False)
+        if panel_index % 2 == 0:
+            axis.set_yticklabels(reversed_categories)
+        else:
+            axis.tick_params(axis="y", labelleft=False)
+
+    fig.text(
+        0.5,
+        0.985,
+        "Gas-positive admissions; patient-cluster bootstrap 95% confidence intervals",
+        ha="center",
+        va="top",
+        fontsize=ANALYSIS_FIGURE_STYLE["annotation_size"] - 1,
+        color=ANALYSIS_COLORS["dark"],
+    )
+    fig.supxlabel(
+        "Prevalence among admissions (%)",
+        y=0.035,
+        fontsize=ANALYSIS_FIGURE_STYLE["label_size"] - 1,
+    )
+    fig.subplots_adjust(
+        left=0.34,
+        right=0.975,
+        top=0.88,
+        bottom=0.10,
+        wspace=0.20,
+        hspace=0.42,
+    )
+    return save_and_render_figure(fig, key, bbox_inches=None)
+
+
 def render_age_profile_panels(
     plot_df: pd.DataFrame,
     *,
@@ -3966,6 +5415,7 @@ SUBMISSION_LABEL_TO_FIGURE_KEY = {
     "Figure S7": "figure_s7_png",
     "Figure S8": "figure_s8_png",
     "Figure S9": "figure_s9_png",
+    "Figure S10": "figure_s10_png",
 }
 SUBMISSION_TABLE_SPECS = {
     "Table 1": {
@@ -4011,6 +5461,10 @@ SUBMISSION_REQUIRED_FILENAMES = frozenset(
         "Figure_S8.png",
         "Figure_S9.pdf",
         "Figure_S9.png",
+        "Figure_S10.pdf",
+        "Figure_S10.png",
+        "Figure_S10_source.xlsx",
+        "IMV_Qualifying_Gas_Timing_Sensitivity.xlsx",
     }
 )
 SUBMISSION_FORBIDDEN_ASSET_PATTERNS = (
@@ -4112,6 +5566,8 @@ def build_submission_asset_allowlist() -> list[dict[str, object]]:
         ("Figure S8.png", "Figure_S8.png", "Figure S8", "figure"),
         ("Figure S9.pdf", "Figure_S9.pdf", "Figure S9", "figure"),
         ("Figure S9.png", "Figure_S9.png", "Figure S9", "figure"),
+        ("Figure S10.pdf", "Figure_S10.pdf", "Figure S10", "figure"),
+        ("Figure S10.png", "Figure_S10.png", "Figure S10", "figure"),
         ("Table S1.xlsx", "Supplementary_Table_S1.xlsx", "Supplementary Table S1", "table"),
     ]
 
@@ -4154,6 +5610,29 @@ def build_submission_asset_allowlist() -> list[dict[str, object]]:
                 required_asset=source_filename != "Table S1.xlsx",
             )
         )
+    figure_s10_title, figure_s10_caption = submission_figure_metadata("Figure S10")
+    rows.extend(
+        [
+            submission_asset_spec(
+                "Figure S10.xlsx",
+                file_name="Figure_S10_source.xlsx",
+                manuscript_label="Figure S10 source data",
+                main_or_supplement="supplement",
+                title=f"{figure_s10_title} - aggregate source data",
+                intended_caption=figure_s10_caption,
+                asset_type="figure_source",
+            ),
+            submission_asset_spec(
+                "IMV_Qualifying_Gas_Timing_Sensitivity.xlsx",
+                file_name="IMV_Qualifying_Gas_Timing_Sensitivity.xlsx",
+                manuscript_label="IMV timing sensitivity workbook",
+                main_or_supplement="supplement",
+                title="IMV timing relative to the qualifying gas sensitivity analysis",
+                intended_caption="Aggregate group yields, characteristics, RFV prevalence estimates, paired nested-cohort contrasts, source audit, and definitions.",
+                asset_type="analysis_workbook",
+            ),
+        ]
+    )
     return rows
 
 
@@ -4396,6 +5875,7 @@ def build_submission_manifest(
         "Figure S7": "blood-gas subset with valid 0-24h timing",
         "Figure S8": "blood-gas subset with PCO2 bin and ICD status",
         "Figure S9": "blood-gas subset with QC-passing first_hco3",
+        "Figure S10": "blood-gas-positive admissions partitioned by observed IMV timing relative to the qualifying gas",
         "Table 1": "broad EHR hypercapnia cohort and mutually exclusive ascertainment strata",
         "Table 2": "broad EHR hypercapnia cohort",
         "Supplementary Table S1": "broad EHR hypercapnia cohort",
@@ -4476,12 +5956,15 @@ def write_outputs_readme(
         "## Gas, Timing, And Acid-Base Rules",
         "- Broad gas evidence uses qualifying pCO2 after the ED anchor through discharge.",
         "- Early timing windows are <=6h and <=24h from the ED anchor.",
+        "- The IMV timing sensitivity uses strict ordering of the first observed robust IMV timestamp and qualifying_pco2_time; exact ties and incomplete timing are indeterminate.",
+        "- The no-prior-observed-IMV sensitivity includes no observed IMV and qualifying gas before IMV, and excludes indeterminate timing.",
         "- Figure 4 uses paired qualifying-gas pH when available and reports denominator/missingness in the source workbook.",
         "- Bicarbonate outputs use first_hco3 with source/QC provenance; same-specimen HCO3 requires a future cohort-stage rerun before manuscript claims.",
         "",
         "## Sensitivity Analyses Generated",
         "- First-admission sensitivity.",
         "- Timing-safeguard RFV comparison.",
+        "- IMV timing relative to the qualifying gas, including Figure S10 and the aggregate sensitivity workbook.",
         "- Gas-source, ICD-era, administrative-only exclusion, and stricter PCO2 threshold sensitivity suite.",
         "- First-priority RFV sensitivity figures.",
         "",
@@ -4502,6 +5985,7 @@ def write_outputs_readme(
             "",
             "## Known Limitations",
             "- These outputs describe admission-level EHR evidence patterns and do not adjudicate causal attribution.",
+            "- Observed temporal ordering does not establish that ventilation caused hypercapnia.",
             "- Blood-gas testing, diagnosis coding, admission, and nonmissing triage text are clinical documentation/utilization processes.",
             "- Generated private row-level audits, if present, remain ignored and must not be committed.",
         ]
@@ -5056,14 +6540,14 @@ def build_candidate_definition_membership(df: pd.DataFrame) -> pd.DataFrame:
     ph = select_figure4_analysis_ph(df)
     hco3_available = first_hco3_qc_pass_mask(df)
     hco3 = maybe_numeric(df, ["first_hco3"])
-    time_to_imv = maybe_numeric(df, ["time_to_imv_hrs", "dt_first_imv_hours", "dt_first_imv_hours_model"])
-    time_to_niv = maybe_numeric(df, ["time_to_niv_hrs", "dt_first_niv_hours", "dt_first_niv_hours_model"])
+    legacy_time_to_imv = maybe_numeric(df, ["time_to_imv_hrs", "dt_first_imv_hours", "dt_first_imv_hours_model"])
+    legacy_time_to_niv = maybe_numeric(df, ["time_to_niv_hrs", "dt_first_niv_hours", "dt_first_niv_hours_model"])
     gas_time_missing_or_not_applicable = (~any_gas) | gas_hours.isna()
-    gas_precedes_imv = gas_time_missing_or_not_applicable | time_to_imv.isna() | gas_hours.lt(time_to_imv)
-    gas_precedes_niv = gas_time_missing_or_not_applicable | time_to_niv.isna() | gas_hours.lt(time_to_niv)
-    post_vent_only = any_gas & (
-        (time_to_imv.notna() & gas_hours.ge(time_to_imv))
-        | (time_to_niv.notna() & gas_hours.ge(time_to_niv))
+    legacy_gas_precedes_imv = gas_time_missing_or_not_applicable | legacy_time_to_imv.isna() | gas_hours.lt(legacy_time_to_imv)
+    legacy_gas_precedes_niv = gas_time_missing_or_not_applicable | legacy_time_to_niv.isna() | gas_hours.lt(legacy_time_to_niv)
+    legacy_post_vent_only = any_gas & (
+        (legacy_time_to_imv.notna() & gas_hours.ge(legacy_time_to_imv))
+        | (legacy_time_to_niv.notna() & gas_hours.ge(legacy_time_to_niv))
     )
     membership = pd.DataFrame(index=df.index)
     membership["Broad EHR hypercapnia cohort"] = any_icd | any_gas
@@ -5078,7 +6562,12 @@ def build_candidate_definition_membership(df: pd.DataFrame) -> pd.DataFrame:
     membership["Early gas + elevated HCO3"] = any_gas & gas_hours.le(24) & hco3_available & hco3.ge(28)
     membership["ICD + early gas"] = any_icd & any_gas & gas_hours.le(24)
     membership["ICD + early acidemic gas"] = any_icd & any_gas & gas_hours.le(24) & ph.lt(7.35)
-    membership["Exclude post-ventilation-only gas"] = (any_icd | any_gas) & (~post_vent_only) & gas_precedes_imv & gas_precedes_niv
+    membership["Exclude post-ventilation-only gas"] = (
+        (any_icd | any_gas)
+        & (~legacy_post_vent_only)
+        & legacy_gas_precedes_imv
+        & legacy_gas_precedes_niv
+    )
     return membership.astype(bool)
 
 
@@ -5763,10 +7252,17 @@ HYPERCAP_CRITERIA = [
 RFV_PRIMARY_COL_SENSITIVITY = "RFV1_name"
 FIRST_ADMISSION_SIMILARITY_THRESHOLD_PP = 2.0
 
-input_df = pd.read_excel(ANALYSIS_INPUT_PATH, engine="openpyxl")
+input_df, analysis_input_sha256 = read_excel_with_sha256(ANALYSIS_INPUT_PATH)
 analytic_df = input_df.copy()
 rfv_name_cols = get_rfv_name_cols(analytic_df)
-required_analysis_cols = sorted({RFV_PRIMARY_COL_SENSITIVITY, *rfv_name_cols, *HYPERCAP_CRITERIA})
+required_analysis_cols = sorted(
+    {
+        RFV_PRIMARY_COL_SENSITIVITY,
+        *rfv_name_cols,
+        *HYPERCAP_CRITERIA,
+        *IMV_TIMING_REQUIRED_INPUT_COLS,
+    }
+)
 try:
     ensure_required_columns(analytic_df, required_analysis_cols)
 except KeyError as exc:
@@ -5847,9 +7343,21 @@ else:
     analytic_df["inclusion_route"] = fallback_inclusion_route
 
 analytic_df["ed_anchor_time"] = maybe_datetime(analytic_df, ["ed_intime", "ed_intime_first", "admittime"])
-analytic_df["qualifying_pco2_time"] = maybe_datetime(analytic_df, ["qualifying_pco2_time", "first_gas_time"])
-analytic_df["first_imv_time"] = maybe_datetime(analytic_df, ["first_imv_time"])
 analytic_df["first_niv_time"] = maybe_datetime(analytic_df, ["first_niv_time"])
+imv_source_provenance, imv_source_provenance_sha256 = load_imv_source_provenance(
+    IMV_SOURCE_PROVENANCE_PATH, source_frame=input_df
+)
+# Validate required timestamp cells before any conversion can disguise malformed
+# nonmissing values as genuine missingness, including the gas and legacy anchors.
+for column in (*IMV_TIMING_TIMESTAMP_COLS, "first_imv_time"):
+    analytic_df[column] = _coerce_contract_datetime_for_analysis(
+        analytic_df[column], field_name=column
+    )
+for column in ("first_observed_imv_source", "imv_qualifying_gas_order"):
+    analytic_df[column] = analytic_df[column].astype("string").str.strip()
+imv_timing_contract = validate_imv_timing_analysis_contract(
+    analytic_df, source_provenance=imv_source_provenance
+)
 analytic_df["qualifying_pco2_mmhg"] = maybe_numeric(
     analytic_df,
     ["qualifying_pco2_mmhg", "first_pco2", "max_pco2_0_24h"],
@@ -9191,6 +10699,270 @@ timing_safeguard_rfv_comparison_path = write_excel_export(
 )
 note_export(timing_safeguard_rfv_comparison_path)
 
+```
+
+## IMV timing relative to the qualifying gas
+
+This sensitivity analysis is limited to gas-positive admissions and uses the cohort-provided robust IMV timestamps. It describes temporal ordering only; it does not establish that ventilation caused hypercapnia.
+
+```{python}
+#| label: hypercap-cc-nlp-analysis-cell-011b-imv-timing
+imv_timing_gas_df = prepare_imv_timing_gas_positive_frame(analytic_df)
+imv_timing_group_yield = build_imv_timing_group_yield(imv_timing_gas_df)
+imv_timing_group_characteristics = build_imv_timing_group_characteristics(
+    imv_timing_gas_df
+)
+imv_timing_grouped_prevalence = summarize_imv_timing_rfv_prevalence(
+    imv_timing_gas_df,
+    grouped=True,
+)
+imv_timing_canonical_prevalence = summarize_imv_timing_rfv_prevalence(
+    imv_timing_gas_df,
+    grouped=False,
+)
+imv_timing_grouped_no_prior_comparison = (
+    paired_cluster_bootstrap_imv_no_prior_sensitivity(
+        imv_timing_gas_df,
+        grouped=True,
+    )
+)
+imv_timing_canonical_no_prior_comparison = (
+    paired_cluster_bootstrap_imv_no_prior_sensitivity(
+        imv_timing_gas_df,
+        grouped=False,
+    )
+)
+imv_timing_no_prior_sensitivity = pd.concat(
+    [
+        imv_timing_grouped_no_prior_comparison,
+        imv_timing_canonical_no_prior_comparison,
+    ],
+    ignore_index=True,
+)
+imv_timing_no_prior_sensitivity["_representation_order"] = (
+    imv_timing_no_prior_sensitivity["representation"].map(
+        {"Grouped RFV": 1, "Canonical RFV": 2}
+    )
+)
+imv_timing_no_prior_sensitivity = (
+    imv_timing_no_prior_sensitivity.sort_values(
+        ["_representation_order", "category_order"],
+        kind="mergesort",
+    )
+    .drop(columns="_representation_order")
+    .reset_index(drop=True)
+)
+imv_timing_source_audit = build_imv_timing_source_audit(imv_timing_gas_df)
+imv_timing_definitions = build_imv_timing_definitions()
+
+imv_timing_group_yield_export = imv_timing_group_yield.copy()
+imv_timing_group_characteristics_export = imv_timing_group_characteristics.copy()
+imv_timing_grouped_prevalence_export = format_imv_timing_prevalence_for_export(
+    imv_timing_grouped_prevalence
+)
+imv_timing_canonical_prevalence_export = format_imv_timing_prevalence_for_export(
+    imv_timing_canonical_prevalence
+)
+imv_timing_no_prior_sensitivity_export = imv_timing_no_prior_sensitivity.copy()
+imv_timing_source_audit_export = imv_timing_source_audit.copy()
+
+for frame, columns in (
+    (
+        imv_timing_group_yield_export,
+        ["percent_of_gas_positive_admissions"],
+    ),
+    (
+        imv_timing_group_characteristics_export,
+        [
+            "abg_positive_percent",
+            "vbg_positive_percent",
+            "icd_positive_percent",
+            "age_median_years",
+            "age_q1_years",
+            "age_q3_years",
+            "in_hospital_mortality_percent",
+            "legacy_manuscript_imv_percent",
+        ],
+    ),
+    (
+        imv_timing_grouped_prevalence_export,
+        [
+            "prevalence_percent",
+            "prevalence_ci_lower_percent",
+            "prevalence_ci_upper_percent",
+        ],
+    ),
+    (
+        imv_timing_canonical_prevalence_export,
+        [
+            "prevalence_percent",
+            "prevalence_ci_lower_percent",
+            "prevalence_ci_upper_percent",
+        ],
+    ),
+    (
+        imv_timing_no_prior_sensitivity_export,
+        [
+            "all_gas_positive_prevalence_percent",
+            "all_gas_positive_ci_lower",
+            "all_gas_positive_ci_upper",
+            "no_prior_observed_imv_prevalence_percent",
+            "no_prior_observed_imv_ci_lower",
+            "no_prior_observed_imv_ci_upper",
+            "difference_pp_no_prior_minus_all",
+            "absolute_difference_pp",
+            "difference_ci_lower",
+            "difference_ci_upper",
+        ],
+    ),
+    (imv_timing_source_audit_export, ["value", "percent"]),
+):
+    for column in columns:
+        frame[column] = pd.to_numeric(frame[column], errors="coerce").round(2)
+
+imv_timing_sensitivity_sheets = {
+    "Group_Yield": imv_timing_group_yield_export,
+    "Group_Characteristics": imv_timing_group_characteristics_export,
+    "Grouped_RFV_Prevalence": imv_timing_grouped_prevalence_export,
+    "Canonical_RFV_Prevalence": imv_timing_canonical_prevalence_export,
+    "No_Prior_IMV_Sensitivity": imv_timing_no_prior_sensitivity_export,
+    "IMV_Source_Audit": imv_timing_source_audit_export,
+    "Definitions": imv_timing_definitions,
+}
+if tuple(imv_timing_sensitivity_sheets) != IMV_TIMING_SENSITIVITY_SHEET_ORDER:
+    raise AssertionError("IMV timing sensitivity workbook sheet order drifted.")
+assert_imv_timing_export_privacy(imv_timing_sensitivity_sheets)
+imv_timing_sensitivity_workbook_path = write_excel_export(
+    "imv_qualifying_gas_timing_sensitivity",
+    imv_timing_sensitivity_sheets,
+    builder="build_imv_timing_sensitivity_workbook",
+)
+
+figure_s10_plot_df = (
+    imv_timing_grouped_prevalence.pivot(
+        index="temporal_stratum",
+        columns="category",
+        values="pct_of_encounters",
+    )
+    .reindex(index=IMV_TIMING_STRATUM_LABELS, columns=RFV_GROUP_ORDER)
+)
+figure_s10_ci_lower_df = (
+    imv_timing_grouped_prevalence.pivot(
+        index="temporal_stratum",
+        columns="category",
+        values="ci_lower",
+    )
+    .reindex(index=IMV_TIMING_STRATUM_LABELS, columns=RFV_GROUP_ORDER)
+)
+figure_s10_ci_upper_df = (
+    imv_timing_grouped_prevalence.pivot(
+        index="temporal_stratum",
+        columns="category",
+        values="ci_upper",
+    )
+    .reindex(index=IMV_TIMING_STRATUM_LABELS, columns=RFV_GROUP_ORDER)
+)
+figure_s10_panel_denominators = imv_timing_group_yield.loc[
+    :,
+    [
+        "stratum_order",
+        "stratum_key",
+        "temporal_stratum",
+        "admissions",
+        "unique_patients",
+        "gas_positive_denominator",
+        "percent_of_gas_positive_admissions",
+    ],
+].copy()
+figure_s10_definitions = pd.concat(
+    [
+        imv_timing_definitions,
+        pd.DataFrame(
+            {
+                "term": ["Figure layout", "Panel reading order", "Shared scale"],
+                "definition": [
+                    f"Fixed 2 x 2 small-multiple layout at {IMV_TIMING_FIGURE_WIDTH_MM:.0f} mm width.",
+                    "A-D: no observed IMV; qualifying gas before IMV; IMV before qualifying gas; timing indeterminate.",
+                    "All four panels use the same admission-prevalence x-axis scale and show panel admission denominators.",
+                ],
+            }
+        ),
+    ],
+    ignore_index=True,
+)
+figure_s10_source_sheets = {
+    "Prevalence_Tidy": imv_timing_grouped_prevalence_export,
+    "ChartReady_Pivot": figure_s10_plot_df.reset_index(),
+    "ChartReady_CI_Lower": figure_s10_ci_lower_df.reset_index(),
+    "ChartReady_CI_Upper": figure_s10_ci_upper_df.reset_index(),
+    "Panel_Denominators": figure_s10_panel_denominators,
+    "Definitions": figure_s10_definitions,
+}
+assert_imv_timing_export_privacy(figure_s10_source_sheets)
+figure_s10_xlsx_path = write_excel_export(
+    "figure_s10_xlsx",
+    figure_s10_source_sheets,
+    builder="summarize_imv_timing_rfv_prevalence",
+)
+figure_s10_group_sizes = {
+    row.temporal_stratum: int(row.admissions)
+    for row in imv_timing_group_yield.itertuples(index=False)
+}
+figure_s10_png_path = render_imv_timing_prevalence_panels(
+    figure_s10_plot_df,
+    ci_lower_df=figure_s10_ci_lower_df,
+    ci_upper_df=figure_s10_ci_upper_df,
+    group_sizes=figure_s10_group_sizes,
+)
+figure_s10_pdf_path = figure_s10_png_path.with_suffix(".pdf")
+
+imv_timing_manuscript_summary_text = build_imv_timing_manuscript_summary(
+    imv_timing_group_yield,
+    imv_timing_grouped_prevalence,
+    imv_timing_no_prior_sensitivity,
+)
+(
+    imv_timing_manuscript_summary_path,
+    imv_timing_summary_scope,
+    imv_timing_summary_asset_name,
+) = resolve_export_target("imv_timing_manuscript_summary")
+imv_timing_manuscript_summary_path.parent.mkdir(parents=True, exist_ok=True)
+imv_timing_manuscript_summary_path.write_text(
+    imv_timing_manuscript_summary_text,
+    encoding="utf-8",
+)
+register_export(
+    key="imv_timing_manuscript_summary",
+    output_path=imv_timing_manuscript_summary_path,
+    builder="build_imv_timing_manuscript_summary",
+    artifact_kind="documentation",
+    scope=imv_timing_summary_scope,
+    formats=["md"],
+    manuscript_asset_name=imv_timing_summary_asset_name,
+)
+
+imv_timing_no_hypothesis_tests_ok = bool(
+    imv_timing_no_prior_sensitivity["null_hypothesis_test_performed"].eq(False).all()
+)
+if not imv_timing_no_hypothesis_tests_ok:
+    raise AssertionError("IMV timing sensitivity must not perform null-hypothesis tests.")
+imv_timing_privacy_ok = True
+note_export(imv_timing_sensitivity_workbook_path)
+note_export(figure_s10_xlsx_path)
+note_export(figure_s10_png_path)
+note_export(figure_s10_pdf_path)
+note_export(imv_timing_manuscript_summary_path)
+display(imv_timing_group_yield_export)
+display(imv_timing_grouped_prevalence_export)
+display(imv_timing_no_prior_sensitivity_export)
+
+```
+
+## Manuscript figures and retained secondary figures (continued)
+
+```{python}
+#| label: hypercap-cc-nlp-analysis-cell-011b-continuation
+
 prevalence_uncertainty_notes = pd.DataFrame(
     {
         "note": [
@@ -9815,6 +11587,7 @@ candidate_definition_notes = pd.DataFrame(
     {
         "note": [
             "Candidate definitions are phenotype-enrichment rules for future design, not validated causal-adjudication rules.",
+            "The post-ventilation-only exclusion is a legacy broad regex-derived exploratory screen and does not define the robust IMV timing subgroup.",
             "RFV summaries use the current package taxonomy only; no new chief-concern categories or composites are introduced.",
             "Primary cohort remains broad EHR ascertainment and admission-level.",
         ]
@@ -10274,6 +12047,7 @@ figure_denominator_map = {
     "figure_s7_png": len(plot_time_df),
     "figure_s8_png": len(recognition_df),
     "figure_s9_png": len(bicarbonate_df),
+    "figure_s10_png": len(imv_timing_gas_df),
     "ascertainment_flow_diagram": len(analytic_df),
     "time_to_gas_plot": len(plot_time_df),
     "recognition_by_pco2_plot": len(recognition_df),
@@ -10392,6 +12166,7 @@ for output_path in expected_outputs:
             "path": display_path(output_path),
             "exists": output_path.exists(),
             "size_bytes": output_path.stat().st_size if output_path.exists() else 0,
+            "sha256": sha256_file(output_path) if output_path.is_file() else None,
         }
     )
 
@@ -10653,6 +12428,90 @@ add_qc_check(
     "error",
     f"legacy_hits={sorted(legacy_manuscript_names & registered_filenames)}",
 )
+add_qc_check(
+    "imv_timing_gas_strata_reconcile",
+    int(imv_timing_group_yield["admissions"].sum())
+    == int(imv_timing_contract["gas_positive_admissions"]),
+    "error",
+    (
+        f"strata_sum={int(imv_timing_group_yield['admissions'].sum())}; "
+        f"gas_positive_n={int(imv_timing_contract['gas_positive_admissions'])}"
+    ),
+)
+imv_timing_non_gas_mask = analytic_df["pco2_threshold_any"].eq(0)
+add_qc_check(
+    "imv_timing_non_gas_not_applicable",
+    bool(
+        analytic_df.loc[imv_timing_non_gas_mask, "imv_qualifying_gas_order"]
+        .eq("not_applicable_no_qualifying_gas")
+        .all()
+    ),
+    "error",
+    f"non_gas_n={int(imv_timing_non_gas_mask.sum())}",
+)
+add_qc_check(
+    "imv_timing_prevalence_grid_complete",
+    len(imv_timing_grouped_prevalence)
+    == len(IMV_TIMING_STRATUM_LABELS) * len(RFV_GROUP_ORDER)
+    and len(imv_timing_canonical_prevalence)
+    == len(IMV_TIMING_STRATUM_LABELS) * len(RFV_CANONICAL_LABELS),
+    "error",
+    (
+        f"grouped_rows={len(imv_timing_grouped_prevalence)}; "
+        f"canonical_rows={len(imv_timing_canonical_prevalence)}"
+    ),
+)
+imv_timing_empty_prevalence_rows = imv_timing_grouped_prevalence["N_group"].eq(0)
+add_qc_check(
+    "imv_timing_empty_strata_are_blank",
+    bool(
+        imv_timing_grouped_prevalence.loc[
+            imv_timing_empty_prevalence_rows,
+            ["pct_of_encounters", "ci_lower", "ci_upper"],
+        ]
+        .isna()
+        .all()
+        .all()
+    ),
+    "error",
+    f"empty_grouped_cells={int(imv_timing_empty_prevalence_rows.sum())}",
+)
+imv_timing_sensitivity_denominators = imv_timing_no_prior_sensitivity[
+    ["all_gas_positive_admissions", "no_prior_observed_imv_admissions"]
+].drop_duplicates()
+add_qc_check(
+    "imv_timing_no_prior_nested_denominator",
+    len(imv_timing_sensitivity_denominators) == 1
+    and int(imv_timing_sensitivity_denominators.iloc[0]["all_gas_positive_admissions"])
+    == int(imv_timing_contract["gas_positive_admissions"])
+    and int(
+        imv_timing_sensitivity_denominators.iloc[0][
+            "no_prior_observed_imv_admissions"
+        ]
+    )
+    == int(imv_timing_contract["no_prior_observed_imv_admissions"])
+    and bool(imv_timing_no_prior_sensitivity["nested_paired_comparison"].all()),
+    "error",
+    f"denominators={imv_timing_sensitivity_denominators.to_dict('records')}",
+)
+add_qc_check(
+    "imv_timing_no_hypothesis_tests",
+    imv_timing_no_hypothesis_tests_ok,
+    "error",
+    "Paired bootstrap reports descriptive confidence intervals only.",
+)
+add_qc_check(
+    "imv_timing_aggregate_privacy",
+    imv_timing_privacy_ok,
+    "error",
+    "Sensitivity and Figure S10 workbooks passed aggregate-column allowlist checks.",
+)
+add_qc_check(
+    "imv_timing_workbook_sheet_contract",
+    tuple(imv_timing_sensitivity_sheets) == IMV_TIMING_SENSITIVITY_SHEET_ORDER,
+    "error",
+    f"sheets={list(imv_timing_sensitivity_sheets)}",
+)
 
 analysis_qc_checks = pd.DataFrame(analysis_qc_rows)
 analysis_qc_json_path = ANALYSIS_QA_DIR / "analysis_qc_checks.json"
@@ -10694,7 +12553,11 @@ def _manifest_relpath(path_value: object) -> str | None:
 
 
 analysis_manifest["stage"] = "analysis"
+analysis_manifest["results_date"] = RESULTS_DATE
 analysis_manifest["analysis_input_path"] = _manifest_relpath(ANALYSIS_INPUT_PATH)
+analysis_manifest["analysis_input_sha256"] = analysis_input_sha256
+analysis_manifest["imv_source_provenance_path"] = _manifest_relpath(IMV_SOURCE_PROVENANCE_PATH)
+analysis_manifest["imv_source_provenance_sha256"] = imv_source_provenance_sha256
 analysis_manifest["outputs"] = {
     "registered_excel_exports": analysis_export_registry,
     "upset_output_path": _manifest_relpath(upset_output_path),
@@ -10709,7 +12572,7 @@ analysis_manifest["outputs"] = {
 analysis_manifest["output_verification"] = verification_rows
 analysis_manifest["analysis_qc_checks"] = analysis_qc_rows
 analysis_manifest = sanitize_manifest_payload(analysis_manifest, work_dir=WORK_DIR)
-analysis_manifest_path = prior_runs_dir / f"{run_date} analysis_run_manifest.json"
+analysis_manifest_path = prior_runs_dir / f"{RESULTS_DATE} analysis_run_manifest.json"
 analysis_manifest_path.write_text(json.dumps(analysis_manifest, indent=2))
 note_export(analysis_manifest_path)
 ```

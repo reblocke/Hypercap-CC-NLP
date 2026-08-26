@@ -1,5 +1,163 @@
 # Decisions
 
+## 2026-08-25 - GitHub review requires sealed capture and untimed provenance
+
+Status: accepted
+
+Context:
+- A caller-supplied baseline SHA was not tied to the revision producing the
+  captured files. Older manifests lacked some input and workbook hashes.
+- Omitting the internal untimed-source flag from workbook exports left a
+  no-source row indistinguishable from a genuine untimed-source row downstream.
+- Capture required a pre-existing directory despite documenting a fresh-ID
+  workflow.
+
+Decision:
+- New schema-v2 captures resolve the producing commit and require clean dated
+  cohort, classifier, and analysis manifests with linked hashes for the exact
+  parsed inputs and all captured outputs. Copy and integrity-check those
+  manifests along with the captured artifacts; allow a different checkout.
+- Create fresh requested baseline targets safely without overwriting an
+  existing capture. Keep existing schema-v1 captures read-only, with mandatory
+  integrity checks and explicit `legacy_unverified` producer provenance.
+- Preserve the eleven workbook fields and keep the internal evidence flag out
+  of every Excel export. Add a required private source-evidence sidecar with
+  source-derived untimed membership, a common-source fingerprint, and a payload
+  digest; require its approved transfer and manifest checksum.
+- Derive temporal strata from timestamps and verified source evidence, and
+  reject incorrect untimed/no-observed relabeling in either direction. This
+  supersedes the earlier ambiguity allowance at the analysis boundary.
+
+Consequences:
+- Old unsealed renders cannot be relabeled as new verified captures. Preserve
+  the original baseline and disclose its historical provenance limitation;
+  never recapture it to clear a failure.
+- Split-machine runs must transfer the sidecar and producer manifests with the
+  workbook. Hashes guard integrity, not independent authenticity.
+- These changes affect validation/provenance rather than the estimand, but
+  require synthetic nonzero untimed-source tests and a complete clean-successor
+  restricted acceptance run before a new GitHub review and merge.
+
+## 2026-08-25 - Raw IMV timestamps are validated before preparation
+
+Status: accepted
+
+Context:
+- The strict IMV validator rejected malformed timestamps in isolation, but the
+  production load path first used permissive datetime coercion. Invalid cells
+  could become `NaT` and pass as genuine missingness.
+
+Decision:
+- Parse the six required gas/IMV timestamp columns with the notebook-local
+  strict parser before validating their source-derived relationships.
+- Require the legacy `first_imv_time` column at the initial schema boundary;
+  do not manufacture or replace missing required fields through optional
+  fallback helpers.
+- Execute the production timestamp-preparation statements in regression tests,
+  covering every required field in gas-positive and ICD-only rows, plus valid
+  mixed-format timestamps and genuine missingness.
+- Preserve existing optional ED/NIV timestamp behavior and all analysis rules.
+
+Consequences:
+- The fix changes failure behavior for malformed handoffs, not the scientific
+  estimand or expected results for valid handoffs.
+- The clean successor still requires the full restricted acceptance rerun and
+  comparison with the unchanged original baseline before the PR hold is cleared.
+
+## 2026-08-25 - IMV acceptance safeguards are source-derived and immutable
+
+Status: accepted
+
+Context:
+- A split-machine handoff can carry internally consistent but stale derived IMV
+  fields unless the analysis stage reconstructs them from component timestamps.
+- Semantic parity is not a reliable control if a captured baseline can be
+  altered after capture or if substantive sheet names are misclassified as
+  documentation by substring.
+- The untimed-official-source flag is an internal QA field and must not leak
+  through optional row-level archive paths.
+
+Decision:
+- Recompute all reconstructable IMV timing fields from the three robust source
+  timestamps at the analysis boundary and reject any mismatch.
+- Treat captured parity baselines as immutable evidence: validate every copy
+  against its schema-versioned manifest before comparing current outputs, and
+  fail closed on any integrity or inventory error.
+- Use an exact normalized per-workbook documentation-sheet allowlist; names that
+  merely contain documentation-like tokens remain substantive.
+- Route every optional row-level cohort archive through one nonmutating export
+  sanitizer that drops and asserts absence of internal-only fields.
+
+Consequences:
+- The existing schema-v1 baseline remains usable when its recorded semantic
+  signatures validate; it is not silently overwritten or recaptured after a
+  parity failure.
+- These safeguards should not change scientific estimates. Any numerical drift
+  on the corrected successor run is an acceptance blocker requiring separate
+  investigation.
+- A successor commit requires the complete restricted-data rerun, parity check,
+  archive-enabled privacy smoke test, and aggregate/visual QA before scientific
+  acceptance is restored.
+
+## 2026-08-25 - IMV timing is a noncausal sensitivity anchored to the qualifying gas
+
+Status: accepted
+
+Context:
+- The primary cohort allows a qualifying blood gas at any time from ED arrival
+  through discharge, so some admissions may first satisfy the blood-gas rule
+  after invasive mechanical ventilation (IMV) has been documented.
+- Existing 6-hour and 24-hour gas sensitivities do not directly compare the
+  first qualifying PCO2 timestamp with the first reliable observed IMV
+  timestamp.
+- The legacy broad chart-label regex can count nonspecific labels such as a
+  ventilator mode without confirming invasive ventilation and is therefore not
+  sufficiently specific for the new temporal subgroup.
+
+Decision:
+- Keep the primary cohort, existing primary estimates, and all existing
+  regression/prediction-model settings unchanged.
+- Require the official
+  `{BQ_PHYSIONET_PROJECT}.{BQ_DATASET_DERIVED}.ventilation` concept filtered to
+  `ventilation_status = 'InvasiveVent'`, joined from `stay_id` to `hadm_id`
+  through ICU `icustays`.
+- Before extraction, require exactly one row in the official derived
+  `_metadata` attribute/value table with `attribute = mimic_version` and
+  `value = 3.1`. Missing metadata, a different version, or an inaccessible
+  `ventilation` table is a hard failure; a derived `bg` table and the legacy
+  regex are not fallback sources.
+- Combine the earliest official derived episode with explicit ICU
+  `procedureevents` item IDs `224385` (Intubation) and `225792` (Invasive
+  Ventilation), after validating both normalized labels against `d_items`.
+- Compare the earliest of those robust timestamps directly with
+  `qualifying_pco2_time` using strict `<` and `>` ordering. Apply no buffer or
+  rounding; exact ties, missing qualifying-gas time, and IMV evidence without a
+  reliable timestamp are indeterminate.
+- Retain `first_imv_time`, `imv_chart_flag`, and `imv_flag` only for QA and
+  discordance assessment, not temporal classification.
+- Define the sensitivity cohort as gas-positive admissions classified
+  `no_observed_imv` or `qualifying_gas_before_imv`; exclude
+  `timing_indeterminate` and ICD-only admissions.
+- Produce an aggregate cohort QA audit, a seven-sheet IMV sensitivity workbook,
+  Figure S10 with patient-cluster bootstrap intervals, and a prespecified
+  aggregate manuscript-summary Markdown file. No row-level identifiers or raw
+  chief-complaint text may enter these outputs.
+
+Consequences:
+- Temporal ordering may identify post-IMV-ascertained hypercapnia but cannot
+  establish that IMV caused, induced, or newly produced hypercapnia. Manuscript
+  language must remain neutral and must not use `iatrogenic`,
+  `ventilator-induced`, or `new-onset hypercapnia` as derived labels.
+- NIV, ventilator settings, extubation, reintubation, causal models, regression
+  adjustment, and hypothesis tests remain out of scope.
+- A full rerun requires access to HOSP, ICU, ED, and the official derived
+  dataset on the cohort-extraction machine. Split-machine execution requires a
+  securely transferred, current private handoff; repository sync alone does not
+  provide it.
+- No IMV timing counts or prevalence estimates are current until the restricted
+  pipeline reruns successfully and its aggregate outputs pass denominator and
+  privacy checks.
+
 ## 2026-06-07 - Paired qualifying-gas pH audit precedes acidemia contract change
 
 Status: accepted

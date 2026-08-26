@@ -131,6 +131,325 @@ def test_cohort_notebook_has_generation_and_qa_sections() -> None:
     assert "## QA & Data Fidelity" in cohort_text
 
 
+def test_imv_timing_cohort_uses_fail_closed_sources_and_strict_ordering() -> None:
+    cohort_text = (WORK_DIR / "MIMICIV_hypercap_EXT_cohort.qmd").read_text()
+    env_text = (WORK_DIR / ".env.example").read_text()
+
+    assert "BQ_DATASET_DERIVED=mimiciv_derived" in env_text
+    assert 'os.getenv("BQ_DATASET_DERIVED", "mimiciv_derived")' in cohort_text
+
+    derived_validation = cohort_text.split("def validate_derived_dataset(", maxsplit=1)[1].split(
+        "# Resolve HOSP/ICU/ED names",
+        maxsplit=1,
+    )[0]
+    for source_contract in (
+        'expected_mimic_version: str = "3.1"',
+        "._metadata",
+        "attribute AS STRING",
+        "value AS STRING",
+        "= 'mimic_version'",
+        "len(metadata) != 1",
+        "observed_version != expected_mimic_version",
+        ".ventilation",
+        "No legacy timing fallback is permitted",
+    ):
+        assert source_contract in derived_validation
+
+    robust_source_block = cohort_text.split("### 9) Reliable observed IMV sources", maxsplit=1)[1].split(
+        "### 10)",
+        maxsplit=1,
+    )[0]
+    assert "WHERE v.ventilation_status = 'InvasiveVent'" in robust_source_block
+    assert "JOIN `{PHYS}.{ICU}.icustays` AS i" in robust_source_block
+    assert '224385: "Intubation"' in robust_source_block
+    assert '225792: "Invasive Ventilation"' in robust_source_block
+    assert "`{PHYS}.{ICU}.d_items`" in robust_source_block
+    assert "normalize_mimic_item_label(observed_label)" in robust_source_block
+    assert "normalize_mimic_item_label(expected_label)" in robust_source_block
+    assert 'ICU_3_1_DATASET_ALIASES = frozenset({"mimiciv_3_1_icu", "mimiciv_v3_1_icu"})' in cohort_text
+    assert "Unversioned fallback is not permitted" in cohort_text
+    assert "derived_episode_missing_starttime_rows" in robust_source_block
+    assert "explicit_procedure_event_missing_starttime_rows" in robust_source_block
+    assert "Official InvasiveVent episodes contain missing starttime values" not in robust_source_block
+    assert "Explicit IMV procedure events contain missing starttime values" not in robust_source_block
+    assert "IMV_SOURCE_RECORD_NO_TIME_COLUMN" in robust_source_block
+    assert "cohort_export_drop_columns = [\n    IMV_SOURCE_RECORD_NO_TIME_COLUMN," in cohort_text
+
+    classifier = cohort_text.split(
+        "def classify_imv_qualifying_gas_order(", maxsplit=1
+    )[1].split("\ndef legacy_imv_timing_discordant(", maxsplit=1)[0]
+    signature = classifier.split(") -> str:", maxsplit=1)[0]
+    assert "qualifying_pco2_time" in signature
+    assert "buffer" not in signature.casefold()
+    assert "tolerance" not in signature.casefold()
+    assert "qualifying_time < observed_imv_time" in classifier
+    assert "observed_imv_time < qualifying_time" in classifier
+    assert "<=" not in classifier
+    assert ">=" not in classifier
+    assert 'return "timing_indeterminate"' in classifier
+    assert "first_imv_time" not in classifier
+    assert "source_record_imv_evidence_without_reliable_timestamp" in classifier
+
+
+def test_imv_timing_handoff_fields_and_aggregate_cohort_audit_are_registered() -> None:
+    cohort_text = (WORK_DIR / "MIMICIV_hypercap_EXT_cohort.qmd").read_text()
+    spec_text = (WORK_DIR / "docs" / "SPEC.md").read_text()
+    field_names = (
+        "first_derived_imv_starttime",
+        "first_intubation_procedure_time",
+        "first_invasive_ventilation_procedure_time",
+        "first_observed_imv_time",
+        "first_observed_imv_source",
+        "robust_imv_observed",
+        "imv_qualifying_gas_order",
+        "imv_preceded_qualifying_gas",
+        "no_prior_observed_imv",
+        "hours_from_imv_to_qualifying_gas",
+        "legacy_imv_timing_discordant",
+    )
+
+    for field_name in field_names:
+        assert field_name in cohort_text
+        assert f"`{field_name}`" in spec_text
+    assert "imv_qualifying_gas_timing_audit.csv" in cohort_text
+    assert "artifacts/qa/cohort/imv_qualifying_gas_timing_audit.csv" in spec_text
+    assert "restricted_audit_columns" in cohort_text
+    assert "subject_id" in cohort_text.split("restricted_audit_columns", maxsplit=1)[1].split(
+        "imv_qualifying_gas_timing_audit_path",
+        maxsplit=1,
+    )[0]
+
+
+def test_docs_require_private_imv_source_provenance() -> None:
+    documentation_paths = (
+        WORK_DIR / "README.md",
+        WORK_DIR / "llms.txt",
+        WORK_DIR / "docs" / "SPEC.md",
+        WORK_DIR / "docs" / "DATA_ACCESS.md",
+        WORK_DIR / "data_dictionary.md",
+    )
+    for path in documentation_paths:
+        text = path.read_text()
+        assert "MIMICIV IMV source provenance.json" in text
+        assert "sidecar" in text
+    spec_text = " ".join((WORK_DIR / "docs" / "SPEC.md").read_text().split())
+    assert "Both directions of incorrect relabeling must be rejected" in spec_text
+    assert "supplied temporal stratum" in spec_text
+    assert "Digests establish transfer integrity, not independent source authenticity" in spec_text
+    assert "payload digest" in spec_text
+    assert "accepts either" not in spec_text
+
+
+def test_docs_distinguish_sealed_new_captures_from_legacy_baselines() -> None:
+    for path in (
+        WORK_DIR / "README.md",
+        WORK_DIR / "llms.txt",
+        WORK_DIR / "docs" / "SPEC.md",
+    ):
+        text = " ".join(path.read_text().split())
+        assert "producer manifests" in text
+        assert "legacy_unverified" in text
+        assert "schema-v1" in text
+    spec_text = " ".join((WORK_DIR / "docs" / "SPEC.md").read_text().split())
+    assert "schema-v2" in spec_text
+    assert "current checkout may differ from the producing commit" in spec_text
+    assert "Never recapture a baseline after a parity failure" in spec_text
+
+
+def test_optional_archive_exports_sanitize_internal_imv_fields() -> None:
+    cohort_text = (WORK_DIR / "MIMICIV_hypercap_EXT_cohort.qmd").read_text()
+
+    assert "def prepare_archive_export_frame(" in cohort_text
+    assert "columns=[IMV_SOURCE_RECORD_NO_TIME_COLUMN]" in cohort_text
+    assert "archive retains internal-only columns" in cohort_text
+
+    expected_sanitized_frames = {
+        "archive_cohort": "df",
+        "archive_ed_df": "ed_df",
+        "archive_all_encounters": "all_encounters",
+        "archive_ed_cc_only": "ed_cc_only",
+    }
+    for archive_frame, source_frame in expected_sanitized_frames.items():
+        assert (
+            f"{archive_frame} = prepare_archive_export_frame(\n"
+            f"        {source_frame},"
+        ) in cohort_text
+
+    for unsanitized_write_pattern in (
+        r"(?<![A-Za-z0-9_])df\.to_excel\(",
+        r"(?<![A-Za-z0-9_])ed_df\.to_excel\(",
+        r"(?<![A-Za-z0-9_])all_encounters\.to_excel\(",
+        r"(?<![A-Za-z0-9_])ed_cc_only\.to_excel\(",
+    ):
+        assert re.search(unsanitized_write_pattern, cohort_text) is None
+
+    for sanitized_write in (
+        'archive_cohort.to_excel(xw, sheet_name="cohort"',
+        'archive_ed_df.to_excel(xw, sheet_name="cohort_ed_stay"',
+        "archive_all_encounters.to_excel(",
+        'archive_ed_cc_only.to_excel(xw, sheet_name="ed_cc_only"',
+    ):
+        assert sanitized_write in cohort_text
+
+
+def test_imv_timing_analysis_outputs_bootstrap_and_privacy_contract() -> None:
+    analysis_text = (WORK_DIR / "Hypercap CC NLP Analysis.qmd").read_text()
+
+    assert "\n## IMV timing relative to the qualifying gas\n" in analysis_text
+    assert (
+        '"imv_qualifying_gas_timing_sensitivity": '
+        '"IMV_Qualifying_Gas_Timing_Sensitivity.xlsx"'
+    ) in analysis_text
+    assert '"figure_s10_xlsx": "Figure S10.xlsx"' in analysis_text
+    assert '"figure_s10_png": "Figure S10.png"' in analysis_text
+    assert '"imv_timing_manuscript_summary": "imv_timing_manuscript_summary.md"' in analysis_text
+    expected_sheet_order = (
+        "Group_Yield",
+        "Group_Characteristics",
+        "Grouped_RFV_Prevalence",
+        "Canonical_RFV_Prevalence",
+        "No_Prior_IMV_Sensitivity",
+        "IMV_Source_Audit",
+        "Definitions",
+    )
+    sheet_order_block = analysis_text.split(
+        "IMV_TIMING_SENSITIVITY_SHEET_ORDER = (", maxsplit=1
+    )[1].split(")", maxsplit=1)[0]
+    assert tuple(re.findall(r'"([^"]+)"', sheet_order_block)) == expected_sheet_order
+    for sheet_name in expected_sheet_order:
+        assert f'"{sheet_name}"' in analysis_text
+
+    assert "def paired_cluster_bootstrap_imv_no_prior_sensitivity(" in analysis_text
+    bootstrap_block = analysis_text.split(
+        "def paired_cluster_bootstrap_imv_no_prior_sensitivity(", maxsplit=1
+    )[1].split("\ndef build_imv_timing_source_audit(", maxsplit=1)[0]
+    assert "PREVALENCE_CI_CLUSTER_UNIT" in bootstrap_block
+    assert '"cluster_unit": "patient"' in bootstrap_block
+    assert '"nested_paired_comparison": True' in bootstrap_block
+    assert '"null_hypothesis_test_performed": False' in bootstrap_block
+    for hypothesis_test_token in (
+        "ttest",
+        "chi2",
+        "fisher_exact",
+        "mannwhitney",
+        "p_value",
+        "pvalue",
+    ):
+        assert hypothesis_test_token not in bootstrap_block.casefold()
+
+    assert "def assert_imv_timing_export_privacy(" in analysis_text
+    assert analysis_text.count("assert_imv_timing_export_privacy(") >= 2
+    privacy_constants = analysis_text.split(
+        "IMV_TIMING_FORBIDDEN_EXPORT_COLUMNS =", maxsplit=1
+    )[1].split(")", maxsplit=1)[0]
+    for forbidden_field in (
+        "subject_id",
+        "hadm_id",
+        "ed_stay_id",
+        "chief_complaint",
+        "raw_chief_complaint",
+    ):
+        assert forbidden_field in privacy_constants
+
+    assert 'write_excel_export(\n    "imv_qualifying_gas_timing_sensitivity"' in analysis_text
+    assert 'write_excel_export(\n    "figure_s10_xlsx"' in analysis_text
+    assert "figure_s10_pdf_path = figure_s10_png_path.with_suffix(\".pdf\")" in analysis_text
+    assert 'key="imv_timing_manuscript_summary"' in analysis_text
+    assert "imv_timing_no_hypothesis_tests_ok" in analysis_text
+    assert "IMV timing sensitivity must not perform null-hypothesis tests." in analysis_text
+
+    figure_block = analysis_text.split(
+        "def render_imv_timing_prevalence_panels(", maxsplit=1
+    )[1].split("\ndef render_age_profile_panels(", maxsplit=1)[0]
+    assert "IMV_TIMING_FIGURE_WIDTH_MM / 25.4" in figure_block
+    assert "plt.subplots(\n        2,\n        2," in figure_block
+    assert 'panel_letters = ("A", "B", "C", "D")' in figure_block
+    assert "95% confidence intervals" in figure_block
+    assert '"No observations"' in figure_block
+    assert "N={n}" in figure_block
+
+
+def test_imv_timing_documentation_and_data_dictionary_contract() -> None:
+    readme_text = (WORK_DIR / "README.md").read_text()
+    index_text = (WORK_DIR / "llms.txt").read_text()
+    env_text = (WORK_DIR / ".env.example").read_text()
+    access_text = (WORK_DIR / "docs" / "DATA_ACCESS.md").read_text()
+    spec_text = (WORK_DIR / "docs" / "SPEC.md").read_text()
+    mapping_text = (WORK_DIR / "docs" / "MANUSCRIPT_MAPPING.md").read_text()
+    dictionary_md = (WORK_DIR / "data_dictionary.md").read_text()
+    with (WORK_DIR / "data_dictionary.csv").open(newline="") as dictionary_file:
+        dictionary_rows = {row["variable_name"]: row for row in csv.DictReader(dictionary_file)}
+
+    assert "BQ_DATASET_DERIVED=mimiciv_derived" in readme_text
+    assert "BQ_DATASET_DERIVED=mimiciv_derived" in env_text.splitlines()
+    for documentation_text in (readme_text, index_text, env_text, access_text):
+        assert "BQ_DATASET_DERIVED=mimiciv_3_1_derived" in documentation_text
+    assert "attribute/value" in readme_text
+    assert "mimic_version = 3.1" in readme_text
+    for source_requirement in ("_metadata", "ventilation", "mimic_version = 3.1"):
+        assert source_requirement in index_text
+    normalized_index = " ".join(index_text.split())
+    assert "secondary, descriptive IMV timing sensitivity" in normalized_index
+    assert "eleven admission-level timing fields" in normalized_index
+    assert "does not establish that IMV caused hypercapnia" in normalized_index
+    assert "Figure S1-S10" in mapping_text
+    assert "IMV_Qualifying_Gas_Timing_Sensitivity.xlsx" in mapping_text
+    assert "imv_timing_manuscript_summary.md" in mapping_text
+
+    field_names = (
+        "first_derived_imv_starttime",
+        "first_intubation_procedure_time",
+        "first_invasive_ventilation_procedure_time",
+        "first_observed_imv_time",
+        "first_observed_imv_source",
+        "robust_imv_observed",
+        "imv_qualifying_gas_order",
+        "imv_preceded_qualifying_gas",
+        "no_prior_observed_imv",
+        "hours_from_imv_to_qualifying_gas",
+        "legacy_imv_timing_discordant",
+    )
+    for field_name in field_names:
+        assert field_name in dictionary_rows
+        assert dictionary_rows[field_name]["review_status"] == "reviewed"
+        assert f"`{field_name}`" in dictionary_md
+    for output_name in (
+        "imv_qualifying_gas_timing_audit",
+        "imv_qualifying_gas_timing_sensitivity",
+        "figure_s10",
+        "imv_timing_manuscript_summary",
+    ):
+        assert output_name in dictionary_rows
+        assert dictionary_rows[output_name]["review_status"] == "reviewed"
+
+    for output_name in (
+        "IMV_Qualifying_Gas_Timing_Sensitivity.xlsx",
+        "Figure S10.pdf",
+        "Figure S10.xlsx",
+        "imv_timing_manuscript_summary.md",
+    ):
+        assert output_name in spec_text
+        assert output_name in dictionary_md
+        assert output_name in index_text
+    normalized_spec = " ".join(spec_text.split())
+    assert "No null-hypothesis tests or causal language are permitted." in normalized_spec
+    assert "temporal ordering is not evidence that IMV caused hypercapnia" in normalized_spec
+    assert "subject_id" in spec_text
+    assert "hadm_id" in spec_text
+    assert "ed_stay_id" in spec_text
+    assert "raw chief complaint text" in spec_text
+
+
+def test_docs_cite_unreleased_code_by_exact_commit() -> None:
+    citation = yaml.safe_load((WORK_DIR / "CITATION.cff").read_text())
+    for document_name in ("README.md", "llms.txt", "docs/DATA_ACCESS.md"):
+        document_text = " ".join((WORK_DIR / document_name).read_text().split())
+        assert "exact commit SHA" in document_text
+        if document_name != "docs/DATA_ACCESS.md":
+            assert citation["version"] in document_text
+            assert "unreleased" in document_text
+
+
 def test_cohort_notebook_contains_ed_vitals_cleaning_helpers() -> None:
     cohort_text = (WORK_DIR / "MIMICIV_hypercap_EXT_cohort.qmd").read_text()
     assert "def normalize_temperature_to_f(" in cohort_text
@@ -298,6 +617,8 @@ def test_analysis_notebook_contains_requested_outputs() -> None:
     assert '"figure_s8_png": "Figure S8.png"' in analysis_text
     assert '"figure_s9_xlsx": "Figure S9.xlsx"' in analysis_text
     assert '"figure_s9_png": "Figure S9.png"' in analysis_text
+    assert '"figure_s10_xlsx": "Figure S10.xlsx"' in analysis_text
+    assert '"figure_s10_png": "Figure S10.png"' in analysis_text
     assert '"candidate_compensation_matrix_plot": "Candidate_Figure_Compensation_Matrix.png"' in analysis_text
     assert '"candidate_compensation_matrix_workbook": "Candidate_Figure_Compensation_Matrix.xlsx"' in analysis_text
     assert '"submission_manifest_xlsx": "submission_manifest.xlsx"' in analysis_text
@@ -306,6 +627,14 @@ def test_analysis_notebook_contains_requested_outputs() -> None:
     assert '"acid_base_source_missingness": "Supplementary_Table_Acid_Base_Source_Missingness.xlsx"' in analysis_text
     assert '"candidate_definition_summary": "Candidate_Definition_Yield_Composition.xlsx"' in analysis_text
     assert '"sensitivity_suite": "Sensitivity_Analysis_Suite.xlsx"' in analysis_text
+    assert (
+        '"imv_qualifying_gas_timing_sensitivity": '
+        '"IMV_Qualifying_Gas_Timing_Sensitivity.xlsx"'
+    ) in analysis_text
+    assert (
+        '"imv_timing_manuscript_summary": "imv_timing_manuscript_summary.md"'
+        in analysis_text
+    )
     assert '"figure_manifest": "figure_manifest.csv"' in analysis_text
     assert '"baseline_characteristics_expanded": "Baseline_Characteristics_Expanded.xlsx"' in analysis_text
     assert "write_pdf_table_export(" in analysis_text
@@ -321,6 +650,8 @@ def test_analysis_notebook_contains_requested_outputs() -> None:
     assert "Figure S1.png" in analysis_text
     assert "Figure S8.png" in analysis_text
     assert "Figure S9.png" in analysis_text
+    assert "Figure S10.png" in analysis_text
+    assert "Figure S10.pdf" in analysis_text
     assert "Candidate_Figure_Compensation_Matrix.png" in analysis_text
     assert "Candidate_Figure_Compensation_Matrix.xlsx" in analysis_text
     assert "Table 1.pdf" in analysis_text
@@ -366,6 +697,20 @@ def test_analysis_manifest_freezes_submission_revision_definitions() -> None:
     assert manifest["acid_base"]["hco3_bands_mmol_l"] == ["<22", "22-27", "28-33", ">=34"]
     assert manifest["models"]["new_regression_models"] is False
     assert manifest["models"]["new_prediction_models"] is False
+    assert manifest["sensitivity_analyses"]["imv_qualifying_gas_timing"] is True
+    imv_timing = manifest["imv_qualifying_gas_timing"]
+    assert imv_timing["gas_anchor"] == "qualifying_pco2_time"
+    assert imv_timing["strict_timestamp_ordering"] is True
+    assert imv_timing["temporal_buffer_hours"] == 0
+    assert imv_timing["exact_ties"] == "timing_indeterminate"
+    assert imv_timing["derived_dataset_environment_variable"] == "BQ_DATASET_DERIVED"
+    assert imv_timing["derived_dataset_default"] == "mimiciv_derived"
+    assert imv_timing["required_mimic_version"] == "3.1"
+    assert imv_timing["derived_ventilation_status"] == "InvasiveVent"
+    assert imv_timing["procedure_itemids"] == [224385, 225792]
+    assert imv_timing["includes_niv"] is False
+    assert imv_timing["changes_primary_cohort"] is False
+    assert imv_timing["causal_attribution"] is False
 
 
 def test_large_revision_outputs_are_registered_and_aggregate_only() -> None:
@@ -575,9 +920,14 @@ def test_submission_asset_bundle_has_clean_allowlist_and_manifest() -> None:
         "Figure_S8.png",
         "Figure_S9.pdf",
         "Figure_S9.png",
+        "Figure_S10.pdf",
+        "Figure_S10.png",
     ):
         assert asset_name in allowlist_body
 
+    assert '"Figure S10.xlsx"' in allowlist_body
+    assert '"Figure_S10_source.xlsx"' in allowlist_body
+    assert '"IMV_Qualifying_Gas_Timing_Sensitivity.xlsx"' in allowlist_body
     assert "Figure 2.xlsx" not in allowlist_body
     assert "Figure S6.xlsx" not in allowlist_body
     assert "Rater_Benchmark_Supplement_Tables.xlsx" not in allowlist_body
@@ -1312,17 +1662,17 @@ def test_ascertainment_indicator_and_stratum_vocabulary_is_documented() -> None:
     assert "Figure 1: analytic cohort construction, ascertainment definitions, and NLP workflow" in mapping_text
     assert "Figure 1: analytic cohort construction, source-specific overlap" not in mapping_text
     assert "Figure 2: presenting-concern prevalence by overlapping ascertainment indicator" in mapping_text
-    assert "Figure S1-S9" in mapping_text
-    assert "Figure S1-S9.pdf/.png" in spec_text
+    assert "Figure S1-S10" in mapping_text
+    assert "Figure S1-S10.pdf/.png" in spec_text
     assert "selected `Figure S*.xlsx` workbooks" in spec_text
-    assert "Figure S1-S9.pdf/.xlsx" not in spec_text
+    assert "Figure S1-S10.pdf/.xlsx" not in spec_text
     assert "submission_assets_manifest.csv" in spec_text
     assert "submission_assets_manifest.csv" in mapping_text
     assert "submission_asset_manifest.csv" not in spec_text
     assert "submission_asset_manifest.csv" not in mapping_text
     assert "Figure 2: presenting-concern prevalence by ascertainment route" not in mapping_text
-    assert "Figure S1-S8" not in spec_text
-    assert "Figure S1-S8" not in mapping_text
+    assert "Figure S1-S9" not in spec_text
+    assert "Figure S1-S9" not in mapping_text
 
 
 def test_figure_3_uses_ordered_age_profile_small_multiples() -> None:
@@ -1758,7 +2108,9 @@ def test_makefile_and_readme_document_analysis_as_the_merged_stage() -> None:
     assert "Figure 1" in readme_text
     assert "Figure 4" in readme_text
     assert "Figure S1" in readme_text
-    assert "Figure S9" in readme_text
+    assert "Figure S10" in readme_text
+    assert "IMV_Qualifying_Gas_Timing_Sensitivity.xlsx" in readme_text
+    assert "imv_timing_manuscript_summary.md" in readme_text
     assert "submission_assets_manifest.csv" in readme_text
     assert "analysis_manifest.yml" in readme_text
     assert "submission_manifest.xlsx" in readme_text
@@ -1780,6 +2132,9 @@ def test_manuscript_mapping_lists_revision_manifest_outputs() -> None:
     assert "Supplementary_Table_Acid_Base_Source_Missingness.xlsx" in mapping_text
     assert "Candidate_Definition_Yield_Composition.xlsx" in mapping_text
     assert "Sensitivity_Analysis_Suite.xlsx" in mapping_text
+    assert "Figure S10: grouped RFV prevalence by IMV/qualifying-gas temporal stratum" in mapping_text
+    assert "IMV_Qualifying_Gas_Timing_Sensitivity.xlsx" in mapping_text
+    assert "imv_timing_manuscript_summary.md" in mapping_text
 
 
 def test_classifier_notebook_contains_spell_mode_comparison_and_audit() -> None:

@@ -17,12 +17,20 @@ This document maps journal-submission outputs to their producing pipeline stages
 
 | Supplement item | Producing stage | Primary output |
 |---|---|---|
-| Figure S1-S9 | `Hypercap CC NLP Analysis.qmd` | `Results/YYYY-MM-DD/Figure S*.pdf`, selected `Figure S*.xlsx` |
+| Figure S1-S10 | `Hypercap CC NLP Analysis.qmd` | `Results/YYYY-MM-DD/Figure S*.pdf`, selected `Figure S*.xlsx` |
+| Figure S10: grouped RFV prevalence by IMV/qualifying-gas temporal stratum | `Hypercap CC NLP Analysis.qmd` | `Results/YYYY-MM-DD/Figure S10.pdf`, `Figure S10.xlsx` |
+| IMV timing sensitivity workbook and prespecified manuscript summary | `Hypercap CC NLP Analysis.qmd` | `Results/YYYY-MM-DD/IMV_Qualifying_Gas_Timing_Sensitivity.xlsx`, `imv_timing_manuscript_summary.md` |
 | NLP classifier methods tables | `Hypercap CC NLP Classifier.qmd` | `Results/YYYY-MM-DD/NLP_Classifier_Supplement_Tables.xlsx` |
 | Rater benchmark methods tables | `Rater Agreement Analysis.qmd` | `Results/YYYY-MM-DD/Rater_Benchmark_Supplement_Tables.xlsx` |
 | Run-level submission manifest and output README | `Hypercap CC NLP Analysis.qmd` | `Results/YYYY-MM-DD/submission_manifest.xlsx`, `submission_manifest.csv`, `OUTPUTS_README.md` |
 | Aggregate acid-base missingness, candidate definitions, and sensitivity suite | `Hypercap CC NLP Analysis.qmd` | `Results/YYYY-MM-DD/Supplementary_Table_Acid_Base_Source_Missingness.xlsx`, `Candidate_Definition_Yield_Composition.xlsx`, `Sensitivity_Analysis_Suite.xlsx` |
 | Submission asset manifest | `Hypercap CC NLP Analysis.qmd` | `Results/YYYY-MM-DD/submission_assets/submission_assets_manifest.csv` |
+
+The cohort-stage provenance artifact for Figure S10 and its workbook is the
+aggregate-only
+`artifacts/qa/cohort/imv_qualifying_gas_timing_audit.csv`. The private
+admission-level IMV timing fields remain only in the ignored cohort/classifier
+handoffs and are not manuscript or release assets.
 
 ## Release Asset Policy
 
