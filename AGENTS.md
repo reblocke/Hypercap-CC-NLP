@@ -21,8 +21,8 @@ final accepted or published journal article.
 
 ## Orientation
 
-- Start with `README.md` and `llms.txt` for scope, citation, run order, and data
-  restrictions.
+- Use `README.md` or `llms.txt` when scope, citation, run order, or data
+  restrictions matter; consult the contract or asset map only for affected work.
 - `docs/SPEC.md` is the pipeline contract; `docs/DATA_ACCESS.md` is the
   restricted-data statement; `docs/MANUSCRIPT_MAPPING.md` maps manuscript assets
   to notebook stages.
@@ -58,7 +58,7 @@ documented rather than bypassed.
 ## Verification Before Publishing
 
 - Validate `CITATION.cff` after citation edits.
-- Run tests, Ruff, `quarto check`, and `git diff --check`.
+- For prose-only changes, check affected references and `git diff --check`. For code/notebook changes, run affected tests and Ruff checks; use `quarto check` when rendering/configuration is affected. Full rendering requires authorized MIMIC/BigQuery access and private handoff inputs; static checks do not satisfy that gate.
 - Search for stale "metadata pending" wording once abstract metadata is known.
 - Confirm no tracked MIMIC workbooks, annotation workbooks, generated results,
   debug artifacts, manuscripts, PDFs, DOCX/PPTX, `.env`, or `CONTINUITY.md`.
