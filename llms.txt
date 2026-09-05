@@ -93,9 +93,17 @@ hypercapnia. The normative definitions and validation gates are in `docs/SPEC.md
 uv sync --frozen
 uv run pytest -q
 uv run ruff check src tests
+make numbers-check
+make numbers-check-live RESULTS_DATE=2026-08-25
 quarto check
 make -n quarto-pipeline RESULTS_DATE=2026-05-30
 ```
+
+`docs/NUMERIC_CLAIMS.yml` is the public, aggregate-only ledger for values repeated
+outside their producing artifact. Static checks exclude all manuscript/preprint
+files and dated historical evidence. Live checks reconcile the accepted aggregate
+Results/QA sources; they must not read restricted row-level handoffs or overwrite
+an accepted Results directory.
 
 Full private execution requires authorized MIMIC/BigQuery access and the ignored
 local input workbooks. Missing private inputs are expected in a clean public clone.

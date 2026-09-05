@@ -1,0 +1,381 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "package_type": "public code release with local aggregate submission assets",
+    "venue_profile": "generic_biomedical",
+    "accepted_run": {
+      "results_date": "2026-08-25",
+      "producer_sha": "6792c4cf9ef33e737dcb075cb49c979566d1669e",
+      "results_directory": "Results/2026-08-25",
+      "acceptance_report": "artifacts/qa/acceptance/imv-github-review-local-20260825-6792c4c/ACCEPTANCE_REPORT.md",
+      "acceptance_audit": "acceptance/imv-github-review-local-20260825-6792c4c/ACCEPTANCE_AUDIT.json"
+    },
+    "active_globs": [
+      "README.md",
+      "llms.txt",
+      "data_dictionary.csv",
+      "data_dictionary.md",
+      "analysis_manifest.yml",
+      "docs/**/*.md",
+      "*.qmd",
+      "src/**/*.py",
+      "scripts/**/*.py",
+      "tests/**/*.py",
+      "Makefile"
+    ],
+    "excluded_globs": [
+      "preprint/**",
+      "working-drafts/**",
+      "docs/DECISIONS.md",
+      "**/*.docx",
+      "**/*.pdf",
+      "Results/**-pre-*/**",
+      "Results/2026-06-*/**",
+      "MIMIC tabular data/prior runs/**",
+      "artifacts/qa/acceptance/**",
+      "debug/**",
+      ".quarto/**",
+      ".venv/**"
+    ],
+    "stale_phrases": [
+      "Published abstract reports mean F1 0.67",
+      "Published abstract reports kappa 0.50",
+      "Published abstract reports 54 percent exact agreement",
+      "Published abstract reports 21 percent partial matches"
+    ]
+  },
+  "claims": [
+    {
+      "claim_id": "cohort_total_admissions",
+      "concept_type": "sample_size",
+      "exact_value": 11941,
+      "display_values": ["11,941", "11941"],
+      "source": {"base": "results", "kind": "xlsx_row", "path": "Sensitivity_Analysis_Suite.xlsx", "sheet": "Denominator_Audit", "match": {"denominator_label": "Broad EHR cohort"}, "value_column": "N_admissions"},
+      "targets": [
+        {"base": "repo", "kind": "text", "path": "Hypercap CC NLP Analysis.qmd", "required": ["\"Admissions linked to ED presentation with nonmissing triage chief complaint\": 11941", "\"Analytic cohort\": 11941"]},
+        {"base": "repo", "kind": "text", "path": "tests/test_notebook_output_contracts.py", "required": ["\"Admissions linked to ED presentation with nonmissing triage chief complaint\": 11941", "\"Analytic cohort\": 11941"]}
+      ]
+    },
+    {
+      "claim_id": "cohort_total_patients",
+      "concept_type": "sample_size",
+      "exact_value": 9505,
+      "display_values": ["9,505", "9505"],
+      "source": {"base": "artifacts", "kind": "json_path", "path": "acceptance/imv-github-review-local-20260825-6792c4c/INDEPENDENT_HANDOFF_AUDIT.json", "json_path": ["counts", "analytic_patients"]}
+    },
+    {
+      "claim_id": "blood_gas_positive_admissions",
+      "concept_type": "sample_size",
+      "exact_value": 11500,
+      "display_values": ["11,500", "11500"],
+      "source": {"base": "results", "kind": "xlsx_row", "path": "Sensitivity_Analysis_Suite.xlsx", "sheet": "Denominator_Audit", "match": {"denominator_label": "Blood-gas-positive"}, "value_column": "N_admissions"}
+    },
+    {
+      "claim_id": "icd_positive_admissions",
+      "concept_type": "sample_size",
+      "exact_value": 1983,
+      "display_values": ["1,983", "1983"],
+      "source": {"base": "results", "kind": "xlsx_row", "path": "Sensitivity_Analysis_Suite.xlsx", "sheet": "Denominator_Audit", "match": {"denominator_label": "ICD-positive"}, "value_column": "N_admissions"},
+      "targets": [
+        {"base": "repo", "kind": "text", "path": "Hypercap CC NLP Analysis.qmd", "required": ["\"ICD-positive\": 1983"]},
+        {"base": "repo", "kind": "text", "path": "tests/test_notebook_output_contracts.py", "required": ["\"ICD-positive\": 1983"]}
+      ]
+    },
+    {
+      "claim_id": "gas_only_admissions",
+      "concept_type": "sample_size",
+      "exact_value": 9958,
+      "display_values": ["9,958", "9958"],
+      "source": {"base": "results", "kind": "xlsx_row", "path": "Sensitivity_Analysis_Suite.xlsx", "sheet": "Denominator_Audit", "match": {"denominator_label": "Gas-only"}, "value_column": "N_admissions"},
+      "targets": [
+        {"base": "repo", "kind": "text", "path": "Hypercap CC NLP Analysis.qmd", "required": ["\"Gas-only\": 9958"]},
+        {"base": "repo", "kind": "text", "path": "tests/test_notebook_output_contracts.py", "required": ["\"Gas-only\": 9958"]}
+      ]
+    },
+    {
+      "claim_id": "gas_only_percent",
+      "concept_type": "result",
+      "exact_value": 83.39,
+      "display_values": ["83.4%", "83.39%"],
+      "tolerance": 0.005,
+      "source": {"base": "results", "kind": "xlsx_row", "path": "Sensitivity_Analysis_Suite.xlsx", "sheet": "Denominator_Audit", "match": {"denominator_label": "Gas-only"}, "value_column": "percent_of_broad_cohort"}
+    },
+    {
+      "claim_id": "icd_only_admissions",
+      "concept_type": "sample_size",
+      "exact_value": 441,
+      "display_values": ["441"],
+      "source": {"base": "results", "kind": "xlsx_row", "path": "Sensitivity_Analysis_Suite.xlsx", "sheet": "Denominator_Audit", "match": {"denominator_label": "ICD-only"}, "value_column": "N_admissions"},
+      "targets": [
+        {"base": "repo", "kind": "text", "path": "Hypercap CC NLP Analysis.qmd", "required": ["\"ICD-only\": 441"]},
+        {"base": "repo", "kind": "text", "path": "tests/test_notebook_output_contracts.py", "required": ["\"ICD-only\": 441"]}
+      ]
+    },
+    {
+      "claim_id": "icd_only_percent",
+      "concept_type": "result",
+      "exact_value": 3.69,
+      "display_values": ["3.7%", "3.69%"],
+      "tolerance": 0.005,
+      "source": {"base": "results", "kind": "xlsx_row", "path": "Sensitivity_Analysis_Suite.xlsx", "sheet": "Denominator_Audit", "match": {"denominator_label": "ICD-only"}, "value_column": "percent_of_broad_cohort"}
+    },
+    {
+      "claim_id": "both_icd_and_gas_admissions",
+      "concept_type": "sample_size",
+      "exact_value": 1542,
+      "display_values": ["1,542", "1542"],
+      "source": {"base": "results", "kind": "xlsx_row", "path": "Sensitivity_Analysis_Suite.xlsx", "sheet": "Denominator_Audit", "match": {"denominator_label": "Both ICD + gas"}, "value_column": "N_admissions"},
+      "targets": [
+        {"base": "repo", "kind": "text", "path": "Hypercap CC NLP Analysis.qmd", "required": ["\"Both ICD and blood-gas criteria\": 1542"]},
+        {"base": "repo", "kind": "text", "path": "tests/test_notebook_output_contracts.py", "required": ["\"Both ICD and blood-gas criteria\": 1542"]}
+      ]
+    },
+    {
+      "claim_id": "both_icd_and_gas_percent",
+      "concept_type": "result",
+      "exact_value": 12.91,
+      "display_values": ["12.9%", "12.91%"],
+      "tolerance": 0.005,
+      "source": {"base": "results", "kind": "xlsx_row", "path": "Sensitivity_Analysis_Suite.xlsx", "sheet": "Denominator_Audit", "match": {"denominator_label": "Both ICD + gas"}, "value_column": "percent_of_broad_cohort"}
+    },
+    {
+      "claim_id": "abg_positive_admissions",
+      "concept_type": "sample_size",
+      "exact_value": 7454,
+      "display_values": ["7,454", "7454"],
+      "source": {"base": "results", "kind": "xlsx_row", "path": "Figure 2.xlsx", "sheet": "Prevalence_Tidy", "match": {"Ascertainment_Group": "ABG (PCO2 >= 45 mmHg)", "category": "Respiratory"}, "value_column": "N_group"},
+      "targets": [
+        {"base": "repo", "kind": "text", "path": "Hypercap CC NLP Analysis.qmd", "required": ["\"ABG criteria met\": 7454"]},
+        {"base": "repo", "kind": "text", "path": "tests/test_notebook_output_contracts.py", "required": ["\"ABG criteria met\": 7454"]}
+      ]
+    },
+    {
+      "claim_id": "vbg_positive_admissions",
+      "concept_type": "sample_size",
+      "exact_value": 6388,
+      "display_values": ["6,388", "6388"],
+      "source": {"base": "results", "kind": "xlsx_row", "path": "Figure 2.xlsx", "sheet": "Prevalence_Tidy", "match": {"Ascertainment_Group": "VBG (PCO2 >= 50 mmHg)", "category": "Respiratory"}, "value_column": "N_group"},
+      "targets": [
+        {"base": "repo", "kind": "text", "path": "Hypercap CC NLP Analysis.qmd", "required": ["\"VBG criteria met\": 6388"]},
+        {"base": "repo", "kind": "text", "path": "tests/test_notebook_output_contracts.py", "required": ["\"VBG criteria met\": 6388"]}
+      ]
+    },
+    {
+      "claim_id": "unknown_source_gas_admissions",
+      "concept_type": "sample_size",
+      "exact_value": 1346,
+      "display_values": ["1,346", "1346"],
+      "source": {"base": "results", "kind": "xlsx_sum", "path": "Ascertainment_Overlap_Intersections.xlsx", "sheet": "Sheet1", "match": {"UNKNOWN": true}, "value_column": "Count"},
+      "targets": [
+        {"base": "repo", "kind": "text", "path": "Hypercap CC NLP Analysis.qmd", "required": ["\"UNKNOWN-source gas\": 1346"]},
+        {"base": "repo", "kind": "text", "path": "tests/test_notebook_output_contracts.py", "required": ["\"UNKNOWN-source gas\": 1346"]}
+      ]
+    },
+    {
+      "claim_id": "age_median_iqr",
+      "concept_type": "result",
+      "exact_value": "68.0 [56.0-78.0]",
+      "display_values": ["68 years (IQR, 56-78)", "68 years (IQR 56-78)"],
+      "source": {"base": "results", "kind": "xlsx_row", "path": "Table 1.xlsx", "sheet": "Table_1", "match": {"Characteristic": "Age, years"}, "value_column": "Overall (N=11941)"}
+    },
+    {
+      "claim_id": "male_admissions",
+      "concept_type": "result",
+      "exact_value": "6423 (53.8%)",
+      "display_values": ["6,423 (53.8%)", "6423 (53.8%)"],
+      "source": {"base": "results", "kind": "xlsx_row", "path": "Table 1.xlsx", "sheet": "Table_1", "match": {"Characteristic": "Male sex"}, "value_column": "Overall (N=11941)"}
+    },
+    {
+      "claim_id": "overall_respiratory_prevalence",
+      "concept_type": "result",
+      "exact_value": 30.24,
+      "display_values": ["30.2%", "30.24%"],
+      "tolerance": 0.005,
+      "source": {"base": "results", "kind": "xlsx_row", "path": "Table 2.xlsx", "sheet": "Table_2", "match": {"NHAMCS RFV category": "Symptom – Respiratory"}, "value_column": "% admissions"}
+    },
+    {
+      "claim_id": "overall_administrative_prevalence",
+      "concept_type": "result",
+      "exact_value": 17.54,
+      "display_values": ["17.5%", "17.54%"],
+      "tolerance": 0.005,
+      "source": {"base": "results", "kind": "xlsx_row", "path": "Table 2.xlsx", "sheet": "Table_2", "match": {"NHAMCS RFV category": "Administrative"}, "value_column": "% admissions"}
+    },
+    {
+      "claim_id": "overall_digestive_prevalence",
+      "concept_type": "result",
+      "exact_value": 14.03,
+      "display_values": ["14.0%", "14.03%"],
+      "tolerance": 0.005,
+      "source": {"base": "results", "kind": "xlsx_row", "path": "Table 2.xlsx", "sheet": "Table_2", "match": {"NHAMCS RFV category": "Symptom – Digestive"}, "value_column": "% admissions"}
+    },
+    {
+      "claim_id": "overall_injury_prevalence",
+      "concept_type": "result",
+      "exact_value": 14.0,
+      "display_values": ["14.0%", "14%"],
+      "tolerance": 0.005,
+      "source": {"base": "results", "kind": "xlsx_row", "path": "Table 2.xlsx", "sheet": "Table_2", "match": {"NHAMCS RFV category": "Injuries & adverse effects"}, "value_column": "% admissions"}
+    },
+    {
+      "claim_id": "overall_nervous_prevalence",
+      "concept_type": "result",
+      "exact_value": 13.83,
+      "display_values": ["13.8%", "13.83%"],
+      "tolerance": 0.005,
+      "source": {"base": "results", "kind": "xlsx_row", "path": "Table 2.xlsx", "sheet": "Table_2", "match": {"NHAMCS RFV category": "Symptom – Nervous"}, "value_column": "% admissions"}
+    },
+    {
+      "claim_id": "abg_respiratory_prevalence",
+      "concept_type": "result",
+      "exact_value": 27.26,
+      "display_values": ["27.3%", "27.26%"],
+      "tolerance": 0.005,
+      "source": {"base": "results", "kind": "xlsx_row", "path": "Figure 2.xlsx", "sheet": "Prevalence_Tidy", "match": {"Ascertainment_Group": "ABG (PCO2 >= 45 mmHg)", "category": "Respiratory"}, "value_column": "pct_of_encounters"}
+    },
+    {
+      "claim_id": "vbg_respiratory_prevalence",
+      "concept_type": "result",
+      "exact_value": 36.29,
+      "display_values": ["36.3%", "36.29%"],
+      "tolerance": 0.005,
+      "source": {"base": "results", "kind": "xlsx_row", "path": "Figure 2.xlsx", "sheet": "Prevalence_Tidy", "match": {"Ascertainment_Group": "VBG (PCO2 >= 50 mmHg)", "category": "Respiratory"}, "value_column": "pct_of_encounters"}
+    },
+    {
+      "claim_id": "icd_respiratory_prevalence",
+      "concept_type": "result",
+      "exact_value": 50.23,
+      "display_values": ["50.2%", "50.23%"],
+      "tolerance": 0.005,
+      "source": {"base": "results", "kind": "xlsx_row", "path": "Figure 2.xlsx", "sheet": "Prevalence_Tidy", "match": {"Ascertainment_Group": "ICD-positive", "category": "Respiratory"}, "value_column": "pct_of_encounters"}
+    },
+    {
+      "claim_id": "benchmark_mean_visit_set_f1",
+      "concept_type": "result",
+      "exact_value": 0.8413392857142856,
+      "display_values": ["0.84", "0.841339"],
+      "tolerance": 1e-12,
+      "source": {"base": "artifacts", "kind": "csv_row", "path": "rater_agreement/R3_vs_NLP_headline_metrics.csv", "match": {"benchmark_source": "annotation_direct"}, "value_column": "mean_f1_set"},
+      "targets": [
+        {"base": "repo", "kind": "csv_row", "path": "data_dictionary.csv", "match": {"variable_name": "mean_f1"}, "value_column": "notes", "expected": "Accepted 2026-08-25 direct annotation benchmark: mean visit-level set-F1 0.841339 (reported 0.84), N=160."}
+      ]
+    },
+    {
+      "claim_id": "benchmark_macro_cohen_kappa",
+      "concept_type": "result",
+      "exact_value": 0.6278934740928728,
+      "display_values": ["0.63", "0.627893"],
+      "tolerance": 1e-12,
+      "source": {"base": "artifacts", "kind": "csv_row", "path": "rater_agreement/R3_vs_NLP_headline_metrics.csv", "match": {"benchmark_source": "annotation_direct"}, "value_column": "macro_cohen_kappa"},
+      "targets": [
+        {"base": "repo", "kind": "csv_row", "path": "data_dictionary.csv", "match": {"variable_name": "cohen_kappa"}, "value_column": "notes", "expected": "Accepted 2026-08-25 direct annotation benchmark: macro mean one-vs-rest Cohen kappa 0.627893 (reported 0.63) across 17 categories; sensitive to marginal prevalence."}
+      ]
+    },
+    {
+      "claim_id": "benchmark_exact_agreement",
+      "concept_type": "result",
+      "exact_value": 0.7625,
+      "display_values": ["76.25%", "76.3%", "0.7625"],
+      "tolerance": 1e-12,
+      "source": {"base": "artifacts", "kind": "csv_row", "path": "rater_agreement/R3_vs_NLP_headline_metrics.csv", "match": {"benchmark_source": "annotation_direct"}, "value_column": "exact_rate"},
+      "targets": [
+        {"base": "repo", "kind": "csv_row", "path": "data_dictionary.csv", "match": {"variable_name": "exact_agreement"}, "value_column": "notes", "expected": "Accepted 2026-08-25 direct annotation benchmark: exact label-set agreement 0.7625 (76.25%), N=160."}
+      ]
+    },
+    {
+      "claim_id": "benchmark_partial_agreement",
+      "concept_type": "result",
+      "exact_value": 0.125,
+      "display_values": ["12.5%", "0.125"],
+      "tolerance": 1e-12,
+      "source": {"base": "artifacts", "kind": "csv_row", "path": "rater_agreement/R3_vs_NLP_set_agreement_bootstrap_ci.csv", "match": {"metric": "partial_rate"}, "value_column": "estimate"},
+      "targets": [
+        {"base": "repo", "kind": "csv_row", "path": "data_dictionary.csv", "match": {"variable_name": "partial_agreement"}, "value_column": "notes", "expected": "Accepted 2026-08-25 direct annotation benchmark: partial nonexact label-set overlap 0.125 (12.5%), N=160."}
+      ]
+    },
+    {
+      "claim_id": "imv_no_observed_count",
+      "concept_type": "sample_size",
+      "exact_value": 4854,
+      "display_values": ["4,854", "4854"],
+      "source": {"base": "results", "kind": "xlsx_row", "path": "Figure S10.xlsx", "sheet": "Panel_Denominators", "match": {"stratum_key": "no_observed_imv"}, "value_column": "admissions"},
+      "targets": [{"base": "results", "kind": "text", "path": "imv_timing_manuscript_summary.md", "required": ["N=4,854 (42.2% of gas-positive admissions)"]}]
+    },
+    {
+      "claim_id": "imv_gas_before_count",
+      "concept_type": "sample_size",
+      "exact_value": 2773,
+      "display_values": ["2,773", "2773"],
+      "source": {"base": "results", "kind": "xlsx_row", "path": "Figure S10.xlsx", "sheet": "Panel_Denominators", "match": {"stratum_key": "qualifying_gas_before_imv"}, "value_column": "admissions"},
+      "targets": [{"base": "results", "kind": "text", "path": "imv_timing_manuscript_summary.md", "required": ["N=2,773 (24.1% of gas-positive admissions)"]}]
+    },
+    {
+      "claim_id": "imv_before_gas_count",
+      "concept_type": "sample_size",
+      "exact_value": 3385,
+      "display_values": ["3,385", "3385"],
+      "source": {"base": "results", "kind": "xlsx_row", "path": "Figure S10.xlsx", "sheet": "Panel_Denominators", "match": {"stratum_key": "imv_before_qualifying_gas"}, "value_column": "admissions"},
+      "targets": [{"base": "results", "kind": "text", "path": "imv_timing_manuscript_summary.md", "required": ["N=3,385 (29.4% of gas-positive admissions)"]}]
+    },
+    {
+      "claim_id": "imv_indeterminate_count",
+      "concept_type": "sample_size",
+      "exact_value": 488,
+      "display_values": ["488"],
+      "source": {"base": "results", "kind": "xlsx_row", "path": "Figure S10.xlsx", "sheet": "Panel_Denominators", "match": {"stratum_key": "timing_indeterminate"}, "value_column": "admissions"},
+      "targets": [{"base": "results", "kind": "text", "path": "imv_timing_manuscript_summary.md", "required": ["N=488 (4.2% of gas-positive admissions)"]}]
+    }
+  ],
+  "figure_manifest_denominators": {
+    "figure_1_pdf": 11941,
+    "figure_2_png": 11941,
+    "figure_3_png": 11941,
+    "figure_4_png": 10617,
+    "figure_s1_png": 5096,
+    "figure_s2_png": 11941,
+    "figure_s3_png": 11941,
+    "figure_s4_png": 10617,
+    "figure_s5_png": 5096,
+    "figure_s6_png": 11941,
+    "figure_s7_png": 6218,
+    "figure_s8_png": 11493,
+    "figure_s9_png": 10955,
+    "figure_s10_png": 11500,
+    "ascertainment_flow_diagram": 11941,
+    "time_to_gas_plot": 6218,
+    "recognition_by_pco2_plot": 11493,
+    "ascertainment_overlap_plot": 11941,
+    "etiology_plot": 11941,
+    "compensation_plot": 7643,
+    "candidate_compensation_matrix_plot": 10793,
+    "acuity_plot": 11941,
+    "pco2_distribution_plot": 11500,
+    "acid_base_plot": 11500,
+    "ventilation_regression_plot": 7564,
+    "ventilation_strategy_by_ph_plot": 7564,
+    "ventilation_strategy_by_route_plot": 11941,
+    "clinical_outcomes_by_ph_plot": 7564,
+    "outcome_rates_and_los_by_ph_plot": 7564,
+    "outcome_rates_and_los_by_route_plot": 11941,
+    "sensitivity_route_plot": 11941,
+    "sensitivity_age_plot": 11941,
+    "acidemia_severity_sensitivity_plot": 10617,
+    "timing_acidemia_sensitivity_plot": 5096
+  },
+  "pdf_n_tokens": {
+    "Figure 1.pdf": [441, 1542, 1983, 6388, 7454, 9958, 11941],
+    "Figure 2.pdf": [1983, 6388, 7454],
+    "Figure 3.pdf": [966, 2725, 4088, 4162],
+    "Figure 4.pdf": [1677, 2113, 2595, 4232],
+    "Figure S1.pdf": [235, 2088, 2773],
+    "Figure S2.pdf": [1983, 6388, 7454],
+    "Figure S3.pdf": [966, 2725, 4088, 4162],
+    "Figure S4.pdf": [1677, 2113, 2595, 4232],
+    "Figure S5.pdf": [235, 2088, 2773],
+    "Figure S6.pdf": [],
+    "Figure S7.pdf": [],
+    "Figure S8.pdf": [224, 257, 462, 1039, 2784, 6727],
+    "Figure S9.pdf": [1673, 2170, 7112],
+    "Figure S10.pdf": [488, 2773, 3385, 4854]
+  }
+}

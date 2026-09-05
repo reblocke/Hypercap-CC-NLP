@@ -51,6 +51,7 @@ Researchers must obtain the required PhysioNet/MIMIC training, data-use approval
 - [`docs/DECISIONS.md`](docs/DECISIONS.md) records dated rationale and superseded decisions.
 - [`docs/MANUSCRIPT_MAPPING.md`](docs/MANUSCRIPT_MAPPING.md) maps manuscript tables/figures to notebook stages and generated assets.
 - [`analysis_manifest.yml`](analysis_manifest.yml) freezes definition-only analysis rules used by the submission revision, including RFV taxonomy, gas thresholds, pH/HCO3 bands, and sensitivity definitions.
+- [`docs/NUMERIC_CLAIMS.yml`](docs/NUMERIC_CLAIMS.yml) records source-addressed aggregate values from the accepted run and the active nonhistorical surfaces where repeated values are allowed.
 - [`data_dictionary.md`](data_dictionary.md) and [`data_dictionary.csv`](data_dictionary.csv) describe restricted source fields, derived NLP/cohort variables, benchmark metrics, and aggregate release assets without exposing row-level data.
 
 ## Quick Start
@@ -239,6 +240,20 @@ Equivalent Make targets:
 make test
 make lint
 ```
+
+Check repeated aggregate claims without private results, then optionally reconcile
+the accepted local run and publication-figure sample-size labels:
+
+```bash
+make numbers-check
+make numbers-check-live RESULTS_DATE=2026-08-25
+```
+
+The static check excludes manuscript/preprint files and historical evidence. The
+live check reads aggregate workbooks, QA summaries, manifests, and publication
+PDF text only; it never opens row-level MIMIC or annotation handoffs. A mismatch
+in a preserved Results directory requires producer investigation and a new dated
+run rather than hand-editing the accepted output.
 
 Dry-run the stage commands without executing restricted-data queries:
 

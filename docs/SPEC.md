@@ -377,6 +377,24 @@ Anthropometric cleaning invariants:
 
 ## Acceptance Checks
 
+### Numeric claims contract
+
+`docs/NUMERIC_CLAIMS.yml` binds repeated aggregate claims to the accepted run's
+producer SHA and to explicit aggregate workbook/CSV/JSON sources. The static
+`make numbers-check` target validates active tracked documentation and notebook
+snapshot assertions without requiring private inputs. The live
+`make numbers-check-live RESULTS_DATE=<accepted-date>` target additionally
+validates aggregate sources, figure/submission denominators, generated IMV
+summary text, and extractable `N=` labels in publication PDFs.
+
+Manuscript/preprint files, dated decision history, prior Results directories,
+prior-run manifests, and sealed acceptance evidence are excluded from replacement.
+They may be inventoried as history but must not be rewritten. A mismatch inside an
+accepted Results directory is a producer/run acceptance problem: never patch the
+generated artifact in place, and require a new dated full run after correcting its
+producer. Numeric-audit reports remain aggregate-only under
+`artifacts/qa/numeric_consistency/`.
+
 A valid private pipeline run satisfies all of the following:
 
 - `make quarto-pipeline RESULTS_DATE=<date>` renders the four stage PDFs into `Results/<date>/`
@@ -397,6 +415,7 @@ A valid private pipeline run satisfies all of the following:
 - QA payloads land under `artifacts/qa/cohort/`, `artifacts/qa/rater_agreement/`, `artifacts/qa/analysis/`, and `artifacts/qa/baselines/`
 - no generated outputs are written to the repository root or to `Drafts/`
 - each renderable notebook remains self-contained at runtime and free of repo-local runtime imports
+- the live numeric claims audit passes for the accepted Results directory
 
 A valid public release branch additionally satisfies:
 

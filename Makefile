@@ -7,7 +7,7 @@ BASELINE ?= latest
 STAGE ?= all
 R_REQUIRED_PACKAGES ?= consort presize kappaSize irr
 
-.PHONY: setup spacy-model r-packages kernel-install bq-auth tinytex-install test lint format smoke baseline-capture-jupyter quarto-parity-check quarto-cohort quarto-classifier quarto-rater quarto-analysis quarto-chart-review quarto-reyan-figures quarto-pipeline quarto-pipeline-audit
+.PHONY: setup spacy-model r-packages kernel-install bq-auth tinytex-install test lint format smoke baseline-capture-jupyter quarto-parity-check quarto-cohort quarto-classifier quarto-rater quarto-analysis quarto-chart-review quarto-reyan-figures quarto-pipeline quarto-pipeline-audit numbers-check numbers-check-live
 .PHONY: check-resources clean-generated contracts-check
 
 setup:
@@ -44,6 +44,12 @@ check-resources:
 
 contracts-check:
 	uv run python scripts/run_contract_checks.py --mode "$${PIPELINE_CONTRACT_MODE:-fail}" --stage "$(STAGE)"
+
+numbers-check:
+	uv run python scripts/audit_numeric_claims.py --check
+
+numbers-check-live:
+	uv run python scripts/audit_numeric_claims.py --check --results-dir "$(RESULTS_DIR)" --artifacts-dir artifacts/qa --require-sources --report-dir artifacts/qa/numeric_consistency
 
 clean-generated:
 	rm -rf Results/*
@@ -100,3 +106,4 @@ quarto-pipeline: quarto-cohort quarto-classifier quarto-rater quarto-analysis
 
 quarto-pipeline-audit: lint test
 	uv run python scripts/run_pipeline_audit.py --baseline "$(BASELINE)" --strictness fail_on_key_anomalies
+	$(MAKE) numbers-check-live RESULTS_DATE="$(RESULTS_DATE)"
