@@ -58,4 +58,10 @@ outputs*.zip
 *.zip
 *.parquet
 
+# Shared author drafts; keep Word lock and recovery files local.
+!/working-drafts/*.docx
+~$*
+*.asd
+*.wbk
+
 /.quarto/

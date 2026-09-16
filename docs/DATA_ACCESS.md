@@ -50,6 +50,13 @@ The public repository must not contain:
 
 Aggregate manuscript figures/tables may be distributed outside git as reviewed release assets with checksums and a manifest.
 
+Author-approved Word drafts in `working-drafts/` are a documented exception for
+cross-machine collaboration. These files are public, including their comments
+and tracked changes, and must not contain the restricted material listed above
+or private reviewer material. Each draft has a status notice and SHA-256 in
+`working-drafts/README.md`. This exception does not permit tracking generated
+result folders or private handoffs.
+
 ## Split-Machine Runs
 
 The cohort stage must run where the authorized user can query MIMIC-IV HOSP,

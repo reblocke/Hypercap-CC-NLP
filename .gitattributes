@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Word packages must remain byte-for-byte intact across machines.
+*.docx binary

@@ -18,6 +18,11 @@ final accepted or published journal article.
   copyrighted or restricted source material.
 - Keep manuscript status conservative: medRxiv preprint posted and ATS abstract
   published; no final journal article has been accepted or published.
+- Author-approved Word drafts in `working-drafts/` are tracked for cross-machine
+  collaboration. Preserve their contents, comments, and tracked changes; update
+  the SHA-256 entries in `working-drafts/README.md` whenever a draft changes.
+  This folder is public: the data-safety rules above still apply. Word lock and
+  recovery files remain ignored.
 
 ## Orientation
 
@@ -61,5 +66,8 @@ documented rather than bypassed.
 - For prose-only changes, check affected references and `git diff --check`. For code/notebook changes, run affected tests and Ruff checks; use `quarto check` when rendering/configuration is affected. Full rendering requires authorized MIMIC/BigQuery access and private handoff inputs; static checks do not satisfy that gate.
 - Search for stale "metadata pending" wording once abstract metadata is known.
 - Confirm no tracked MIMIC workbooks, annotation workbooks, generated results,
-  debug artifacts, manuscripts, PDFs, DOCX/PPTX, `.env`, or `CONTINUITY.md`.
+  debug artifacts, PPTX, `.env`, or `CONTINUITY.md`. The document exceptions are
+  author-approved DOCX drafts in `working-drafts/` and the existing unchanged
+  preprint PDF in `preprint/`, each with a notice and SHA-256 in its directory's
+  README. Other manuscripts, DOCX, and PDFs remain excluded.
 - Verify release ZIP checksums using portable filenames, not local private paths.

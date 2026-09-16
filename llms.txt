@@ -111,7 +111,11 @@ local input workbooks. Missing private inputs are expected in a clean public clo
 ## Public Release Policy
 
 - Git tracks source code, tests, documentation, specs, and public classifier
-  resources only.
+  resources, plus author-approved Word drafts in `working-drafts/` and the
+  existing unchanged preprint PDF in `preprint/`. These document exceptions have
+  status notices and SHA-256 entries in their directory READMEs. Shared drafts
+  include comments and tracked changes and must contain no restricted data or
+  private reviewer material. Word lock and recovery files remain ignored.
 - Aggregate manuscript figures/tables may be distributed as GitHub or Zenodo
   release assets with checksums and a manifest.
 - Do not commit generated PDFs, Excel workbooks, release ZIPs,
