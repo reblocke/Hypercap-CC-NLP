@@ -47,6 +47,8 @@ Researchers must obtain the required PhysioNet/MIMIC training, data-use approval
 
 ## Docs Map
 - `README.md` is the public onboarding/runbook surface.
+- [`working-drafts/`](working-drafts/README.md) contains shared author Word drafts
+  for cross-machine editing, with status notices and file checksums.
 - [`docs/SPEC.md`](docs/SPEC.md) is the current pipeline contract: stage ownership, private handoffs, output locations, QA surfaces, runtime constraints, and acceptance checks.
 - [`docs/DECISIONS.md`](docs/DECISIONS.md) records dated rationale and superseded decisions.
 - [`docs/MANUSCRIPT_MAPPING.md`](docs/MANUSCRIPT_MAPPING.md) maps manuscript tables/figures to notebook stages and generated assets.
