@@ -13,6 +13,15 @@
 The IMV timing sensitivity and acceptance safeguards described below are
 unreleased changes; the published `v0.1.1` release does not include them.
 
+## Choose a Route
+
+| Task | Access and evidence | Start |
+| --- | --- | --- |
+| Inspect and test public code | No clinical data or BigQuery credentials; tests use public code and synthetic/static fixtures, not empirical reproduction | [Public quick start](#quick-start) and [quality checks](#quality-checks) |
+| Run the four-stage cohort pipeline | Authorized MIMIC/BigQuery access, private handoffs and Quarto/R tools; writes ignored clinical outputs | [Restricted setup](#2-configure-restricted-data-access), [pipeline](#pipeline), [SPEC](docs/SPEC.md) and [data access](docs/DATA_ACCESS.md) |
+| Continue from a private split-machine handoff | Institutionally approved transfer of workbook, IMV sidecar and producer manifests with matching SHA-256; Git is insufficient | [Handoff rules](#2-configure-restricted-data-access) and [SPEC](docs/SPEC.md#private-handoffs-and-local-outputs) |
+| Locate manuscript and release evidence | Public v0.1.1 and preprint/ATS sources differ from unreleased IMV changes and author drafts | [Citation](#cite-this-work), [exhibit map](docs/MANUSCRIPT_MAPPING.md), [definitions](analysis_manifest.yml), [numeric claims](docs/NUMERIC_CLAIMS.yml) and [working drafts](working-drafts/README.md) |
+
 ## Cite This Work
 
 Please cite the GitHub release matching the code you used, or the repository and
@@ -60,27 +69,39 @@ Researchers must obtain the required PhysioNet/MIMIC training, data-use approval
 
 > Without the restricted MIMIC-derived input workbooks and credentials, you can inspect and test the code, but you cannot reproduce the cohort or manuscript results end to end.
 
-### 1. Create The Environment
+### 1. Inspect And Test Public Code
 
 ```bash
 uv sync --frozen
+uv run pytest -q
+uv run ruff check src tests
 ```
 
-This installs the locked spaCy English model used by the classifier. Verify the
-model is loadable:
+Run from the repository root with Python 3.11 and `uv`. The frozen sync may
+download packages, including the spaCy English model wheel, and writes a local
+environment; these tests use public source and synthetic/static fixtures and
+may write ignored caches. They do not query MIMIC or reproduce the cohort,
+annotation agreement or manuscript estimates. BigQuery authentication, R
+graphics packages, TinyTeX and a user Jupyter kernel are not prerequisites
+for these commands. See [Quality Checks](#quality-checks) for the static
+numeric-claims check and private-only audit routes.
+
+### Restricted Rendering Prerequisites
+
+For an authorized classifier/pipeline run, verify the installed spaCy model:
 
 ```bash
 uv run python -c "import spacy; spacy.load('en_core_web_sm')"
 ```
 
-Install the R packages used by the analysis CONSORT figure and chart-review
-notebook:
+The analysis and optional chart-review Make targets invoke `make r-packages`
+as a prerequisite. Install/check the R packages for those stages only:
 
 ```bash
 make r-packages
 ```
 
-Install/check Quarto for notebook rendering:
+Quarto and TinyTeX are rendering prerequisites, not public test requirements:
 
 ```bash
 quarto --version
@@ -90,50 +111,18 @@ quarto check
 
 ### 2. Configure Restricted Data Access
 
-Copy the example environment file and fill in local project/auth settings:
-
-```bash
-cp .env.example .env
-```
-
-Required BigQuery settings for the default workflow:
-
-```text
-MIMIC_BACKEND=bigquery
-WORK_PROJECT=<your-billing-project-id>
-BQ_PHYSIONET_PROJECT=physionet-data
-BQ_DATASET_HOSP=mimiciv_3_1_hosp
-BQ_DATASET_ICU=mimiciv_3_1_icu
-BQ_DATASET_ED=mimiciv_ed
-BQ_DATASET_DERIVED=mimiciv_derived
-```
-
-`BQ_DATASET_DERIVED` names the release-managed derived dataset. The cohort
-stage reads its `_metadata` attribute/value table and requires exactly one
-`mimic_version = 3.1` record before querying `ventilation`; it does not query a
-derived `bg` table or silently fall back to legacy regex timing.
-
-The restricted MIMIC-IV 3.1 run verified on 2026-08-25 used the explicit
-release-specific override below, rather than the unchanged runtime default
-shown above:
-
-```bash
-export BQ_DATASET_DERIVED=mimiciv_3_1_derived
-```
-
-Alternatively, replace the `BQ_DATASET_DERIVED` assignment in your local `.env`
-with this value. Credentials must be able to read both `_metadata` and
-`ventilation` in the selected dataset, and the same version check still applies.
-If the default dataset returns 403, check the configured dataset and its access;
-do not bypass validation or substitute a different timing source.
-
-Authenticate BigQuery access:
-
-```bash
-gcloud init
-gcloud auth application-default login
-gcloud services enable bigquery.googleapis.com --project <your-billing-project-id>
-```
+This route requires authorized MIMIC/BigQuery access on the cohort machine.
+Follow [local credentialed setup](docs/DATA_ACCESS.md#local-credentialed-setup)
+for the ignored `.env`, dataset settings and application-default credentials;
+[the pipeline contract](docs/SPEC.md) defines the stage inputs and outputs.
+The runtime derived-dataset default is `mimiciv_derived`. The verified
+2026-08-25 MIMIC-IV 3.1 run explicitly used
+`BQ_DATASET_DERIVED=mimiciv_3_1_derived` instead. Whichever official
+derived dataset is selected, the cohort stage requires exactly one
+`mimic_version = 3.1` record in its `_metadata` attribute/value table
+and access to `ventilation`; it does not query derived `bg` or fall back
+to legacy regex timing. A 403 calls for checking the selected dataset and
+permissions, not bypassing validation. Do not commit credentials or data.
 
 Optional strict classifier resource hashing:
 
@@ -168,6 +157,16 @@ Run the full pipeline:
 make quarto-pipeline RESULTS_DATE=$(date +%Y-%m-%d)
 ```
 
+Run this from the repository root only after the restricted setup above, with
+authorized BigQuery access and the required local private inputs. The Make
+targets enforce the stage workbook/PDF presence checks; inspect the new
+`Results/YYYY-MM-DD/` PDFs, private handoff workbooks, IMV provenance sidecar
+and producer manifests against [SPEC](docs/SPEC.md#private-handoffs-and-local-outputs)
+before treating a run as complete. File presence alone does not establish
+source validity, QA acceptance or manuscript reproduction. The cohort stage
+must pass the official derived-dataset version/ventilation checks; a 403 or
+mismatched `_metadata` record is a stop, not a fallback.
+
 Run stages individually:
 
 ```bash
@@ -175,6 +174,14 @@ make quarto-cohort
 make quarto-classifier
 make quarto-rater
 make quarto-analysis
+```
+
+The four stages must remain in that order. `make quarto-chart-review` is an
+optional supporting render with R packages and
+`Results/YYYY-MM-DD/Chart Review Sample Calc.html` as its checked local
+output, not a fifth core stage:
+
+```bash
 make quarto-chart-review
 ```
 
@@ -183,6 +190,10 @@ Compatibility alias for older local commands:
 ```bash
 make quarto-reyan-figures
 ```
+
+That alias renders the analysis notebook and checks its PDF plus representative
+figure files; it is not another core stage. See [SPEC](docs/SPEC.md) for its
+input/output contract.
 
 Generated outputs are written locally under `Results/YYYY-MM-DD/` and are ignored by git.
 QA/debug outputs are written locally under `artifacts/qa/...` and `debug/...` and are ignored by git.
