@@ -33,16 +33,24 @@ BQ_DATASET_DERIVED=mimiciv_derived
 `BQ_DATASET_DERIVED=mimiciv_3_1_derived`. Select an authorized official
 derived dataset in the local environment; naming alone does not pass the
 metadata/version and `ventilation` checks described below. For BigQuery
-application-default credentials on the authorized machine:
+application-default credentials, use the following only on an authorized
+machine with the Google Cloud CLI installed and an approved billing project.
+They change the machine's active Cloud CLI configuration and store
+application-default credentials locally; they do not run the cohort or enable
+project services. Successful setup reports an authenticated account. An
+authentication or permission error is a stop: resolve it with the data owner
+rather than bypassing dataset checks. The project administrator must separately
+confirm that the BigQuery API is enabled for the approved billing project.
 
 ```bash
 gcloud init
 gcloud auth application-default login
-gcloud services enable bigquery.googleapis.com --project <your-billing-project-id>
 ```
 
 The billing project needs access to HOSP, ICU, ED, and the selected derived
-`_metadata` and `ventilation` tables. Do not commit `.env` or credentials.
+`_metadata` and `ventilation` tables. A successful login or API enablement
+does not itself prove that table access or the required source version is
+valid. Do not commit `.env` or credentials.
 
 The IMV timing sensitivity fails closed unless
 `{BQ_PHYSIONET_PROJECT}.{BQ_DATASET_DERIVED}._metadata` contains exactly one

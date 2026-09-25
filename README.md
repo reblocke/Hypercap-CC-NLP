@@ -69,18 +69,36 @@ Researchers must obtain the required PhysioNet/MIMIC training, data-use approval
 
 > Without the restricted MIMIC-derived input workbooks and credentials, you can inspect and test the code, but you cannot reproduce the cohort or manuscript results end to end.
 
+<a id="1-create-the-environment"></a>
 ### 1. Inspect And Test Public Code
 
+From the repository root, this optional route needs Git, Python 3.11, `uv`,
+network access for locked packages, and local space for a disposable clone.
+It copies committed public source into a fresh temporary directory, pins the
+`uv` project, environment and cache there, then runs fixture/static tests and
+Ruff. It does not authenticate to BigQuery or render clinical notebooks.
+Successful checks exit zero; a package, fixture or lint failure exits nonzero
+and needs investigation. Test caches stay in the temporary clone. The
+temporary directory remains for inspection and deliberate removal.
+
 ```bash
+(
+set -eu
+public_work=$(mktemp -d "${TMPDIR:-/tmp}/hypercap-public.XXXXXXXX")
+git clone --quiet --local . "$public_work/repo"
+cd "$public_work/repo"
+export UV_PROJECT="$public_work/repo"
+export UV_PROJECT_ENVIRONMENT="$public_work/repo/.venv"
+export UV_CACHE_DIR="$public_work/uv-cache"
 uv sync --frozen
 uv run pytest -q
 uv run ruff check src tests
+)
 ```
 
-Run from the repository root with Python 3.11 and `uv`. The frozen sync may
-download packages, including the spaCy English model wheel, and writes a local
-environment; these tests use public source and synthetic/static fixtures and
-may write ignored caches. They do not query MIMIC or reproduce the cohort,
+The frozen sync may download packages, including the spaCy English model wheel.
+These tests use public source and synthetic/static fixtures; they do not query
+MIMIC or reproduce the cohort,
 annotation agreement or manuscript estimates. BigQuery authentication, R
 graphics packages, TinyTeX and a user Jupyter kernel are not prerequisites
 for these commands. See [Quality Checks](#quality-checks) for the static
@@ -88,26 +106,13 @@ numeric-claims check and private-only audit routes.
 
 ### Restricted Rendering Prerequisites
 
-For an authorized classifier/pipeline run, verify the installed spaCy model:
-
-```bash
-uv run python -c "import spacy; spacy.load('en_core_web_sm')"
-```
-
-The analysis and optional chart-review Make targets invoke `make r-packages`
-as a prerequisite. Install/check the R packages for those stages only:
-
-```bash
-make r-packages
-```
-
-Quarto and TinyTeX are rendering prerequisites, not public test requirements:
-
-```bash
-quarto --version
-quarto install tinytex
-quarto check
-```
+An authorized classifier/pipeline run also requires the locked spaCy English
+model to load. The analysis and optional chart-review targets run the
+`r-packages` prerequisite, which can install or change local R packages.
+Quarto and TinyTeX are required for PDF rendering; TinyTeX installation changes
+the local toolchain. These are restricted-rendering setup steps, not public
+test requirements. Check their versions and availability on the authorized
+machine before following the [pipeline contract](docs/SPEC.md).
 
 ### 2. Configure Restricted Data Access
 
@@ -124,13 +129,11 @@ and access to `ventilation`; it does not query derived `bg` or fall back
 to legacy regex timing. A 403 calls for checking the selected dataset and
 permissions, not bypassing validation. Do not commit credentials or data.
 
-Optional strict classifier resource hashing:
-
-```bash
-cp Annotation/resource_manifest.example.json Annotation/resource_manifest.json
-# Fill sha256 values, then run:
-make check-resources
-```
+Optional strict classifier resource hashing uses a local copy of
+`Annotation/resource_manifest.example.json` at the ignored
+`Annotation/resource_manifest.json`, populated with verified SHA-256 values.
+The `check-resources` target then checks those local resources before a private
+render; it does not replace source-data permission or version validation.
 
 Do not commit `.env`, MIMIC exports, annotation workbooks, or generated outputs.
 
@@ -151,49 +154,31 @@ The canonical pipeline is Quarto-first and notebook-native:
 3. `Rater Agreement Analysis.qmd` - adjudicator/rater agreement and NLP benchmark analyses
 4. `Hypercap CC NLP Analysis.qmd` - merged manuscript analysis, figures, tables, and submission bundle
 
-Run the full pipeline:
+The `quarto-pipeline` Make target runs the four stages in the order above;
+the individual targets are `quarto-cohort`, `quarto-classifier`,
+`quarto-rater`, and `quarto-analysis`. They run from the repository root only
+on an authorized machine with the [restricted setup](#2-configure-restricted-data-access)
+and required local private inputs. A fresh run needs a newly chosen, unused
+`RESULTS_DATE` and a reviewed backup/ownership decision for the canonical
+private workbooks and sidecar, which are not isolated merely by the date.
+Historical dates such as `2026-08-25` identify accepted evidence for
+inspection; they are not fresh-run destinations. Follow the
+[pipeline contract](docs/SPEC.md#private-handoffs-and-local-outputs) for each
+stage's inputs and output checks before executing the target on private data.
 
-```bash
-make quarto-pipeline RESULTS_DATE=$(date +%Y-%m-%d)
-```
-
-Run this from the repository root only after the restricted setup above, with
-authorized BigQuery access and the required local private inputs. The Make
-targets enforce the stage workbook/PDF presence checks; inspect the new
+The Make targets check stage workbook/PDF presence. Inspect the new
 `Results/YYYY-MM-DD/` PDFs, private handoff workbooks, IMV provenance sidecar
-and producer manifests against [SPEC](docs/SPEC.md#private-handoffs-and-local-outputs)
-before treating a run as complete. File presence alone does not establish
-source validity, QA acceptance or manuscript reproduction. The cohort stage
-must pass the official derived-dataset version/ventilation checks; a 403 or
-mismatched `_metadata` record is a stop, not a fallback.
+and producer manifests against the contract before treating a run as complete.
+File presence alone does not establish source validity, QA acceptance or
+manuscript reproduction. The cohort stage must pass the official
+derived-dataset version and ventilation checks; a 403 or mismatched
+`_metadata` record is a stop, not a fallback.
 
-Run stages individually:
-
-```bash
-make quarto-cohort
-make quarto-classifier
-make quarto-rater
-make quarto-analysis
-```
-
-The four stages must remain in that order. `make quarto-chart-review` is an
-optional supporting render with R packages and
-`Results/YYYY-MM-DD/Chart Review Sample Calc.html` as its checked local
-output, not a fifth core stage:
-
-```bash
-make quarto-chart-review
-```
-
-Compatibility alias for older local commands:
-
-```bash
-make quarto-reyan-figures
-```
-
-That alias renders the analysis notebook and checks its PDF plus representative
-figure files; it is not another core stage. See [SPEC](docs/SPEC.md) for its
-input/output contract.
+The `quarto-chart-review` target is an optional supporting render with R
+packages and a checked local `Results/YYYY-MM-DD/Chart Review Sample Calc.html`
+output, not a fifth core stage. The `quarto-reyan-figures` compatibility alias
+renders the analysis notebook and checks its PDF plus representative figure
+files. See [SPEC](docs/SPEC.md) for their input/output contracts.
 
 Generated outputs are written locally under `Results/YYYY-MM-DD/` and are ignored by git.
 QA/debug outputs are written locally under `artifacts/qa/...` and `debug/...` and are ignored by git.
@@ -240,67 +225,41 @@ See [`docs/MANUSCRIPT_MAPPING.md`](docs/MANUSCRIPT_MAPPING.md) for the fuller ma
 
 ## Quality Checks
 
-Run code checks locally:
+The disposable [public route](#1-inspect-and-test-public-code) runs the unit
+tests and Ruff without private inputs. The `test` and `lint` Make targets use
+those same checks in the current checkout. The static `numbers-check` target
+checks repeated aggregate claims without private results; it excludes
+manuscript/preprint files and historical evidence. A source-only dry run of
+`quarto-pipeline` can show Make's stage order, but it is not pipeline execution.
 
-```bash
-uv run pytest -q
-uv run ruff check src tests
-```
+The private `numbers-check-live` target reads accepted local aggregate
+workbooks, QA summaries, manifests, and publication PDF text, then writes a
+numeric-consistency report under ignored `artifacts/qa/`. It does not open
+row-level MIMIC or annotation handoffs. `2026-08-25` in the numeric-claims
+manifest is an accepted **historical inspection date**, never a fresh-run
+destination. A mismatch in preserved results requires producer investigation
+and a separate new dated run, not edits to the accepted output.
 
-Equivalent Make targets:
+The full private reproducibility audit **rerenders the four restricted Quarto
+stages**, can replace canonical private handoffs and dated Results outputs,
+and writes audit logs under ignored `debug/` before checking metrics and live
+numeric claims. The `quarto-pipeline-audit` target also runs lint/tests. Its
+historical `2026-04-29` example is an inspection context, never a rerun date.
+Use a new unused results date only after reviewing ownership and backups for
+the canonical private files; do not run it merely as a documentation check.
+It requires approved private inputs and clean run provenance; see
+[SPEC acceptance checks](docs/SPEC.md#acceptance-checks).
 
-```bash
-make test
-make lint
-```
-
-Check repeated aggregate claims without private results, then optionally reconcile
-the accepted local run and publication-figure sample-size labels:
-
-```bash
-make numbers-check
-make numbers-check-live RESULTS_DATE=2026-08-25
-```
-
-The static check excludes manuscript/preprint files and historical evidence. The
-live check reads aggregate workbooks, QA summaries, manifests, and publication
-PDF text only; it never opens row-level MIMIC or annotation handoffs. A mismatch
-in a preserved Results directory requires producer investigation and a new dated
-run rather than hand-editing the accepted output.
-
-Dry-run the stage commands without executing restricted-data queries:
-
-```bash
-make -n quarto-pipeline
-```
-
-Full private reproducibility audit, after restricted inputs are available:
-
-```bash
-RUN_MANIFEST_REQUIRE_CLEAN_GIT=1 RESULTS_DATE=2026-04-29 make quarto-pipeline-audit
-```
-
-For the IMV ticket, capture a named pre-change private baseline and compare the
-post-run outputs against that same explicit baseline:
-
-```bash
-uv run python scripts/imv_ticket_parity.py capture \
-  --baseline <baseline-id-or-absolute-path> \
-  --results-date <pre-ticket-results-date> \
-  --source-commit <pre-ticket-commit>
-uv run python scripts/imv_ticket_parity.py compare \
-  --baseline <same-baseline-id-or-absolute-path> \
-  --results-date <post-run-results-date>
-```
-
-Capture creates a fresh requested baseline target; do not overwrite or recapture
-an existing baseline. New captures require clean producer manifests at the
-resolved `--source-commit`, with linked input/output hashes for both handoffs
-and all 14 workbooks. The checkout may differ from that producing commit, but
-the declared SHA alone is insufficient. Outputs from revisions without those
-sealed manifests cannot be newly captured; retain the original capture instead
-of retrospectively labeling outputs. Existing schema-v1 captures remain usable
-with `legacy_unverified` producer provenance reported explicitly.
+The IMV parity utility has separate `capture` and `compare` modes. Capture
+creates a fresh requested private baseline and must never overwrite or recapture
+an accepted one. It requires clean producer manifests at the resolved source
+commit, with linked input/output hashes for both handoffs and all 14 workbooks.
+The checkout may differ from the producing commit, but a declared SHA alone is
+insufficient. Outputs without sealed manifests cannot be newly captured;
+retain the original capture. Existing schema-v1 captures remain usable with
+`legacy_unverified` producer provenance reported explicitly. For the precise
+private protocol and fail-closed comparison, use
+[SPEC parity control](docs/SPEC.md#existing-output-parity-control).
 
 This private QA control checks unchanged cohort membership, RFV1-RFV5 code and
 label assignments, and 14 existing manuscript workbooks. Before current outputs
