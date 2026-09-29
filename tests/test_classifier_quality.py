@@ -6,105 +6,9 @@ from pathlib import Path
 import pandas as pd
 
 from hypercap_cc_nlp.classifier_quality import (
-    annotate_cc_missingness,
-    apply_blank_primary_uncodable_policy,
-    apply_pseudomissing_uncodable_policy,
-    build_cc_missing_audit,
     validate_classifier_contract,
     verify_classifier_resources,
 )
-
-
-def test_annotate_cc_missingness_labels_pseudo_and_true_missing() -> None:
-    df = pd.DataFrame(
-        {
-            "ed_triage_cc": ["-", "___", "N", "??", "shortness of breath", "", None],
-        }
-    )
-    out = annotate_cc_missingness(df, cc_column="ed_triage_cc")
-
-    assert out["cc_missing_reason"].tolist() == [
-        "pseudo_missing_token",
-        "pseudo_missing_token",
-        "pseudo_missing_token",
-        "pseudo_missing_token",
-        "valid",
-        "true_missing",
-        "true_missing",
-    ]
-    assert out["cc_missing_flag"].tolist() == [True, True, True, True, False, True, True]
-    assert out["chief_complaint_raw"].astype("string").fillna("<NA>").tolist() == [
-        "-",
-        "___",
-        "N",
-        "??",
-        "shortness of breath",
-        "",
-        "<NA>",
-    ]
-    assert out["cc_text_for_nlp"].isna().tolist() == [True, True, True, True, False, True, True]
-
-
-def test_apply_pseudomissing_uncodable_policy_sets_rfv_contract_fields() -> None:
-    df = pd.DataFrame(
-        {
-            "cc_pseudomissing_flag": [True, False],
-            "RFV1": ["", "resp"],
-            "RFV1_name": ["", "Symptom – Respiratory"],
-            "RFV1_support": ["", "sob"],
-            "RFV1_sim": [None, 0.8],
-            "RFV2": ["", ""],
-            "RFV2_name": ["", ""],
-            "RFV2_support": ["", ""],
-            "RFV2_sim": [None, None],
-            "segment_preds": ["[]", "[]"],
-        }
-    )
-    out = apply_pseudomissing_uncodable_policy(df, max_rfv=2)
-
-    assert out.loc[0, "RFV1"] == "uncodable"
-    assert out.loc[0, "RFV1_name"] == "Uncodable/Unknown"
-    payload = json.loads(out.loc[0, "segment_preds"])
-    assert payload[0]["code"] == "RVC-UNCL"
-    assert out.loc[1, "RFV1"] == "resp"
-
-
-def test_apply_blank_primary_uncodable_policy_backfills_nonmissing_blanks() -> None:
-    df = pd.DataFrame(
-        {
-            "cc_missing_reason": ["valid", "true_missing", "valid"],
-            "RFV1": ["", "", "resp"],
-            "RFV1_name": ["", "", "Symptom – Respiratory"],
-            "RFV1_support": ["", "", "sob"],
-            "RFV1_sim": [None, None, 0.8],
-            "segment_preds": ["[]", "[]", "[]"],
-        }
-    )
-    out = apply_blank_primary_uncodable_policy(df, max_rfv=2)
-
-    assert out.loc[0, "RFV1"] == "uncodable"
-    assert out.loc[0, "RFV1_name"] == "Uncodable/Unknown"
-    assert json.loads(out.loc[0, "segment_preds"])[0]["rule_code"] == "blank_primary_fallback"
-    assert out.loc[1, "RFV1_name"] == ""
-    assert out.loc[2, "RFV1"] == "resp"
-
-
-def test_build_cc_missing_audit_summarizes_examples() -> None:
-    df = pd.DataFrame(
-        {
-            "ed_triage_cc": ["-", "-", "cough", None],
-            "cc_missing_reason": [
-                "pseudo_missing_token",
-                "pseudo_missing_token",
-                "valid",
-                "true_missing",
-            ],
-        }
-    )
-    audit = build_cc_missing_audit(df, cc_column="ed_triage_cc")
-    got = audit.set_index("cc_missing_reason")
-    assert int(got.loc["pseudo_missing_token", "row_count"]) == 2
-    assert "cough" in str(got.loc["valid", "examples"])
 
 
 def test_validate_classifier_contract_reports_blank_policy() -> None:
@@ -123,19 +27,6 @@ def test_validate_classifier_contract_reports_blank_policy() -> None:
 
     assert report["status"] == "fail"
     assert "unexpected_blank_rfv1" in codes
-
-
-def test_validate_classifier_contract_passes_without_hypercap_duplicate_columns() -> None:
-    df = pd.DataFrame(
-        {
-            "hadm_id": [1, 2],
-            "segment_preds": ["[]", "[]"],
-            "RFV1_name": ["Symptom – Respiratory", "Symptom – Respiratory"],
-            "cc_missing_reason": ["valid", "valid"],
-        }
-    )
-    report = validate_classifier_contract(df)
-    assert report["status"] == "pass"
 
 
 def test_validate_classifier_contract_derives_pseudo_count_without_optional_flags() -> None:

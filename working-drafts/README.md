@@ -5,7 +5,7 @@ collaboration. They are not authoritative and are not intended for use,
 citation, or release. The files are stored unchanged.
 
 The latest saved manuscript is
-[`Hypercap CC NLP Manuscript Sep 16.docx`](Hypercap%20CC%20NLP%20Manuscript%20Sep%2016.docx).
+[`2026-09-24 Hypercap CC NLP Manuscript.docx`](2026-09-24%20Hypercap%20CC%20NLP%20Manuscript.docx).
 Earlier dated versions are retained for reference.
 
 ## Sharing across machines
@@ -21,10 +21,15 @@ editing the same draft on both machines at once: Git cannot merge Word content.
 After saving changes or adding a draft, update its SHA-256 below before committing:
 
 ```bash
-shasum -a 256 'working-drafts/Hypercap CC NLP Manuscript Sep 16.docx'
+shasum -a 256 'working-drafts/2026-09-24 Hypercap CC NLP Manuscript.docx'
 ```
 
 ## Integrity
+
+- `2026-09-24 Hypercap CC NLP Manuscript.docx`: SHA-256
+  `b4f61f0a9eddc58bf4c7cc644324521ffe6f1ab32d61fa717ec89b7ff0f79382`
+- `2026-09-24 Cover Letter.docx`: SHA-256
+  `1fca7da3ef5eddb54d5d11f29b2d8044cc20f4e6cb8a13d9f8cbe660c2b65d6e`
 
 - `Hypercap CC NLP Manuscript Sep 16.docx`: SHA-256
   `2fd967391b35a9c9ae0d6c22f24a9143febc143ddb16553d5b463479508e30f9`

@@ -52,8 +52,7 @@
       "display_values": ["11,941", "11941"],
       "source": {"base": "results", "kind": "xlsx_row", "path": "Sensitivity_Analysis_Suite.xlsx", "sheet": "Denominator_Audit", "match": {"denominator_label": "Broad EHR cohort"}, "value_column": "N_admissions"},
       "targets": [
-        {"base": "repo", "kind": "text", "path": "Hypercap CC NLP Analysis.qmd", "required": ["\"Admissions linked to ED presentation with nonmissing triage chief complaint\": 11941", "\"Analytic cohort\": 11941"]},
-        {"base": "repo", "kind": "text", "path": "tests/test_notebook_output_contracts.py", "required": ["\"Admissions linked to ED presentation with nonmissing triage chief complaint\": 11941", "\"Analytic cohort\": 11941"]}
+        {"base": "repo", "kind": "text", "path": "Hypercap CC NLP Analysis.qmd", "required": ["\"Admissions linked to ED presentation with nonmissing triage chief complaint\": 11941", "\"Analytic cohort\": 11941"]}
       ]
     },
     {
@@ -77,8 +76,7 @@
       "display_values": ["1,983", "1983"],
       "source": {"base": "results", "kind": "xlsx_row", "path": "Sensitivity_Analysis_Suite.xlsx", "sheet": "Denominator_Audit", "match": {"denominator_label": "ICD-positive"}, "value_column": "N_admissions"},
       "targets": [
-        {"base": "repo", "kind": "text", "path": "Hypercap CC NLP Analysis.qmd", "required": ["\"ICD-positive\": 1983"]},
-        {"base": "repo", "kind": "text", "path": "tests/test_notebook_output_contracts.py", "required": ["\"ICD-positive\": 1983"]}
+        {"base": "repo", "kind": "text", "path": "Hypercap CC NLP Analysis.qmd", "required": ["\"ICD-positive\": 1983"]}
       ]
     },
     {
@@ -88,8 +86,7 @@
       "display_values": ["9,958", "9958"],
       "source": {"base": "results", "kind": "xlsx_row", "path": "Sensitivity_Analysis_Suite.xlsx", "sheet": "Denominator_Audit", "match": {"denominator_label": "Gas-only"}, "value_column": "N_admissions"},
       "targets": [
-        {"base": "repo", "kind": "text", "path": "Hypercap CC NLP Analysis.qmd", "required": ["\"Gas-only\": 9958"]},
-        {"base": "repo", "kind": "text", "path": "tests/test_notebook_output_contracts.py", "required": ["\"Gas-only\": 9958"]}
+        {"base": "repo", "kind": "text", "path": "Hypercap CC NLP Analysis.qmd", "required": ["\"Gas-only\": 9958"]}
       ]
     },
     {
@@ -107,8 +104,7 @@
       "display_values": ["441"],
       "source": {"base": "results", "kind": "xlsx_row", "path": "Sensitivity_Analysis_Suite.xlsx", "sheet": "Denominator_Audit", "match": {"denominator_label": "ICD-only"}, "value_column": "N_admissions"},
       "targets": [
-        {"base": "repo", "kind": "text", "path": "Hypercap CC NLP Analysis.qmd", "required": ["\"ICD-only\": 441"]},
-        {"base": "repo", "kind": "text", "path": "tests/test_notebook_output_contracts.py", "required": ["\"ICD-only\": 441"]}
+        {"base": "repo", "kind": "text", "path": "Hypercap CC NLP Analysis.qmd", "required": ["\"ICD-only\": 441"]}
       ]
     },
     {
@@ -126,8 +122,7 @@
       "display_values": ["1,542", "1542"],
       "source": {"base": "results", "kind": "xlsx_row", "path": "Sensitivity_Analysis_Suite.xlsx", "sheet": "Denominator_Audit", "match": {"denominator_label": "Both ICD + gas"}, "value_column": "N_admissions"},
       "targets": [
-        {"base": "repo", "kind": "text", "path": "Hypercap CC NLP Analysis.qmd", "required": ["\"Both ICD and blood-gas criteria\": 1542"]},
-        {"base": "repo", "kind": "text", "path": "tests/test_notebook_output_contracts.py", "required": ["\"Both ICD and blood-gas criteria\": 1542"]}
+        {"base": "repo", "kind": "text", "path": "Hypercap CC NLP Analysis.qmd", "required": ["\"Both ICD and blood-gas criteria\": 1542"]}
       ]
     },
     {
@@ -145,8 +140,7 @@
       "display_values": ["7,454", "7454"],
       "source": {"base": "results", "kind": "xlsx_row", "path": "Figure 2.xlsx", "sheet": "Prevalence_Tidy", "match": {"Ascertainment_Group": "ABG (PCO2 >= 45 mmHg)", "category": "Respiratory"}, "value_column": "N_group"},
       "targets": [
-        {"base": "repo", "kind": "text", "path": "Hypercap CC NLP Analysis.qmd", "required": ["\"ABG criteria met\": 7454"]},
-        {"base": "repo", "kind": "text", "path": "tests/test_notebook_output_contracts.py", "required": ["\"ABG criteria met\": 7454"]}
+        {"base": "repo", "kind": "text", "path": "Hypercap CC NLP Analysis.qmd", "required": ["\"ABG criteria met\": 7454"]}
       ]
     },
     {
@@ -156,8 +150,7 @@
       "display_values": ["6,388", "6388"],
       "source": {"base": "results", "kind": "xlsx_row", "path": "Figure 2.xlsx", "sheet": "Prevalence_Tidy", "match": {"Ascertainment_Group": "VBG (PCO2 >= 50 mmHg)", "category": "Respiratory"}, "value_column": "N_group"},
       "targets": [
-        {"base": "repo", "kind": "text", "path": "Hypercap CC NLP Analysis.qmd", "required": ["\"VBG criteria met\": 6388"]},
-        {"base": "repo", "kind": "text", "path": "tests/test_notebook_output_contracts.py", "required": ["\"VBG criteria met\": 6388"]}
+        {"base": "repo", "kind": "text", "path": "Hypercap CC NLP Analysis.qmd", "required": ["\"VBG criteria met\": 6388"]}
       ]
     },
     {
@@ -167,8 +160,7 @@
       "display_values": ["1,346", "1346"],
       "source": {"base": "results", "kind": "xlsx_sum", "path": "Ascertainment_Overlap_Intersections.xlsx", "sheet": "Sheet1", "match": {"UNKNOWN": true}, "value_column": "Count"},
       "targets": [
-        {"base": "repo", "kind": "text", "path": "Hypercap CC NLP Analysis.qmd", "required": ["\"UNKNOWN-source gas\": 1346"]},
-        {"base": "repo", "kind": "text", "path": "tests/test_notebook_output_contracts.py", "required": ["\"UNKNOWN-source gas\": 1346"]}
+        {"base": "repo", "kind": "text", "path": "Hypercap CC NLP Analysis.qmd", "required": ["\"UNKNOWN-source gas\": 1346"]}
       ]
     },
     {

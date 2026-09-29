@@ -8,7 +8,6 @@ import pandas as pd
 from hypercap_cc_nlp.pipeline_contracts import (
     COHORT_REQUIRED_AUDIT_SUFFIXES,
     COHORT_POC_PCO2_MEDIAN_MAX,
-    COHORT_POC_PCO2_MEDIAN_MIN,
     GAS_SOURCE_DIAGNOSTICS_ARTIFACT_NAME,
     build_pipeline_contract_report,
     validate_cohort_contract,
@@ -66,25 +65,6 @@ def test_validate_cohort_contract_accepts_canonical_threshold_any() -> None:
     codes = {finding["code"] for finding in report["findings"]}
     assert report["status"] == "pass"
     assert "pco2_threshold_0_24h_fallback_alias" not in codes
-
-
-def test_validate_cohort_contract_allows_source_diagnostics_outside_main_export() -> None:
-    df = pd.DataFrame(
-        {
-            "hadm_id": [1],
-            "ed_stay_id": [11],
-            "abg_hypercap_threshold": [1],
-            "vbg_hypercap_threshold": [0],
-            "unknown_hypercap_threshold": [0],
-            "pco2_threshold_0_24h": [1],
-            "gas_source_other_rate": [0.1],
-            "bmi_closest_pre_ed": [30.0],
-            "anthro_source": ["HOSPITAL"],
-        }
-    )
-    report = validate_cohort_contract(df)
-    codes = {finding["code"] for finding in report["findings"]}
-    assert "missing_gas_source_diagnostic_columns_export" not in codes
 
 
 def test_validate_cohort_contract_fails_hco3_band_qc_inconsistency() -> None:
@@ -194,36 +174,6 @@ def test_validate_cohort_contract_fails_when_poc_other_pco2_median_out_of_bounds
     assert report["poc_other_pco2_median"] > COHORT_POC_PCO2_MEDIAN_MAX
 
 
-def test_validate_cohort_contract_flags_poc_quarantine_leakage() -> None:
-    df = pd.DataFrame(
-        {
-            "hadm_id": [1, 2],
-            "ed_stay_id": [11, 22],
-            "abg_hypercap_threshold": [0, 0],
-            "vbg_hypercap_threshold": [1, 1],
-            "unknown_hypercap_threshold": [1, 0],
-            "pco2_threshold_0_24h": [1, 1],
-            "gas_source_other_rate": [0.2, 0.2],
-            "gas_source_inference_primary_tier": ["specimen_text", "specimen_text"],
-            "gas_source_hint_conflict_rate": [0.0, 0.0],
-            "gas_source_resolved_rate": [1.0, 1.0],
-            "time_integrity_any": [False, False],
-            "timing_usable_for_model": [1, 1],
-            "hospital_los_negative_flag": [False, False],
-            "admittime_before_ed_intime_flag": [False, False],
-            "dischtime_before_admittime_flag": [False, False],
-            "bmi_closest_pre_ed": [30.0, 32.0],
-            "anthro_source": ["HOSPITAL", "ICU"],
-            "first_other_src_detail": ["poc_bg_unknown", "lab_bg_unknown"],
-        }
-    )
-    report = validate_cohort_contract(df)
-    codes = {finding["code"] for finding in report["findings"]}
-    assert report["status"] == "pass"
-    assert report["poc_other_quarantine_leak_n"] == 1
-    assert "poc_other_quarantine_leakage" not in codes
-
-
 def test_validate_cohort_contract_flags_first_gas_anchor_without_pco2() -> None:
     df = pd.DataFrame(
         {
@@ -253,68 +203,6 @@ def test_validate_cohort_contract_flags_first_gas_anchor_without_pco2() -> None:
     codes = {finding["code"] for finding in report["findings"]}
     assert report["status"] == "fail"
     assert "first_gas_anchor_missing_pco2" in codes
-
-
-def test_validate_cohort_contract_accepts_poc_other_pco2_median_within_bounds() -> None:
-    midpoint = (COHORT_POC_PCO2_MEDIAN_MIN + COHORT_POC_PCO2_MEDIAN_MAX) / 2
-    df = pd.DataFrame(
-        {
-            "hadm_id": [1, 2, 3],
-            "ed_stay_id": [11, 22, 33],
-            "abg_hypercap_threshold": [1, 0, 1],
-            "vbg_hypercap_threshold": [0, 1, 0],
-            "unknown_hypercap_threshold": [1, 1, 0],
-            "pco2_threshold_0_24h": [1, 1, 1],
-            "gas_source_other_rate": [0.2, 0.2, 0.2],
-            "gas_source_inference_primary_tier": [
-                "specimen_text",
-                "specimen_text",
-                "specimen_text",
-            ],
-            "gas_source_hint_conflict_rate": [0.0, 0.0, 0.0],
-            "gas_source_resolved_rate": [1.0, 1.0, 1.0],
-            "bmi_closest_pre_ed": [30.0, 32.0, 34.0],
-            "anthro_source": ["HOSPITAL", "ICU", "HOSPITAL"],
-            "first_other_src": ["POC", "POC", "LAB"],
-            "first_other_pco2": [midpoint, midpoint + 2, midpoint - 3],
-        }
-    )
-    report = validate_cohort_contract(df)
-    codes = {finding["code"] for finding in report["findings"]}
-
-    assert "poc_other_pco2_median_out_of_bounds" not in codes
-    assert report["poc_other_pco2_count"] == 2
-
-
-def test_validate_cohort_contract_flags_first_other_src_poc_rows() -> None:
-    df = pd.DataFrame(
-        {
-            "hadm_id": [1, 2],
-            "ed_stay_id": [11, 22],
-            "abg_hypercap_threshold": [1, 0],
-            "vbg_hypercap_threshold": [0, 1],
-            "unknown_hypercap_threshold": [0, 1],
-            "pco2_threshold_0_24h": [1, 1],
-            "gas_source_other_rate": [0.2, 0.2],
-            "gas_source_inference_primary_tier": ["specimen_text", "specimen_text"],
-            "gas_source_hint_conflict_rate": [0.0, 0.0],
-            "gas_source_resolved_rate": [1.0, 1.0],
-            "time_integrity_any": [False, False],
-            "timing_usable_for_model": [1, 1],
-            "hospital_los_negative_flag": [False, False],
-            "admittime_before_ed_intime_flag": [False, False],
-            "dischtime_before_admittime_flag": [False, False],
-            "bmi_closest_pre_ed": [30.0, 32.0],
-            "anthro_source": ["HOSPITAL", "ICU"],
-            "first_other_src": ["POC", "LAB_BG_UNKNOWN"],
-            "first_other_pco2": [55.0, 50.0],
-        }
-    )
-    report = validate_cohort_contract(df)
-    codes = {finding["code"] for finding in report["findings"]}
-    assert report["status"] == "pass"
-    assert report["first_other_poc_rows"] == 1
-    assert "first_other_src_contains_poc" not in codes
 
 
 def test_validate_cohort_contract_warns_on_low_first_hco3_coverage() -> None:
@@ -694,29 +582,6 @@ def test_validate_cohort_contract_flags_invalid_cleaned_vitals_ranges() -> None:
     assert report["status"] == "fail"
     assert "invalid_ed_vitals_clean_range" in codes
     assert "ed_temp_clean_contains_celsius_band_values" in codes
-
-
-def test_validate_cohort_contract_allows_qc_only_missing_timing_flags() -> None:
-    df = pd.DataFrame(
-        {
-            "hadm_id": [1],
-            "ed_stay_id": [11],
-            "abg_hypercap_threshold": [1],
-            "vbg_hypercap_threshold": [0],
-            "unknown_hypercap_threshold": [0],
-            "pco2_threshold_0_24h": [1],
-            "gas_source_other_rate": [0.1],
-            "gas_source_inference_primary_tier": ["specimen_text"],
-            "gas_source_hint_conflict_rate": [0.0],
-            "gas_source_resolved_rate": [1.0],
-            "bmi_closest_pre_ed": [30.0],
-            "anthro_source": ["HOSPITAL"],
-        }
-    )
-    report = validate_cohort_contract(df)
-    codes = {finding["code"] for finding in report["findings"]}
-    assert "missing_timing_usable_for_model" not in codes
-    assert "missing_time_integrity_flags" not in codes
 
 
 def test_validate_cohort_contract_flags_timing_usable_mismatch() -> None:

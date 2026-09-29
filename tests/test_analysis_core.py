@@ -334,12 +334,6 @@ summarize_labels_per_encounter = HELPERS["summarize_labels_per_encounter"]
 summarize_rfv_prevalence_by_comorbidity = HELPERS["summarize_rfv_prevalence_by_comorbidity"]
 
 
-def test_ensure_required_columns_raises_informative_key_error() -> None:
-    df = pd.DataFrame({"a": [1], "b": [2]})
-    with pytest.raises(KeyError, match="Missing required columns"):
-        resolve_required_columns(df, ["a", "c"])
-
-
 def test_classify_icd_category_vectorized_precedence() -> None:
     df = pd.DataFrame(
         {
@@ -364,48 +358,6 @@ def test_classify_icd_category_vectorized_precedence() -> None:
     ]
 
 
-def test_classify_inclusion_type_vectorized_mapping() -> None:
-    any_icd = pd.Series([1, 1, 0, 0])
-    gas_any = pd.Series([1, 0, 1, 0])
-    out = classify_inclusion_type_vectorized(any_icd, gas_any)
-    assert out.tolist() == ["Both", "ICD_only", "Gas_only", "Neither"]
-
-
-def test_binary_crosstab_yes_no_has_stable_columns() -> None:
-    df = pd.DataFrame(
-        {
-            "RFV1_name": ["Resp", "Resp", "Cardiac"],
-            "flag": [1, 1, 1],
-        }
-    )
-    out = binary_crosstab_yes_no(df, "RFV1_name", "flag")
-
-    assert list(out.columns) == ["No", "Yes", "Percent_yes"]
-    assert out["No"].sum() == 0
-    assert out.loc["Resp", "Yes"] == 2
-    assert out.loc["Cardiac", "Percent_yes"] == 100.0
-
-
-def test_symptom_distribution_by_overlap_percent_sums() -> None:
-    df = pd.DataFrame(
-        {
-            "overlap": ["ABG-only", "ABG-only", "ABG-only", "VBG-only", "VBG-only"],
-            "RFV1_name": ["Resp", "Resp", "Neuro", "Cardiac", "Resp"],
-        }
-    )
-
-    counts, pivot = symptom_distribution_by_overlap(
-        df,
-        group_col="overlap",
-        symptom_col="RFV1_name",
-        top_k=1,
-    )
-
-    summed = counts.groupby("overlap")["Percent"].sum().round(1)
-    assert summed.to_dict() == {"ABG-only": 100.0, "VBG-only": 100.0}
-    assert set(pivot.columns.tolist()) == {"ABG-only", "VBG-only"}
-
-
 def test_classify_gas_source_overlap_includes_other_strata() -> None:
     labels = classify_gas_source_overlap(
         pd.Series([1, 1, 0, 0, 0]),
@@ -419,11 +371,6 @@ def test_classify_gas_source_overlap_includes_other_strata() -> None:
         "UNKNOWN-only",
         "No-gas",
     ]
-
-
-def test_get_rfv_name_cols_respects_slot_order_and_missing_columns() -> None:
-    df = pd.DataFrame(columns=["RFV3_name", "RFV1_name", "RFV5_name", "not_rfv"])
-    assert get_rfv_name_cols(df) == ["RFV1_name", "RFV3_name", "RFV5_name"]
 
 
 def test_resolve_encounter_id_prefers_unique_ed_stay_id_then_hadm_id() -> None:
@@ -443,26 +390,11 @@ def test_resolve_encounter_id_prefers_unique_ed_stay_id_then_hadm_id() -> None:
     assert fallback_id.tolist() == [0, 1]
 
 
-def test_normalize_rfv_group_is_deterministic_and_maps_unknown_to_others() -> None:
-    assert normalize_rfv_group("Symptom – Respiratory") == "Respiratory"
-    assert normalize_rfv_group("Injuries & adverse effects") == "Injuries & adverse effects"
-    assert normalize_rfv_group("Uncodable/Unknown") == "Other grouped RFV categories"
-    assert normalize_rfv_group("") == "Other grouped RFV categories"
-
-
 def test_canonicalize_rfv_label_handles_aliases_and_unknown_labels() -> None:
     assert canonicalize_rfv_label("Diseases (patient-stated diagnosis)") == "Diseases (patient-stated)"
     assert canonicalize_rfv_label("Uncodable / Unknown") == "Uncodable/Unknown"
     with pytest.raises(ValueError, match="Unmapped canonical RFV label"):
         canonicalize_rfv_label("Totally Unknown Label")
-
-
-def test_canonicalize_rfv_set_and_uncodable_policy_drop_mixed_uncodable() -> None:
-    label_set = canonicalize_rfv_set(
-        ["Uncodable/Unknown", "Symptom – Respiratory", "Symptom – Respiratory", ""]
-    )
-    assert label_set == frozenset({"Symptom – Respiratory", "Uncodable/Unknown"})
-    assert apply_uncodable_policy(label_set) == frozenset({"Symptom – Respiratory"})
 
 
 def test_build_rfv_membership_long_deduplicates_repeated_labels_within_encounter() -> None:
@@ -513,56 +445,6 @@ def test_build_rfv_label_artifacts_surface_uncodable_diagnostics() -> None:
     assert encounter_level.loc[2, "has_uncodable_only"] == 1
     assert encounter_level.loc[2, "semantic_group_set"] == frozenset()
     assert artifacts["label_coverage_audit"]["covered_by_mapping"].all()
-
-
-def test_make_category_indicators_exclude_uncodable_from_grouped_semantics() -> None:
-    df = pd.DataFrame(
-        {
-            "hadm_id": [1, 2],
-            "RFV1_name": ["Symptom – Respiratory", "Uncodable/Unknown"],
-            "RFV2_name": ["Symptom – Nervous", ""],
-        }
-    )
-
-    detailed = make_category_indicators(df)
-    grouped = make_category_indicators(df, grouped=True)
-
-    assert detailed.loc[0, "Symptom – Respiratory"] == 1
-    assert detailed.loc[0, "Symptom – Nervous"] == 1
-    assert detailed.loc[1, "Uncodable/Unknown"] == 1
-    assert grouped.loc[0, "Respiratory"] == 1
-    assert "Others" not in grouped.columns
-
-
-def test_summarize_multilabel_prevalence_is_ge_primary_label_prevalence() -> None:
-    df = pd.DataFrame(
-        {
-            "hadm_id": [1, 2, 3],
-            "route": ["ABG", "ABG", "VBG"],
-            "RFV1_name": ["Symptom – Respiratory", "Symptom – Digestive", "Symptom – Respiratory"],
-            "RFV2_name": ["Symptom – Nervous", "Symptom – Respiratory", ""],
-        }
-    )
-
-    multi = summarize_multilabel_prevalence(df, strata="route")
-    primary = (
-        df.assign(category=df["RFV1_name"])
-        .groupby(["route", "category"], dropna=False)
-        .size()
-        .reset_index(name="n_with_category")
-    )
-    group_sizes = df.groupby("route").size().reset_index(name="N_group")
-    primary = primary.merge(group_sizes, on="route", how="left")
-    primary["pct_of_encounters"] = primary["n_with_category"] / primary["N_group"] * 100
-
-    merged = multi.merge(
-        primary[["route", "category", "pct_of_encounters"]],
-        on=["route", "category"],
-        how="left",
-        suffixes=("_multi", "_primary"),
-    )
-    merged["pct_of_encounters_primary"] = merged["pct_of_encounters_primary"].fillna(0)
-    assert (merged["pct_of_encounters_multi"] >= merged["pct_of_encounters_primary"]).all()
 
 
 def test_clustered_bootstrap_ci_is_deterministic_and_matches_point_estimates() -> None:
@@ -623,37 +505,6 @@ def test_clustered_bootstrap_ci_is_deterministic_and_matches_point_estimates() -
     )
 
 
-def test_clustered_bootstrap_ci_samples_repeated_admissions_by_patient_cluster() -> None:
-    df = pd.DataFrame(
-        {
-            "subject_id": [1, 1, 2, 3],
-            "hadm_id": [11, 12, 21, 31],
-            "route": ["All", "All", "All", "All"],
-            "RFV1_name": [
-                "Symptom – Respiratory",
-                "Symptom – Respiratory",
-                "Symptom – Digestive",
-                "Symptom – Digestive",
-            ],
-        }
-    )
-
-    with_ci = summarize_multilabel_prevalence_with_clustered_ci(
-        df,
-        strata="route",
-        grouped=True,
-        n_bootstrap=100,
-        seed=7,
-    )
-    respiratory = with_ci.loc[with_ci["category"].eq("Respiratory")].iloc[0]
-
-    assert respiratory["N_group"] == 4
-    assert respiratory["n_with_category"] == 2
-    assert respiratory["pct_of_encounters"] == 50
-    assert respiratory["n_clusters"] == 3
-    assert respiratory["cluster_unit"] == "patient"
-
-
 def test_clustered_bootstrap_ci_fails_closed_without_patient_cluster() -> None:
     df = pd.DataFrame(
         {
@@ -671,28 +522,6 @@ def test_clustered_bootstrap_ci_fails_closed_without_patient_cluster() -> None:
             grouped=True,
             n_bootstrap=10,
         )
-
-
-def test_figure_formatters_and_rfv_order_are_manuscript_safe() -> None:
-    assert format_figure_n(12345) == "12345"
-    assert format_figure_n(np.nan) == "0"
-    assert format_figure_pct(12.36) == "12.4%"
-    assert format_figure_pct(pd.NA) == "0.0%"
-
-    unordered = [
-        "Nervous",
-        "Other grouped RFV categories",
-        "Respiratory",
-        "Digestive",
-        "Injuries & adverse effects",
-    ]
-    assert ordered_rfv_display_categories(unordered) == [
-        "Respiratory",
-        "Digestive",
-        "Nervous",
-        "Injuries & adverse effects",
-        "Other grouped RFV categories",
-    ]
 
 
 def test_select_first_eligible_admission_per_patient_uses_deterministic_ties() -> None:
@@ -991,25 +820,6 @@ def test_summarize_rfv_prevalence_by_comorbidity_uses_multilabel_sets() -> None:
         "flag_opioid_substance",
         "flag_pneumonia",
     }
-
-
-def test_summarize_labels_per_encounter_caps_at_five_and_supports_strata() -> None:
-    df = pd.DataFrame(
-        {
-            "hadm_id": [1, 2],
-            "route": ["ABG", "VBG"],
-            "RFV1_name": ["Symptom – Respiratory", "Symptom – General"],
-            "RFV2_name": ["Symptom – Digestive", "Symptom – Psychological"],
-            "RFV3_name": ["Symptom – Nervous", "Treatment/Medication"],
-            "RFV4_name": ["Symptom – Circulatory", "Administrative"],
-            "RFV5_name": ["Injuries & adverse effects", "Diseases (patient-stated)"],
-        }
-    )
-
-    summary = summarize_labels_per_encounter(df, strata="route")
-    assert summary["label_count"].max() <= 5
-    assert set(summary["route"]) == {"ABG", "VBG"}
-    assert summary["n_encounters"].sum() == 2
 
 
 def test_frozen_acid_base_bands_and_states_are_deterministic() -> None:

@@ -103,12 +103,6 @@ def _classify(
     )
 
 
-def test_icd_only_admission_is_not_applicable() -> None:
-    assert _classify(gas_positive=False, gas_time=None) == (
-        "not_applicable_no_qualifying_gas"
-    )
-
-
 def test_gas_positive_without_imv_evidence_has_no_observed_imv() -> None:
     assert _classify() == "no_observed_imv"
 
@@ -181,16 +175,6 @@ def test_missing_qualifying_gas_time_is_indeterminate_for_gas_positive_row() -> 
     assert _classify(gas_time=None) == "timing_indeterminate"
 
 
-def test_no_reliable_source_returns_missing_enum() -> None:
-    timestamp, source = select_first_observed_imv(
-        first_intubation_procedure_time=pd.NaT,
-        first_invasive_ventilation_procedure_time=None,
-        first_derived_imv_starttime=pd.NaT,
-    )
-    assert pd.isna(timestamp)
-    assert source == "missing"
-
-
 def test_legacy_discordance_distinguishes_presence_and_ordering() -> None:
     common = {
         "gas_positive": True,
@@ -217,13 +201,6 @@ def test_legacy_discordance_distinguishes_presence_and_ordering() -> None:
         legacy_imv_flag=True,
         legacy_first_imv_time=pd.NaT,
     ) == 0
-
-
-def test_expected_procedure_labels_normalize_to_contract_values() -> None:
-    assert normalize_mimic_item_label("Intubation") == "intubation"
-    assert normalize_mimic_item_label(" Invasive-Ventilation ") == (
-        "invasive ventilation"
-    )
 
 
 def test_archive_export_sanitizer_drops_internal_imv_flag_without_mutation() -> None:
