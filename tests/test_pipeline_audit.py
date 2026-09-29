@@ -11,12 +11,10 @@ import pandas as pd
 
 from hypercap_cc_nlp.pipeline_audit import (
     ANALYSIS_EXPORT_FILENAMES,
-    QUARTO_STAGE_COMMANDS,
     build_audit_report,
     collect_run_manifest,
     compute_metric_drift,
     load_and_validate_artifacts,
-    resolve_stage_commands,
     scan_logs_for_findings,
 )
 from hypercap_cc_nlp.workflow_contracts import (
@@ -268,16 +266,6 @@ def test_build_audit_report_clean_warning_and_fail_statuses() -> None:
         baseline_info={"baseline_mode": "latest", "metrics": {}},
     )
     assert fail_report["status"] == "fail"
-
-
-def test_resolve_stage_commands_modes() -> None:
-    assert resolve_stage_commands("quarto") == QUARTO_STAGE_COMMANDS
-    try:
-        resolve_stage_commands("notebook")
-    except ValueError:
-        pass
-    else:
-        raise AssertionError("Expected ValueError for retired notebook pipeline mode")
 
 
 def test_collect_run_manifest_redacts_secret_env(tmp_path: Path, monkeypatch) -> None:

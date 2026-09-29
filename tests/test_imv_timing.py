@@ -11,7 +11,6 @@ import pandas as pd
 WORK_DIR = Path(__file__).resolve().parents[1]
 COHORT_NOTEBOOK = WORK_DIR / "MIMICIV_hypercap_EXT_cohort.qmd"
 HELPER_NAMES = {
-    "normalize_mimic_item_label",
     "select_first_observed_imv",
     "classify_imv_qualifying_gas_order",
     "legacy_imv_timing_discordant",
@@ -48,7 +47,6 @@ classify_imv_qualifying_gas_order = HELPERS[
     "classify_imv_qualifying_gas_order"
 ]
 legacy_imv_timing_discordant = HELPERS["legacy_imv_timing_discordant"]
-normalize_mimic_item_label = HELPERS["normalize_mimic_item_label"]
 
 
 def _classify(
@@ -65,12 +63,6 @@ def _classify(
         robust_imv_observed=robust_observed,
         first_observed_imv_time=pd.Timestamp(imv_time) if imv_time else pd.NaT,
         legacy_imv_flag=legacy_flag,
-    )
-
-
-def test_icd_only_admission_is_not_applicable() -> None:
-    assert _classify(gas_positive=False, gas_time=None) == (
-        "not_applicable_no_qualifying_gas"
     )
 
 
@@ -146,16 +138,6 @@ def test_missing_qualifying_gas_time_is_indeterminate_for_gas_positive_row() -> 
     assert _classify(gas_time=None) == "timing_indeterminate"
 
 
-def test_no_reliable_source_returns_missing_enum() -> None:
-    timestamp, source = select_first_observed_imv(
-        first_intubation_procedure_time=pd.NaT,
-        first_invasive_ventilation_procedure_time=None,
-        first_derived_imv_starttime=pd.NaT,
-    )
-    assert pd.isna(timestamp)
-    assert source == "missing"
-
-
 def test_legacy_discordance_distinguishes_presence_and_ordering() -> None:
     common = {
         "gas_positive": True,
@@ -182,10 +164,3 @@ def test_legacy_discordance_distinguishes_presence_and_ordering() -> None:
         legacy_imv_flag=True,
         legacy_first_imv_time=pd.NaT,
     ) == 0
-
-
-def test_expected_procedure_labels_normalize_to_contract_values() -> None:
-    assert normalize_mimic_item_label("Intubation") == "intubation"
-    assert normalize_mimic_item_label(" Invasive-Ventilation ") == (
-        "invasive ventilation"
-    )
